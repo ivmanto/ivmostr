@@ -1,0 +1,31 @@
+{
+    "name": "ivmostr",
+    "description": "nostr relay implemented by Ivmanto with the below listed features",
+    "pubkey": "29480df94c3c41a416285e920cc3ba7887efe05fecb58e73a783231c426969b9",
+    "contact": "office@ivmanto.com",
+    "supported_nips": [1,2,3,4,42],
+    "software": "TBD",
+    "version": "0.0.2",
+    "limitation": {
+        "max_message_length": 16384,
+        "max_subscriptions": 20,
+        "max_filters": 100,
+        "max_limit": 5000,
+        "max_subid_length": 100,
+        "max_event_tags": 100,
+        "max_content_length": 8196,
+        "min_pow_difficulty": 30,
+        "auth_required": true,
+        "payment_required": true,
+        "restricted_writes": true,
+        "created_at_lower_limit": 31536000,
+        "created_at_upper_limit": 3
+      },
+    "retention": [
+        {"kinds": [0, 1, [5, 7], [40, 49]], "time": 3600},
+        {"kinds": [[40000, 49999]], "time": 100},
+        {"kinds": [[30000, 39999]], "count": 1000},
+        {"time": 3600, "count": 10000}
+    ],
+    "relay_contries": ["EU","DE", "BG"]  
+}
