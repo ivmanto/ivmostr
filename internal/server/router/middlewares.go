@@ -30,35 +30,47 @@ func accessControl(h http.Handler) http.Handler {
 }
 
 // Handles the IP address control part
-func controlIPConn(l *log.Logger) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func controlIPConn(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 
-			if ip == "" || ip == "127.0.0.1" {
-				ip = r.Header.Get("X-Real-IP")
-			}
-			l.Printf("[MW-controlIPC] IP: %s", ip)
-
+		if ip == "" || ip == "127.0.0.1" {
+			ip = r.Header.Get("X-Real-IP")
+		}
+		if ip != "" {
 			mu.Lock()
-			if ipCount[ip] >= 3 {
-				mu.Unlock()
-				l.Printf("[MW-controlIPC] Too many requests from %s", ip)
-				// [ ]: Consider to build a blacklist of IPs for very exccessive number of requests for short time
-				http.Error(w, "Bad request", http.StatusBadRequest)
-				return
-			}
 			ipCount[ip]++
 			mu.Unlock()
+			log.Printf("[MW-ipc] [+] IP: %s", ip)
+		}
 
-			defer func() {
-				mu.Lock()
-				ipCount[ip]--
-				mu.Unlock()
-			}()
+		if ipCount[ip] >= 3 {
+			log.Printf("[MW-ipc] Too many requests [%d] from %s", ipCount[ip], ip)
+			http.Error(w, "Bad request", http.StatusForbidden)
+			return
+		}
 
-			next.ServeHTTP(w, r)
-		})
-	}
+		defer func() {
+			mu.Lock()
+			ipCount[ip]--
+			mu.Unlock()
+			log.Printf("[MW-ipc] [-] IP: %s", ip)
+		}()
+
+		h.ServeHTTP(w, r)
+	})
+}
+
+// Handle ServerInfo requests
+func serverinfo(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		if r.Header.Get("Accept") == "application/nostr+json" {
+			if r.URL.Path == "" || r.URL.Path == "/" {
+				r.URL.Path = "/v1/api/nip11"
+			}
+		}
+		h.ServeHTTP(w, r)
+	})
 }

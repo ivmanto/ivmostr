@@ -10,7 +10,7 @@ import (
 	gn "github.com/nbd-wtf/go-nostr"
 	"google.golang.org/api/iterator"
 
-	"github.com/dasiyes/ivmostr-tdd/pkg/nostr"
+	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 )
 

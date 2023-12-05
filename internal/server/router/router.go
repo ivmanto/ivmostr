@@ -1,7 +1,7 @@
 /*
 MIT License
 
-# Copyright (c) 2022 nbd
+# Copyright (c) 2023 ivmanto
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -30,7 +30,9 @@ import (
 	"os"
 
 	"cloud.google.com/go/logging"
-	"github.com/dasiyes/ivmostr-tdd/pkg/nostr"
+	"github.com/dasiyes/ivmostr-tdd/api"
+	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
+	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 	"github.com/go-chi/chi"
 )
 
@@ -49,13 +51,21 @@ func (h *srvHandler) router() chi.Router {
 
 	// Building middleware chain
 	rtr.Use(accessControl)
-	rtr.Use(controlIPConn(h.l))
+	rtr.Use(controlIPConn)
+	rtr.Use(serverinfo)
 
-	// Route the home calls
-	rtr.Route("/", func(r chi.Router) {
+	// Handle requests to the root URL "/"
+	rtr.Route("/", func(wr chi.Router) {
+		lgr := log.New(os.Stdout, "[wsh] ", log.LstdFlags)
+		ws := ivmws.NewWSHandler(lgr, h.clgr, h.repo, h.lrepo)
+		wr.Mount("/", ws.Router())
+	})
+
+	// Route the API calls to/v1/api/ ...
+	rtr.Route("/v1", func(r chi.Router) {
 		lgr := log.New(os.Stdout, "[http][api] ", log.LstdFlags)
-		rh := apiHandler{lgr, h.repo}
-		r.Mount("/v1", rh.router())
+		rh := api.ApiHandler{Lgr: lgr, Repo: h.repo}
+		r.Mount("/", rh.Router())
 	})
 
 	return rtr

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/firestore"
-	"github.com/dasiyes/ivmostr-tdd/pkg/nostr"
+	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 )
 
 type listRepo struct {
