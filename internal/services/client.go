@@ -3,9 +3,14 @@ package services
 import (
 	"log"
 	"sync"
+	"time"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/gorilla/websocket"
+)
+
+var (
+	mutex = &sync.Mutex{}
 )
 
 type Client struct {
@@ -36,17 +41,66 @@ func NewClient(session *Session, conn *websocket.Conn) *Client {
 	}
 }
 
-func (c *Client) Start() error {
+func (c *Client) Start() {
 
 	c.lgr.Printf("DEBUG: Starting client %v", c.conn.RemoteAddr().String())
 
-	go c.readPump()
-	go c.writePump()
+	datachan := make(chan []byte)
+	mutex := &sync.Mutex{}
 
-	err := <-c.readerr
-	c.lgr.Printf("DEBUG: Error from readPump: %v", err)
+	// readPump
+	go func() {
+		for {
 
-	return err
+			c.lgr.Printf("DEBUG: Waiting for message from client %v", c.conn.RemoteAddr().String())
+
+			mt, message, err := c.conn.ReadMessage()
+			if err != nil {
+				c.lgr.Printf("DEBUG: Error while reading message type:%v, %v", mt, err)
+				c.readerr <- err
+				break
+			}
+
+			c.lgr.Printf("DEBUG: Received message:%v, (type):%v", string(message), mt)
+			// [ ]: clasify the messages
+
+			// Handle incoming message according to the nostr subprotocol
+			// ...
+
+			// Example: Echo the received message back to the client
+			mutex.Lock()
+			datachan <- message
+
+			c.conn.SetReadDeadline(time.Now().Add(time.Second * 5)) // Set read timeout to prevent blocking indefinitely
+
+			mutex.Unlock()
+
+		}
+	}()
+
+	// writePump
+	go func() {
+		//for idx, message := range <-datachan {
+		select {
+		case message := <-datachan:
+			c.lgr.Printf("DEBUG: Sending message: %v", string(message))
+
+			// [ ]: implement the logic to send the message to the client
+			// if !ok {
+			// 	_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+			// 	return
+			// }
+
+			err := c.conn.WriteMessage(websocket.TextMessage, message)
+			if err != nil {
+				log.Println("Error writing message:", err)
+				return
+			}
+
+		}
+	}()
+
+	select {}
 }
 
 func (c *Client) readPump() {
@@ -56,26 +110,6 @@ func (c *Client) readPump() {
 		c.lgr.Printf("DEBUG: Closing client %v", c.conn.RemoteAddr().String())
 	}()
 
-	for {
-
-		c.lgr.Printf("DEBUG: Waiting for message from client %v", c.conn.RemoteAddr().String())
-
-		mt, message, err := c.conn.ReadMessage()
-		if err != nil {
-			c.lgr.Printf("DEBUG: Error while reading message type:%v, %v", mt, err)
-			c.readerr <- err
-			break
-		}
-
-		c.lgr.Printf("DEBUG: Received message:%v, (type):%v", string(message), mt)
-		// [ ]: clasify the messages
-
-		// Handle incoming message according to the nostr subprotocol
-		// ...
-
-		// Example: Echo the received message back to the client
-		c.send <- message
-	}
 	c.lgr.Printf("DEBUG: Exiting readPump")
 }
 
@@ -84,23 +118,6 @@ func (c *Client) writePump() {
 		c.conn.Close()
 	}()
 
-	for idx, message := range <-c.send {
-
-		c.lgr.Printf("DEBUG: idx: %d, Sending message: %v", idx, string(message))
-
-		// [ ]: implement the logic to send the message to the client
-		// if !ok {
-		// 	_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-		// 	return
-		// }
-
-		// err := c.conn.WriteMessage(websocket.TextMessage, message)
-		// if err != nil {
-		// 	log.Println("Error writing message:", err)
-		// 	return
-		// }
-
-	}
 	c.lgr.Printf("DEBUG: Exiting writePump")
 }
 

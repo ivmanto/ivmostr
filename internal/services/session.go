@@ -44,17 +44,17 @@ func NewSession() *Session {
 // HandleWebSocket handles incoming WebSocket connections.
 func (s *Session) HandleWebSocket(client *Client) {
 
-	s.tuneClientConn(client)
+	//s.tuneClientConn(client)
 
 	s.ilgr.Printf("DEBUG: client-IP %s (handle-websocket) as: %s, client conn (RemoteAddr): %v", client.IP, client.name, client.conn.RemoteAddr())
 
 	//s.pool.Schedule(func() {
-	if err := client.Start(); err != nil {
-		// [ ]: classify the retiurned errors and handle the connections accordingly
+	// if err := client.Start(); err != nil {
+	// [ ]: classify the retiurned errors and handle the connections accordingly
+	client.Start()
+	s.Remove(client)
 
-		s.Remove(client)
-		s.elgr.Printf("ERROR client-side %s (pool-schedule): %v", client.IP, err)
-	}
+	//}
 	//})
 
 }
@@ -159,4 +159,9 @@ func (s *Session) tuneClientConn(client *Client) {
 	if err != nil {
 		s.elgr.Printf("ERROR client-side %s (set-write-deadline): %v", client.IP, err)
 	}
+
+	client.conn.SetCloseHandler(func(code int, text string) error {
+		client.lgr.Printf("DEBUG: Closing client %v, code: %v, text: %v", client.conn.RemoteAddr().String(), code, text)
+		return nil
+	})
 }
