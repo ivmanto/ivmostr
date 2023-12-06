@@ -43,7 +43,8 @@ func (h *WSHandler) Router() chi.Router {
 func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	upgrader := websocket.Upgrader{
-		Subprotocols: []string{"nostr"},
+		Subprotocols:      []string{"nostr"},
+		EnableCompression: true,
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -55,6 +56,8 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	ip := r.Header.Get("X-Real-IP")
 
 	client := h.session.Register(conn, h.repo, h.lrepo, ip)
+
+	h.lgr.Printf("DEBUG: client %v connected from [%v], Origin: [%v]", client.Name(), client.IP, r.Header.Get("Origin"))
 
 	go h.session.HandleWebSocket(client)
 }

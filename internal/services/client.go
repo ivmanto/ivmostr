@@ -16,6 +16,7 @@ type Client struct {
 	name            string
 	session         *Session
 	send            chan []byte
+	readerr         chan error
 	repo            nostr.NostrRepo
 	lrepo           nostr.ListRepo
 	challenge       string
@@ -35,31 +36,47 @@ func NewClient(session *Session, conn *websocket.Conn) *Client {
 	}
 }
 
-func (c *Client) Start() {
+func (c *Client) Start() error {
+
+	c.lgr.Printf("DEBUG: Starting client %v", c.conn.RemoteAddr().String())
+
 	go c.readPump()
 	go c.writePump()
+
+	err := <-c.readerr
+	c.lgr.Printf("DEBUG: Error from readPump: %v", err)
+
+	return err
 }
 
 func (c *Client) readPump() {
 	defer func() {
-		//c.session.unregister <- c.conn
-		//c.conn.Close()
+		// c.session.unregister <- c.conn
+		c.conn.Close()
+		c.lgr.Printf("DEBUG: Closing client %v", c.conn.RemoteAddr().String())
 	}()
 
 	for {
-		_, message, err := c.conn.ReadMessage()
+
+		c.lgr.Printf("DEBUG: Waiting for message from client %v", c.conn.RemoteAddr().String())
+
+		mt, message, err := c.conn.ReadMessage()
 		if err != nil {
-			log.Println("Error reading message:", err)
+			c.lgr.Printf("DEBUG: Error while reading message type:%v, %v", mt, err)
+			c.readerr <- err
 			break
 		}
-		c.lgr.Println("Received message:", string(message))
+
+		c.lgr.Printf("DEBUG: Received message:%v, (type):%v", string(message), mt)
+		// [ ]: clasify the messages
 
 		// Handle incoming message according to the nostr subprotocol
 		// ...
 
 		// Example: Echo the received message back to the client
-		//c.send <- message
+		c.send <- message
 	}
+	c.lgr.Printf("DEBUG: Exiting readPump")
 }
 
 func (c *Client) writePump() {
@@ -67,19 +84,26 @@ func (c *Client) writePump() {
 		c.conn.Close()
 	}()
 
-	for {
-		select {
-		case message, ok := <-c.send:
-			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
+	for idx, message := range <-c.send {
 
-			err := c.conn.WriteMessage(websocket.TextMessage, message)
-			if err != nil {
-				log.Println("Error writing message:", err)
-				return
-			}
-		}
+		c.lgr.Printf("DEBUG: idx: %d, Sending message: %v", idx, string(message))
+
+		// [ ]: implement the logic to send the message to the client
+		// if !ok {
+		// 	_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+		// 	return
+		// }
+
+		// err := c.conn.WriteMessage(websocket.TextMessage, message)
+		// if err != nil {
+		// 	log.Println("Error writing message:", err)
+		// 	return
+		// }
+
 	}
+	c.lgr.Printf("DEBUG: Exiting writePump")
+}
+
+func (c *Client) Name() string {
+	return c.name
 }

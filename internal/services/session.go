@@ -4,8 +4,10 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
+	"time"
 
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
@@ -40,23 +42,20 @@ func NewSession() *Session {
 }
 
 // HandleWebSocket handles incoming WebSocket connections.
-func (s *Session) HandleWebSocket(clnt *Client) {
-	//defer clnt.conn.Close()
+func (s *Session) HandleWebSocket(client *Client) {
 
-	for {
-		// Read and handle incoming messages according to the Nostr protocol
-		_, message, err := clnt.conn.ReadMessage()
-		if err != nil {
-			log.Println("Failed to read WebSocket message:", err)
-			break
-		}
-		log.Println("Received message:", string(message))
-		// Perform actions based on the Nostr protocol
-		// ...
+	s.tuneClientConn(client)
 
-		// Write response back to the client
-		// ...
+	s.ilgr.Printf("DEBUG: client-IP %s (handle-websocket) as: %s, client conn (RemoteAddr): %v", client.IP, client.name, client.conn.RemoteAddr())
+
+	//s.pool.Schedule(func() {
+	if err := client.Start(); err != nil {
+		// [ ]: classify the retiurned errors and handle the connections accordingly
+
+		s.Remove(client)
+		s.elgr.Printf("ERROR client-side %s (pool-schedule): %v", client.IP, err)
 	}
+	//})
 
 }
 
@@ -88,7 +87,27 @@ func (s *Session) Register(
 	s.mu.Unlock()
 
 	s.clients = append(s.clients, NewClient(s, conn))
+	s.ilgr.Printf("DEBUG: client-IP %s (register) as: %s", client.IP, client.name)
+
 	return &client
+}
+
+// Remove removes client from session.
+func (s *Session) Remove(client *Client) {
+	s.mu.Lock()
+	if !s.remove(client) {
+		return
+	}
+	s.mu.Unlock()
+
+	// if !removed {
+	// 	return
+	// }
+
+	//_ = s.Broadcast("goodbye", Object{
+	//	"name": client.name,
+	//	"time": timestamp(),
+	//})
 }
 
 // Give code-word as name to the client connection
@@ -102,4 +121,42 @@ func (s *Session) randName() string {
 		suffix += strconv.Itoa(rand.Intn(10))
 	}
 	// return ""
+}
+
+// mutex must be held.
+func (s *Session) remove(client *Client) bool {
+	if _, has := s.ns[client.name]; !has {
+		return false
+	}
+
+	delete(s.ns, client.name)
+
+	i := sort.Search(len(s.clients), func(i int) bool {
+		return s.clients[i].id >= client.id
+	})
+	if i >= len(s.clients) {
+		panic("session: inconsistent state")
+	}
+
+	without := make([]*Client, len(s.clients)-1)
+	copy(without[:i], s.clients[:i])
+	copy(without[i:], s.clients[i+1:])
+	s.clients = without
+
+	return true
+}
+
+// tuneClientConn tunes the client connection parameters
+func (s *Session) tuneClientConn(client *Client) {
+	// Set t value to 0 to disable the read deadline
+	var t time.Time = time.Time{}
+
+	err := client.conn.SetReadDeadline(t)
+	if err != nil {
+		s.elgr.Printf("ERROR client-side %s (set-read-deadline): %v", client.IP, err)
+	}
+	err = client.conn.SetWriteDeadline(t)
+	if err != nil {
+		s.elgr.Printf("ERROR client-side %s (set-write-deadline): %v", client.IP, err)
+	}
 }

@@ -35,10 +35,14 @@ func controlIPConn(h http.Handler) http.Handler {
 
 		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 
-		if ip == "" || ip == "127.0.0.1" {
+		if ip == "" {
 			ip = r.Header.Get("X-Real-IP")
 		}
+
 		if ip != "" {
+			if ip == "127.0.0.1" {
+				ip = r.RemoteAddr
+			}
 			mu.Lock()
 			ipCount[ip]++
 			mu.Unlock()
@@ -51,12 +55,12 @@ func controlIPConn(h http.Handler) http.Handler {
 			return
 		}
 
-		defer func() {
-			mu.Lock()
-			ipCount[ip]--
-			mu.Unlock()
-			log.Printf("[MW-ipc] [-] IP: %s", ip)
-		}()
+		// defer func() {
+		// 	mu.Lock()
+		// 	ipCount[ip]--
+		// 	mu.Unlock()
+		// 	log.Printf("[MW-ipc] [-] IP: %s", ip)
+		// }()
 
 		h.ServeHTTP(w, r)
 	})
