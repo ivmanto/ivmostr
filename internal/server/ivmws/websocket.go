@@ -7,6 +7,7 @@ import (
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
+	"github.com/dasiyes/ivmostr-tdd/pkg/ivmpool"
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
 )
@@ -17,11 +18,15 @@ type WSHandler struct {
 	repo    nostr.NostrRepo
 	lrepo   nostr.ListRepo
 	session *services.Session
+	pool    *ivmpool.GoroutinePool
 }
 
 func NewWSHandler(l *log.Logger, cl *logging.Logger, repo nostr.NostrRepo, lrepo nostr.ListRepo) *WSHandler {
+	pool := ivmpool.NewGoroutinePool(10)
 	srvs := services.NewSession()
-	return &WSHandler{l, cl, repo, lrepo, srvs}
+	srvs.SetPool(pool)
+
+	return &WSHandler{l, cl, repo, lrepo, srvs, pool}
 }
 
 func (h *WSHandler) Router() chi.Router {
@@ -59,5 +64,12 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	h.lgr.Printf("DEBUG: client %v connected from [%v], Origin: [%v]", client.Name(), client.IP, r.Header.Get("Origin"))
 
-	go h.session.HandleWebSocket(client)
+	// Schedule Client connection handling into a goroutine from the pool
+	h.pool.Schedule(func() {
+		if err := h.session.HandleWebSocket(client); err != nil {
+			h.lgr.Printf("ERROR client-side %s (HandleWebSocket): %v", client.IP, err)
+			h.session.Remove(client)
+			return
+		}
+	})
 }

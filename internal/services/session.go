@@ -30,9 +30,8 @@ type Session struct {
 
 // NewSession creates a new WebSocket session.
 func NewSession() *Session {
-	pool := ivmpool.NewGoroutinePool(10)
+
 	return &Session{
-		pool: pool,
 		ns:   make(map[string]*Client),
 		out:  make(chan []byte, 1),
 		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
@@ -42,21 +41,20 @@ func NewSession() *Session {
 }
 
 // HandleWebSocket handles incoming WebSocket connections.
-func (s *Session) HandleWebSocket(client *Client) {
+func (s *Session) HandleWebSocket(client *Client) error {
 
-	//s.tuneClientConn(client)
+	s.tuneClientConn(client)
 
 	s.ilgr.Printf("DEBUG: client-IP %s (handle-websocket) as: %s, client conn (RemoteAddr): %v", client.IP, client.name, client.conn.RemoteAddr())
 
 	//s.pool.Schedule(func() {
-	// if err := client.Start(); err != nil {
-	// [ ]: classify the retiurned errors and handle the connections accordingly
-	client.Start()
-	s.Remove(client)
+	if err := client.ReceiveMsg(); err != nil {
+		s.elgr.Printf("ERROR client-side %s (start): %v", client.IP, err)
+		s.Remove(client)
+		return err
+	}
 
-	//}
-	//})
-
+	return nil
 }
 
 // Register upgraded websocket connection as client in the sessions
@@ -100,14 +98,6 @@ func (s *Session) Remove(client *Client) {
 	}
 	s.mu.Unlock()
 
-	// if !removed {
-	// 	return
-	// }
-
-	//_ = s.Broadcast("goodbye", Object{
-	//	"name": client.name,
-	//	"time": timestamp(),
-	//})
 }
 
 // Give code-word as name to the client connection
@@ -125,7 +115,7 @@ func (s *Session) randName() string {
 
 // mutex must be held.
 func (s *Session) remove(client *Client) bool {
-	if _, has := s.ns[client.name]; !has {
+	if _, ok := s.ns[client.name]; !ok {
 		return false
 	}
 
@@ -164,4 +154,8 @@ func (s *Session) tuneClientConn(client *Client) {
 		client.lgr.Printf("DEBUG: Closing client %v, code: %v, text: %v", client.conn.RemoteAddr().String(), code, text)
 		return nil
 	})
+}
+
+func (s *Session) SetPool(pool *ivmpool.GoroutinePool) {
+	s.pool = pool
 }

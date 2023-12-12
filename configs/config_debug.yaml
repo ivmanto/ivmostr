@@ -1,0 +1,25 @@
+name: "ivmostr"
+project_id: "ivm-ostr-srv"
+port: "9090"
+relay_host: "localhost"
+# accepts: public | authenticated | paid 
+relay_access: "public"
+# defined in milliseconds
+ws_io_operation_timeout: 100
+# pool's max workers 
+pool_max_workers: ${POOL_MAX_WORKERS}
+# pool's max tasks per worker
+pool_queue: ${POOL_QUEUE}
+# Max number of connections from one IP allowed
+max_conns_per_ip: 3
+# Max number of errors per connection allowed (this is not all errors, but only protocol definition errors)
+max_errs_per_conn: 5
+cloud_logging_enabled: true 
+firestore:
+  project_id: "ivm-ostr-srv"
+  # set the default value for missing limit value - the max number of events 
+  # to be retrurned for the initial query per subscription.
+  default_limit: 20
+  events_collection_name: "events"
+  whitelist_collection_name: "whitelist"
+  blacklist_collection_name: "blacklist"
