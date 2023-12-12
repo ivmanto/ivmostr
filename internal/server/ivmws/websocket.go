@@ -1,32 +1,48 @@
 package ivmws
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
-	"github.com/dasiyes/ivmostr-tdd/pkg/ivmpool"
+	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
 )
 
-type WSHandler struct {
-	lgr     *log.Logger
-	clgr    *logging.Logger
+var (
+	session *services.Session
+	pool    *gopool.Pool
 	repo    nostr.NostrRepo
 	lrepo   nostr.ListRepo
-	session *services.Session
-	pool    *ivmpool.GoroutinePool
+)
+
+type WSHandler struct {
+	lgr  *log.Logger
+	clgr *logging.Logger
 }
 
-func NewWSHandler(l *log.Logger, cl *logging.Logger, repo nostr.NostrRepo, lrepo nostr.ListRepo) *WSHandler {
-	pool := ivmpool.NewGoroutinePool(10)
-	srvs := services.NewSession()
-	srvs.SetPool(pool)
+func NewWSHandler(l *log.Logger, cl *logging.Logger, _repo nostr.NostrRepo, _lrepo nostr.ListRepo) *WSHandler {
 
-	return &WSHandler{l, cl, repo, lrepo, srvs, pool}
+	hndlr := WSHandler{
+		lgr:  l,
+		clgr: cl,
+	}
+	// Setting up the repositories
+	repo = _repo
+	lrepo = _lrepo
+	// Setting up the websocket session and pool
+	workers := 128
+	queue := 2
+	spawn := 1
+	pool = gopool.NewPool(workers, queue, spawn)
+	session = services.NewSession(pool)
+	return &hndlr
 }
 
 func (h *WSHandler) Router() chi.Router {
@@ -54,22 +70,44 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		h.lgr.Printf("Failed to upgrade connection: %v", err)
+		http.Error(w, fmt.Sprintf("Error while upgrading connection: %v", err), http.StatusBadRequest)
 		return
 	}
-	//defer conn.Close()
+
 	ip := r.Header.Get("X-Real-IP")
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
 
-	client := h.session.Register(conn, h.repo, h.lrepo, ip)
+	org := r.Header.Get("Origin")
 
-	h.lgr.Printf("DEBUG: client %v connected from [%v], Origin: [%v]", client.Name(), client.IP, r.Header.Get("Origin"))
+	_ = pool.ScheduleTimeout(time.Millisecond, func() {
+
+		handle(conn, ip, org)
+	})
+}
+
+func handle(conn *websocket.Conn, ip, org string) {
+
+	client := session.Register(conn, repo, lrepo, ip)
+
+	fmt.Printf("DEBUG: client %v connected from [%v], Origin: [%v]", client.Name(), ip, org)
+
+	session.TuneClientConn(client)
 
 	// Schedule Client connection handling into a goroutine from the pool
-	h.pool.Schedule(func() {
-		if err := h.session.HandleWebSocket(client); err != nil {
-			h.lgr.Printf("ERROR client-side %s (HandleWebSocket): %v", client.IP, err)
-			h.session.Remove(client)
+	pool.Schedule(func() {
+		if err := client.ReceiveMsg(); err != nil {
+			if strings.Contains(err.Error(), "websocket: close 1001") {
+				fmt.Printf("ERROR: client %s closed the connection. %v", client.IP, err)
+			} else {
+				fmt.Printf("ERROR client-side %s (HandleWebSocket): %v", client.IP, err)
+			}
+
+			session.Remove(client)
+			conn.Close()
 			return
 		}
 	})
+
 }

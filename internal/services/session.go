@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"os"
@@ -11,7 +12,7 @@ import (
 
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
-	"github.com/dasiyes/ivmostr-tdd/pkg/ivmpool"
+	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/gorilla/websocket"
 )
 
@@ -25,11 +26,11 @@ type Session struct {
 	ilgr    *log.Logger
 	elgr    *log.Logger
 	clgr    *logging.Logger
-	pool    *ivmpool.GoroutinePool
+	pool    *gopool.Pool
 }
 
 // NewSession creates a new WebSocket session.
-func NewSession() *Session {
+func NewSession(pool *gopool.Pool) *Session {
 
 	return &Session{
 		ns:   make(map[string]*Client),
@@ -37,25 +38,22 @@ func NewSession() *Session {
 		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
 		clgr: nil,
+		pool: pool,
 	}
 }
 
 // HandleWebSocket handles incoming WebSocket connections.
-func (s *Session) HandleWebSocket(client *Client) error {
-
-	s.tuneClientConn(client)
-
-	s.ilgr.Printf("DEBUG: client-IP %s (handle-websocket) as: %s, client conn (RemoteAddr): %v", client.IP, client.name, client.conn.RemoteAddr())
-
-	//s.pool.Schedule(func() {
-	if err := client.ReceiveMsg(); err != nil {
-		s.elgr.Printf("ERROR client-side %s (start): %v", client.IP, err)
-		s.Remove(client)
-		return err
-	}
-
-	return nil
-}
+// func (s *Session) HandleWebSocket(client *Client) error {
+// 	s.TuneClientConn(client)
+// 	s.ilgr.Printf("DEBUG: client-IP %s (handle-websocket) as: %s, client conn (RemoteAddr): %v", client.IP, client.name, client.conn.RemoteAddr())
+// 	//s.pool.Schedule(func() {
+// 	if err := client.ReceiveMsg(); err != nil {
+// 		s.elgr.Printf("ERROR client-side %s (start): %v", client.IP, err)
+// 		s.Remove(client)
+// 		return err
+// 	}
+// 	return nil
+// }
 
 // Register upgraded websocket connection as client in the sessions
 func (s *Session) Register(
@@ -137,7 +135,7 @@ func (s *Session) remove(client *Client) bool {
 }
 
 // tuneClientConn tunes the client connection parameters
-func (s *Session) tuneClientConn(client *Client) {
+func (s *Session) TuneClientConn(client *Client) {
 	// Set t value to 0 to disable the read deadline
 	var t time.Time = time.Time{}
 
@@ -154,8 +152,16 @@ func (s *Session) tuneClientConn(client *Client) {
 		client.lgr.Printf("DEBUG: Closing client %v, code: %v, text: %v", client.conn.RemoteAddr().String(), code, text)
 		return nil
 	})
-}
 
-func (s *Session) SetPool(pool *ivmpool.GoroutinePool) {
-	s.pool = pool
+	client.conn.SetPingHandler(func(appData string) error {
+		if appData == "ping" || appData == "PING" || appData == "Ping" {
+			fmt.Println("Received ping:", appData)
+			// Send a pong message in response to the ping
+			err := client.conn.WriteMessage(websocket.PingMessage, []byte("pong"))
+			if err != nil {
+				client.lgr.Printf("ERROR client-side %s (ping-handler): %v", client.IP, err)
+			}
+		}
+		return nil
+	})
 }
