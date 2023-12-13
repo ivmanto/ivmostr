@@ -3,10 +3,12 @@ package services
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/gorilla/websocket"
+	gn "github.com/nbd-wtf/go-nostr"
 )
 
 type Client struct {
@@ -122,20 +124,6 @@ func (c *Client) write(msg *[]interface{}) error {
 	return nil
 }
 
-func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
-	// [ ]: implement the logic to handle the EVENT message type
-	// [ ]: validate message
-	// [ ]: store the message in the repository
-	// [ ]: send the message to the clients subscribed with filters that this message matches
-
-	if len(*msg) < 2 {
-		c.lgr.Printf("ERROR: invalid EVENT message: %v", *msg)
-		return fmt.Errorf("invalid EVENT message: %v", *msg)
-	}
-	_ = c.write(msg)
-	return nil
-}
-
 func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	// [ ]: implement the logic to handle the REQ message type
 	if len(*msg) < 2 {
@@ -161,4 +149,144 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 		return fmt.Errorf("invalid AUTH message: %v", *msg)
 	}
 	return nil
+}
+
+// ****************************** Messages types Handlers ***********************************************
+
+func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
+	// OK messages MUST be sent in response to EVENT messages received from clients, they must have the 3rd parameter set to true when an event has been accepted by the relay, false otherwise. The 4th parameter MAY be empty when the 3rd is true, otherwise it MUST be a string containing a machine-readable single-word prefix followed by a : and then a human-readable message. The standardized machine-readable prefixes are: duplicate, pow, blocked, rate-limited, invalid, and error for when none of that fits.
+
+	se, ok := (*msg)[1].(map[string]interface{})
+	if !ok {
+		lmsg := "invalid: unknown message format"
+		_ = c.writeEventNotice("0", false, lmsg)
+	}
+
+	e, err := mapToEvent(se)
+	if err != nil {
+		// [!] protocol error
+		c.errorRate[c.IP]++
+		lmsg := "invalid:" + err.Error()
+		return c.writeEventNotice(e.ID, false, lmsg)
+	}
+
+	rsl, errv := e.CheckSignature()
+	if errv != nil {
+		lmsg := fmt.Sprintf("result %v, invalid: %v", rsl, errv.Error())
+		return c.writeEventNotice(e.ID, false, lmsg)
+	}
+
+	switch e.Kind {
+	case 3:
+		// nip-02, kind:3 replaceable, Contact List (overwrite the exiting event for the same pub key)
+		NewEvent <- e
+		err := c.repo.StoreEventK3(e)
+		if err != nil {
+			return c.writeEventNotice(e.ID, false, composeErrorMsg(err))
+		}
+		return c.writeEventNotice(e.ID, true, "")
+
+	case 4:
+		// Even if the relay access level is public, the private encrypted messages kind=4 should be rejected
+		if !c.Authed {
+			_ = c.writeCustomNotice("restricted: we can't serve DMs to unauthenticated users, does your client implement NIP-42?")
+			return c.writeEventNotice(e.ID, false, "Authentication required")
+		}
+
+	default:
+		// default will handle all other kinds of events that do not have specifics handlers
+		// do nothing
+	}
+
+	NewEvent <- e
+
+	err = c.repo.StoreEvent(e)
+	if err != nil {
+		return c.writeEventNotice(e.ID, false, composeErrorMsg(err))
+	}
+
+	return c.writeEventNotice(e.ID, true, "")
+}
+
+// ****************************** Auxilary function ***********************************************
+
+// Protocol definition: ["OK", <event_id>, <true|false>, <message>], used to indicate acceptance or denial of an EVENT message.
+//
+// [x] `OK` messages MUST be sent in response to `EVENT` messages received from clients;
+//
+//	[x] they must have the 3rd parameter set to `true` when an event has been accepted by the relay, `false` otherwise.
+//	[x] The 4th parameter MAY be empty when the 3rd is true, otherwise it MUST be a string containing a machine-readable single-word prefix followed by a : and then a human-readable message.
+//	[ ] The standardized machine-readable prefixes are:
+//		[x] `duplicate`,
+//		[ ] `pow`,
+//		[ ] `blocked`,
+//		[ ] `rate-limited`,
+//		[x] `invalid`, and
+//		[x] `error` for when none of that fits.
+func (c *Client) writeEventNotice(event_id string, accepted bool, message string) error {
+	var note = []interface{}{"OK", event_id, accepted, message}
+	return c.write(&note)
+}
+
+// mapToEvent converts a map[string]interface{} to a gn.Event
+func mapToEvent(m map[string]interface{}) (*gn.Event, error) {
+	var e gn.Event
+
+	for key, value := range m {
+		switch key {
+		case "id":
+			e.ID = value.(string)
+		case "pubkey":
+			e.PubKey = value.(string)
+		case "created_at":
+			e.CreatedAt = getTS(value)
+		case "kind":
+			e.Kind = int(value.(float64))
+		case "tags":
+			e.Tags = getTags(value.([]interface{}))
+		case "content":
+			e.Content = value.(string)
+		case "sig":
+			e.Sig = value.(string)
+		default:
+			log.Println("Unknown key:", key)
+		}
+	}
+
+	return &e, nil
+}
+
+func getTags(value []interface{}) gn.Tags {
+	var t gn.Tags
+
+	for _, v := range value {
+		ss := []string{}
+		for _, v2 := range v.([]interface{}) {
+			ss = append(ss, fmt.Sprint(v2))
+		}
+		t = append(t, ss)
+	}
+
+	return t
+}
+
+func getTS(value interface{}) gn.Timestamp {
+	return gn.Timestamp(value.(float64))
+}
+
+func composeErrorMsg(err error) string {
+	var emsg string
+
+	if strings.Contains(err.Error(), "code = AlreadyExists") {
+		emsg = "duplicate: " + err.Error()
+	} else {
+		emsg = "error:" + err.Error()
+	}
+
+	return emsg
+}
+
+func (c *Client) writeCustomNotice(notice_msg string) error {
+	var note = []interface{}{"NOTICE", notice_msg}
+	return c.write(&note)
 }
