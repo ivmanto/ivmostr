@@ -17,7 +17,10 @@ import (
 	gn "github.com/nbd-wtf/go-nostr"
 )
 
-var NewEvent = make(chan *gn.Event)
+var (
+	NewEvent = make(chan *gn.Event)
+	queue    []*gn.Event
+)
 
 // Session represents a WebSocket session that handles multiple client connections.
 type Session struct {
@@ -173,17 +176,20 @@ func (s *Session) TuneClientConn(client *Client) {
 	})
 }
 
-// func (s *Session) NewEventBroadcaster() {
+func (s *Session) BroadcasterQueue(e *gn.Event) {
+	// [ ]: form a queue of events to be broadcasted
+	queue = append(queue, e)
+}
 
+// [ ]: to re-work the event broadcaster
+// func (s *Session) NewEventBroadcaster() {
 // 	for {
 // 		e := <-NewEvent
-
 // 		if e != nil && e.Kind != 22242 {
 // 			for _, client := range s.ns {
 // 				if client.Subscription_id == "" {
 // 					continue
 // 				}
-
 // 				//nip-04 requires clients authentication before sending kind:4 encrypted Dms
 // 				if e.Kind == 4 && !client.Authed {
 // 					continue
@@ -201,9 +207,7 @@ func (s *Session) TuneClientConn(client *Client) {
 // 						}
 // 					}
 // 				}
-
 // 				//client.lgr.Printf("NewEventBroadcaster for client: %s, event %v", client.name, e)
-
 // 				if filterMatch(e, client.GetFilters()) {
 // 					evs := []*gn.Event{e}
 // 					err := client.Send2(evs)
