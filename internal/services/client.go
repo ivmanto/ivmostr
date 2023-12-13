@@ -17,7 +17,6 @@ type Client struct {
 	id      uint
 	name    string
 	session *Session
-	send    chan []interface{}
 	repo    nostr.NostrRepo
 	lrepo   nostr.ListRepo
 	//challenge       string
@@ -27,16 +26,6 @@ type Client struct {
 	errorRate       map[string]int
 	IP              string
 	Authed          bool
-}
-
-func NewClient(session *Session, conn *websocket.Conn) *Client {
-	client := Client{
-		session: session,
-		conn:    conn,
-		send:    make(chan []interface{}),
-	}
-
-	return &client
 }
 
 func (c *Client) Name() string {
@@ -100,7 +89,6 @@ func (c *Client) write(msg *[]interface{}) error {
 
 	go func() {
 		for {
-
 			// [ ]: implement the logic to send the message to the client
 			if msg != nil {
 				mutex.Lock()
@@ -111,8 +99,9 @@ func (c *Client) write(msg *[]interface{}) error {
 					errWM <- err
 				}
 				msg = nil
-				errWM <- nil
 			}
+
+			errWM <- nil
 		}
 	}()
 
@@ -179,7 +168,11 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	switch e.Kind {
 	case 3:
 		// nip-02, kind:3 replaceable, Contact List (overwrite the exiting event for the same pub key)
-		NewEvent <- e
+
+		// sending the event to a channel, will hijack the event to the broadcaster
+		// Keep it disabled until [ ]TODO: find a way to clone the execution context
+		// NewEvent <- e
+
 		err := c.repo.StoreEventK3(e)
 		if err != nil {
 			return c.writeEventNotice(e.ID, false, composeErrorMsg(err))
@@ -198,7 +191,9 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// do nothing
 	}
 
-	NewEvent <- e
+	// sending the event to a channel, will hijack the event to the broadcaster
+	// Keep it disabled until [ ]TODO: find a way to clone the execution context
+	// NewEvent <- e
 
 	err = c.repo.StoreEvent(e)
 	if err != nil {

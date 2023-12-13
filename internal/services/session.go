@@ -89,7 +89,7 @@ func (s *Session) Register(
 	}
 	s.mu.Unlock()
 
-	s.clients = append(s.clients, NewClient(s, conn))
+	s.clients = append(s.clients, &client)
 	s.ilgr.Printf("DEBUG: client-IP %s (register) as: %s", client.IP, client.name)
 
 	return &client

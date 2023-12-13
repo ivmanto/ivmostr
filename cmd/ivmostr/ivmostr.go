@@ -80,24 +80,24 @@ func main() {
 		ml.Printf("Firestore project id %v is empty. Exit: unable to proceed.", prj)
 		panic(nil)
 	}
-	client, err := firestore.NewClient(ctx, prj)
+	clientFrst, err := firestore.NewClient(ctx, prj)
 	if err != nil {
 		ml.Printf("firestore client init error %s.\n Exit: unable to proceed.", err.Error())
 		panic(err)
 	}
-	defer client.Close()
+	defer clientFrst.Close()
 
 	// Initialize the firestore repository and configuration
 	dlv := cfg.GetDLV()
 	ecn := cfg.GetEventsCollectionName()
 
-	nostrRepo, err := firestoredb.NewNostrRepository(&ctx, client, dlv, ecn)
+	nostrRepo, err := firestoredb.NewNostrRepository(&ctx, clientFrst, dlv, ecn)
 	if err != nil {
 		ml.Printf("firestore repository init error %s.\n Exit: unable to proceed.", err.Error())
 		panic(err)
 	}
 	listRepo, err := firestoredb.NewListRepository(
-		&ctx, client, cfg.GetWhiteListCollectionName(), cfg.GetBlackListCollectionName())
+		&ctx, clientFrst, cfg.GetWhiteListCollectionName(), cfg.GetBlackListCollectionName())
 	if err != nil {
 		ml.Printf("firestore repository init error %s.\n Exit: unable to proceed.", err.Error())
 		panic(err)
