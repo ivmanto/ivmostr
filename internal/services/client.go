@@ -1,14 +1,21 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
+	"golang.org/x/sync/errgroup"
+)
+
+var (
+	nbmrevents int
 )
 
 type Client struct {
@@ -115,15 +122,6 @@ func (c *Client) write(msg *[]interface{}) error {
 	return nil
 }
 
-func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
-	// [ ]: implement the logic to handle the REQ message type
-	if len(*msg) < 2 {
-		c.lgr.Printf("ERROR: invalid REQ message: %v", *msg)
-		return fmt.Errorf("invalid REQ message: %v", *msg)
-	}
-	return nil
-}
-
 func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 	// [ ]: implement the logic to handle the CLOSE message type
 	if len(*msg) < 2 {
@@ -206,6 +204,72 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	go c.session.BroadcasterQueue(*e)
 
 	return c.writeEventNotice(e.ID, true, "")
+}
+
+func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
+
+	//["REQ", <subscription_id>, <filters JSON>...], used to request events and subscribe to new updates.
+	// [x] <subscription_id> is an arbitrary, non-empty string of max length 64 chars, that should be used to represent a subscription.
+	var subscription_id string
+	var filter map[string]interface{}
+
+	if len(*msg) >= 2 {
+		subscription_id = (*msg)[1].(string)
+		if subscription_id == "" || len(subscription_id) > 64 {
+			//[!] protocol error
+			c.errorRate[c.IP]++
+			return c.writeCustomNotice("Error: Invalid subscription_id")
+		}
+	} else {
+		return c.writeCustomNotice("Error: Missing subscription_id")
+	}
+
+	// Identify subscription filters
+	var msgfilters = []map[string]interface{}{}
+	if len(*msg) >= 3 {
+		for idx, v := range *msg {
+			if idx > 1 && idx < 5 {
+				filter = v.(map[string]interface{})
+				msgfilters = append(msgfilters, filter)
+			}
+		}
+	}
+
+	// [x] Relays should manage <subscription_id>s independently for each WebSocket connection; even if <subscription_id>s are the same string, they should be treated as different subscriptions for different connections
+
+	if c.Subscription_id != "" {
+		if c.Subscription_id == subscription_id {
+			// [x] OVERWRITE subscription fileters
+			c.Filetrs = []map[string]interface{}{}
+			c.Filetrs = append(c.Filetrs, msgfilters...)
+
+			err := c.SubscriptionSuplier()
+			if err != nil {
+				return err
+			}
+
+			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
+
+			return c.writeCustomNotice("Update: The subscription filter has been overwriten.")
+		} else {
+			// [!] protocol error
+			c.errorRate[c.IP]++
+			em := fmt.Sprintf("Error: There is already an active subscription for this connection with subscription_id: %v, the new subID %v is ignored.", c.Subscription_id, subscription_id)
+			return c.writeCustomNotice(em)
+		}
+	}
+	c.Subscription_id = subscription_id
+	c.Filetrs = append(c.Filetrs, msgfilters...)
+
+	err := c.SubscriptionSuplier()
+	if err != nil {
+		return err
+	}
+
+	c.lgr.Printf("NEW [%s]: subscription id: %s with filter %v", c.IP, c.Subscription_id, msgfilters)
+
+	return c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
+
 }
 
 // ****************************** Auxilary function ***********************************************
@@ -294,4 +358,75 @@ func (c *Client) writeCustomNotice(notice_msg string) error {
 // Get Filters returns the filters of the current client's subscription
 func (c *Client) GetFilters() []map[string]interface{} {
 	return c.Filetrs
+}
+
+// Protocol definition: ["EOSE", <subscription_id>], used to indicate that the relay has no more events to send for a subscription.
+func (c *Client) writeEOSE(subID string) error {
+	var eose = []interface{}{"EOSE", subID}
+	return c.write(&eose)
+}
+
+// *****************************************************************************
+// 		Subscription Supplier method for initial subs load
+// *****************************************************************************
+
+func (c *Client) SubscriptionSuplier() error {
+	nbmrevents = 0
+	ctx := context.Background()
+	responseRate := time.Now().UnixMilli()
+
+	err := c.fetchAllFilters(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Send EOSE
+	errcls := c.writeEOSE(c.Subscription_id)
+	if errcls != nil {
+		return errcls
+	}
+
+	rslt := time.Now().UnixMilli() - responseRate
+	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
+	return nil
+}
+
+// This will be running all filters per subscription in parallel
+func (c *Client) fetchAllFilters(ctx context.Context) error {
+
+	eg := errgroup.Group{}
+
+	// Run all the HTTP requests in parallel
+	for _, filter := range c.Filetrs {
+		fltr := filter
+		eg.Go(func() error {
+			return c.fetchData(fltr, &eg)
+		})
+	}
+
+	// Wait for completion and return the first error (if any)
+	return eg.Wait()
+}
+
+func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) error {
+	// Function to fetch data from the specified filter
+	return func() error {
+
+		// method is used for DEBUG info review
+		//c.session.printFilter(filter, c)
+
+		events, err := c.repo.GetEventsByFilter(filter)
+		if err != nil {
+			c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+			return err
+		}
+		nbmrevents += len(events)
+
+		err = c.write(&[]interface{}{events})
+		if err != nil {
+			c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+			return err
+		}
+		return nil
+	}()
 }
