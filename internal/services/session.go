@@ -7,19 +7,20 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
 )
 
 var (
 	NewEvent = make(chan *gn.Event)
-	queue    []*gn.Event
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -28,6 +29,7 @@ type Session struct {
 	seq     uint
 	clients []*Client
 	ns      map[string]*Client
+	bq      map[string]gn.Event
 	out     chan []byte
 	ilgr    *log.Logger
 	elgr    *log.Logger
@@ -39,6 +41,7 @@ type Session struct {
 func NewSession(pool *gopool.Pool) *Session {
 	session := Session{
 		ns:   make(map[string]*Client),
+		bq:   make(map[string]gn.Event),
 		out:  make(chan []byte, 1),
 		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
@@ -47,7 +50,7 @@ func NewSession(pool *gopool.Pool) *Session {
 	}
 
 	// [ ]: review and rework the event broadcaster
-	// go session.NewEventBroadcaster()
+	go session.NewEventBroadcaster()
 
 	return &session
 }
@@ -176,50 +179,63 @@ func (s *Session) TuneClientConn(client *Client) {
 	})
 }
 
-func (s *Session) BroadcasterQueue(e *gn.Event) {
+func (s *Session) BroadcasterQueue(e gn.Event) {
 	// [ ]: form a queue of events to be broadcasted
-	queue = append(queue, e)
+	s.mu.Lock()
+	s.bq[e.ID] = e
+	s.mu.Unlock()
+	NewEvent <- &e
 }
 
 // [ ]: to re-work the event broadcaster
-// func (s *Session) NewEventBroadcaster() {
-// 	for {
-// 		e := <-NewEvent
-// 		if e != nil && e.Kind != 22242 {
-// 			for _, client := range s.ns {
-// 				if client.Subscription_id == "" {
-// 					continue
-// 				}
-// 				//nip-04 requires clients authentication before sending kind:4 encrypted Dms
-// 				if e.Kind == 4 && !client.Authed {
-// 					continue
-// 				} else if e.Kind == 4 && client.Authed {
-// 					tag := e.Tags[0]
-// 					recp := strings.Split(tag[1], ",")
-// 					if len(recp) > 1 {
-// 						if client.npub == recp[1] {
-// 							evs := []*gn.Event{e}
-// 							err := client.write(evs)
-// 							if err != nil {
-// 								client.lgr.Printf("ERROR: error while sending event to client: %v", err)
-// 							}
-// 							break
-// 						}
-// 					}
-// 				}
-// 				//client.lgr.Printf("NewEventBroadcaster for client: %s, event %v", client.name, e)
-// 				if filterMatch(e, client.GetFilters()) {
-// 					evs := []*gn.Event{e}
-// 					err := client.Send2(evs)
-// 					if err != nil {
-// 						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
-// 						continue
-// 					}
-// 					continue
-// 				}
-// 				//client.lgr.Printf("No matching filter found for event: %v", e)
-// 			}
-// 		}
-// 		//e = nil
-// 	}
-// }
+func (s *Session) NewEventBroadcaster() {
+	for {
+		e := <-NewEvent
+		if e != nil && e.Kind != 22242 {
+			for _, client := range s.ns {
+				if client.Subscription_id == "" {
+					continue
+				}
+				//nip-04 requires clients authentication before sending kind:4 encrypted Dms
+				if e.Kind == 4 && !client.Authed {
+					continue
+				} else if e.Kind == 4 && client.Authed {
+					tag := e.Tags[0]
+					recp := strings.Split(tag[1], ",")
+					if len(recp) > 1 {
+						if client.npub == recp[1] {
+							evs := []interface{}{e}
+							err := client.write(&evs)
+							if err != nil {
+								client.lgr.Printf("ERROR: error while sending event to client: %v", err)
+							}
+							break
+						}
+					}
+				}
+
+				if filterMatch(e, client.GetFilters()) {
+					evs := []interface{}{e}
+					err := client.write(&evs)
+					if err != nil {
+						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
+						continue
+					}
+					continue
+				}
+				//client.lgr.Printf("No matching filter found for event: %v", e)
+			}
+		}
+		//e = nil
+	}
+}
+
+// Checking if the specific event `e` matches atleast one of the filters of customers subscription;
+func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
+	for _, filter := range filters {
+		if tools.FilterMatchSingle(e, filter) {
+			return true
+		}
+	}
+	return false
+}

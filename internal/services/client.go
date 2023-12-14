@@ -20,7 +20,7 @@ type Client struct {
 	repo    nostr.NostrRepo
 	lrepo   nostr.ListRepo
 	//challenge       string
-	//npub            string
+	npub            string
 	Subscription_id string
 	Filetrs         []map[string]interface{}
 	errorRate       map[string]int
@@ -201,7 +201,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	}
 
 	// [ ]: fire-up a new go routine to handle the NEW event broadcating for all the clients having subscriptions with at least one filter matching the event paramateres.
-	go c.session.BroadcasterQueue(e)
+	go c.session.BroadcasterQueue(*e)
 
 	return c.writeEventNotice(e.ID, true, "")
 }
@@ -287,4 +287,9 @@ func composeErrorMsg(err error) string {
 func (c *Client) writeCustomNotice(notice_msg string) error {
 	var note = []interface{}{"NOTICE", notice_msg}
 	return c.write(&note)
+}
+
+// Get Filters returns the filters of the current client's subscription
+func (c *Client) GetFilters() []map[string]interface{} {
+	return c.Filetrs
 }
