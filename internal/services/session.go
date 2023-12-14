@@ -121,7 +121,6 @@ func (s *Session) randName() string {
 		}
 		suffix += strconv.Itoa(rand.Intn(10))
 	}
-	// return ""
 }
 
 // mutex must be held.
@@ -184,7 +183,9 @@ func (s *Session) BroadcasterQueue(e gn.Event) {
 	s.mu.Lock()
 	s.bq[e.ID] = e
 	s.mu.Unlock()
-	NewEvent <- &e
+	for _, v := range s.bq {
+		NewEvent <- &v
+	}
 }
 
 // [ ]: to re-work the event broadcaster
@@ -192,6 +193,7 @@ func (s *Session) NewEventBroadcaster() {
 	for {
 		e := <-NewEvent
 		if e != nil && e.Kind != 22242 {
+			s.ilgr.Printf(" ...-= starting new event braodcasting =-...")
 			for _, client := range s.ns {
 				if client.Subscription_id == "" {
 					continue
@@ -221,12 +223,18 @@ func (s *Session) NewEventBroadcaster() {
 						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
 						continue
 					}
+
+					s.mu.Lock()
+					delete(s.bq, e.ID)
+					s.mu.Unlock()
 					continue
 				}
-				//client.lgr.Printf("No matching filter found for event: %v", e)
 			}
+			s.mu.Lock()
+			delete(s.bq, e.ID)
+			s.mu.Unlock()
+			continue
 		}
-		//e = nil
 	}
 }
 

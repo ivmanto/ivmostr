@@ -91,7 +91,7 @@ func handle(conn *websocket.Conn, ip, org string) {
 
 	client := session.Register(conn, repo, lrepo, ip)
 
-	fmt.Printf("DEBUG: client %v connected from [%v], Origin: [%v]", client.Name(), ip, org)
+	fmt.Printf("DEBUG: client %v connected from [%v], Origin: [%v]\n", client.Name(), ip, org)
 
 	session.TuneClientConn(client)
 
@@ -99,9 +99,9 @@ func handle(conn *websocket.Conn, ip, org string) {
 	pool.Schedule(func() {
 		if err := client.ReceiveMsg(); err != nil {
 			if strings.Contains(err.Error(), "websocket: close 1001") {
-				fmt.Printf("ERROR: client %s closed the connection. %v", client.IP, err)
+				fmt.Printf("ERROR: client %s closed the connection. %v\n", client.IP, err)
 			} else {
-				fmt.Printf("ERROR client-side %s (HandleWebSocket): %v", client.IP, err)
+				fmt.Printf("ERROR client-side %s (HandleWebSocket): %v\n", client.IP, err)
 			}
 
 			session.Remove(client)
