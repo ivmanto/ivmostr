@@ -223,11 +223,6 @@ func (s *Session) NewEventBroadcaster() {
 						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
 						continue
 					}
-
-					s.mu.Lock()
-					delete(s.bq, e.ID)
-					s.mu.Unlock()
-					continue
 				}
 			}
 			s.mu.Lock()

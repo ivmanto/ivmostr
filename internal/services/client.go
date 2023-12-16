@@ -63,9 +63,43 @@ func (c *Client) ReceiveMsg() error {
 	// Receive errors from the channel and handle them
 	for err := range errRM {
 		if err != nil {
-			fmt.Println("Error received:\n", err)
+			fmt.Println("Error received:", err)
 			// Perform error handling or logging here
 			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) write(msg *[]interface{}) error {
+	errWM := make(chan error)
+	mutex := sync.Mutex{}
+
+	go func() {
+		for {
+			// [ ]: implement the logic to send the message to the client
+			if msg != nil {
+				mutex.Lock()
+				err := c.conn.WriteJSON(msg)
+				mutex.Unlock()
+				if err != nil {
+					c.lgr.Printf("[write] Error writing message: %v", err)
+					errWM <- err
+				}
+				msg = nil
+			}
+
+			errWM <- nil
+		}
+	}()
+
+	for err := range errWM {
+		if err != nil {
+			fmt.Println("Error received:", err)
+			// Perform error handling or logging here
+			return err
+		} else {
+			return nil
 		}
 	}
 	return nil
@@ -89,36 +123,6 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 		c.lgr.Printf("ERROR: unknown message type: %v", (*msg)[0])
 	}
 
-	return nil
-}
-
-func (c *Client) write(msg *[]interface{}) error {
-	errWM := make(chan error)
-	mutex := sync.Mutex{}
-
-	go func() {
-		for {
-			// [ ]: implement the logic to send the message to the client
-			if msg != nil {
-				mutex.Lock()
-				err := c.conn.WriteJSON(msg)
-				mutex.Unlock()
-				if err != nil {
-					log.Println("Error writing message:", err)
-					errWM <- err
-				}
-				msg = nil
-			}
-
-			errWM <- nil
-		}
-	}()
-
-	for err := range errWM {
-		fmt.Println("Error received:", err)
-		// Perform error handling or logging here
-		return err
-	}
 	return nil
 }
 
@@ -243,12 +247,13 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 			c.Filetrs = []map[string]interface{}{}
 			c.Filetrs = append(c.Filetrs, msgfilters...)
 
-			err := c.SubscriptionSuplier()
-			if err != nil {
-				return err
-			}
+			// err := c.SubscriptionSuplier()
+			// if err != nil {
+			// 	return err
+			// }
 
 			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
+			c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
 
 			return c.writeCustomNotice("Update: The subscription filter has been overwriten.")
 		} else {
@@ -261,18 +266,19 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Subscription_id = subscription_id
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
-	err := c.SubscriptionSuplier()
-	if err != nil {
-		return err
-	}
+	// err := c.SubscriptionSuplier()
+	// if err != nil {
+	// 	return err
+	// }
 
 	c.lgr.Printf("NEW [%s]: subscription id: %s with filter %v", c.IP, c.Subscription_id, msgfilters)
+	c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
 
 	return c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 
 }
 
-// ****************************** Auxilary function ***********************************************
+// ****************************** Auxilary methods ***********************************************
 
 // Protocol definition: ["OK", <event_id>, <true|false>, <message>], used to indicate acceptance or denial of an EVENT message.
 //
@@ -290,6 +296,17 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 func (c *Client) writeEventNotice(event_id string, accepted bool, message string) error {
 	var note = []interface{}{"OK", event_id, accepted, message}
 	return c.write(&note)
+}
+
+func (c *Client) writeCustomNotice(notice_msg string) error {
+	var note = []interface{}{"NOTICE", notice_msg}
+	return c.write(&note)
+}
+
+// Protocol definition: ["EOSE", <subscription_id>], used to indicate that the relay has no more events to send for a subscription.
+func (c *Client) writeEOSE(subID string) error {
+	var eose = []interface{}{"EOSE", subID}
+	return c.write(&eose)
 }
 
 // mapToEvent converts a map[string]interface{} to a gn.Event
@@ -350,20 +367,9 @@ func composeErrorMsg(err error) string {
 	return emsg
 }
 
-func (c *Client) writeCustomNotice(notice_msg string) error {
-	var note = []interface{}{"NOTICE", notice_msg}
-	return c.write(&note)
-}
-
 // Get Filters returns the filters of the current client's subscription
 func (c *Client) GetFilters() []map[string]interface{} {
 	return c.Filetrs
-}
-
-// Protocol definition: ["EOSE", <subscription_id>], used to indicate that the relay has no more events to send for a subscription.
-func (c *Client) writeEOSE(subID string) error {
-	var eose = []interface{}{"EOSE", subID}
-	return c.write(&eose)
 }
 
 // *****************************************************************************
