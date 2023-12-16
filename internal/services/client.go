@@ -204,6 +204,9 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		return c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 	}
 
+	// The customer name is required in NewEventBroadcaster method in order to skip the broadcast process for the customer that brought the event on the relay.
+	e.SetExtra("cname", c.name)
+
 	// [ ]: fire-up a new go routine to handle the NEW event broadcating for all the clients having subscriptions with at least one filter matching the event paramateres.
 	go c.session.BroadcasterQueue(*e)
 

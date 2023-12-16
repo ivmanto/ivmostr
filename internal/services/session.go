@@ -195,7 +195,7 @@ func (s *Session) NewEventBroadcaster() {
 		if e != nil && e.Kind != 22242 {
 			s.ilgr.Printf(" ...-= starting new event braodcasting =-...")
 			for _, client := range s.ns {
-				if client.Subscription_id == "" {
+				if client.Subscription_id == "" || client.name == e.GetExtraString("cname") {
 					continue
 				}
 				//nip-04 requires clients authentication before sending kind:4 encrypted Dms
