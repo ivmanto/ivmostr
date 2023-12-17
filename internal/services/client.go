@@ -250,10 +250,10 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 			c.Filetrs = []map[string]interface{}{}
 			c.Filetrs = append(c.Filetrs, msgfilters...)
 
-			// err := c.SubscriptionSuplier()
-			// if err != nil {
-			// 	return err
-			// }
+			err := c.SubscriptionSuplier()
+			if err != nil {
+				return err
+			}
 
 			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 			c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
@@ -269,10 +269,10 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Subscription_id = subscription_id
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
-	// err := c.SubscriptionSuplier()
-	// if err != nil {
-	// 	return err
-	// }
+	err := c.SubscriptionSuplier()
+	if err != nil {
+		return err
+	}
 
 	c.lgr.Printf("NEW [%s]: subscription id: %s with filter %v", c.IP, c.Subscription_id, msgfilters)
 	c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)

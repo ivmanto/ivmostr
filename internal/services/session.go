@@ -188,7 +188,7 @@ func (s *Session) BroadcasterQueue(e gn.Event) {
 	}
 }
 
-// [ ]: to re-work the event broadcaster
+// [x]: to re-work the event broadcaster
 func (s *Session) NewEventBroadcaster() {
 	for {
 		e := <-NewEvent
