@@ -43,16 +43,15 @@ func controlIPConn(h http.Handler) http.Handler {
 			if ip == "127.0.0.1" {
 				ip = r.RemoteAddr
 			}
+			if ipCount[ip] > 0 {
+				log.Printf("[MW-ipc] Too many requests [%d] from %s", ipCount[ip], ip)
+				http.Error(w, "Bad request", http.StatusForbidden)
+				return
+			}
 			mu.Lock()
 			ipCount[ip]++
 			mu.Unlock()
 			log.Printf("[MW-ipc] [+] IP: %s", ip)
-		}
-
-		if ipCount[ip] >= 3 {
-			log.Printf("[MW-ipc] Too many requests [%d] from %s", ipCount[ip], ip)
-			http.Error(w, "Bad request", http.StatusForbidden)
-			return
 		}
 
 		// defer func() {
