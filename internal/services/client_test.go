@@ -33,6 +33,7 @@ var (
 	ecn       string = "events"
 	pool             = gopool.NewPool(128, 2, 1)
 	session          = NewSession(pool)
+	message   []interface{}
 )
 
 var client = Client{
@@ -79,6 +80,11 @@ func GetConnected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error connecting to echo server: %v", err)
 	}
+
+	// set the client's connection to the echo server
+	client.conn = conn
+	client.session = session
+	client.repo = nostrRepo
 }
 
 func Echo(w http.ResponseWriter, r *http.Request) {
@@ -112,9 +118,6 @@ func EchoServer() {
 // generate unit test for the write method of the client using the echo server above
 func TestWrite(t *testing.T) {
 
-	// set the client's connection to the echo server
-	client.conn = conn
-
 	// create a message to send to the echo server
 	message := []interface{}{"hello world"}
 
@@ -139,13 +142,8 @@ func TestWrite(t *testing.T) {
 // using the EchoServer above write some tests for handlerEventMsgs
 func TestHandlerEventMsgs(t *testing.T) {
 
-	// set the client's connection to the echo server
-	client.conn = conn
-	client.session = session
-	client.repo = nostrRepo
-
 	// create a message to send to the client
-	message := []interface{}{"EVENT", map[string]interface{}{"id": "b22f429ac7222530b6111191c160cdf5730a482ab18177c380b138278e443afa", "pubkey": "9f9c3e46933b9a33702abde78383745a1ebcd99f59a53ec9286beee72a1072de",
+	message = []interface{}{"EVENT", map[string]interface{}{"id": "b22f429ac7222530b6111191c160cdf5730a482ab18177c380b138278e443afa", "pubkey": "9f9c3e46933b9a33702abde78383745a1ebcd99f59a53ec9286beee72a1072de",
 		"created_at": 1697743946,
 		"kind":       1,
 		"tags":       []interface{}{[]string{"e", "", "wss://nostr.ivmanto.dev"}},
@@ -196,7 +194,25 @@ func TestHandlerEventMsgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
 	}
+}
 
-	// close the connection to the echo server
-	conn.Close()
+func TestHandlerReqMsgs(t *testing.T) {
+
+	client.Subscription_id = ""
+	client.Filetrs = []map[string]interface{}{}
+
+	// create a message to send to the client
+	message = []interface{}{"REQ", "read_1565697166", map[string]interface{}{
+		"limit": 1,
+		"kinds": []int{1},
+	}}
+
+	err = client.handlerReqMsgs(&message)
+	if err != nil {
+		t.Fatalf("error create subscription %v", err)
+	}
+
+	if client.Subscription_id != "read_1565697166" || client.Filetrs == nil {
+		t.Fatalf("subscribing the client failed")
+	}
 }
