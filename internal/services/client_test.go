@@ -3,10 +3,16 @@ package services
 //write me example of mirroring websocket server using gorilla/websocket
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"strings"
 	"testing"
 
+	"cloud.google.com/go/firestore"
+	"github.com/dasiyes/ivmostr-tdd/internal/data/firestoredb"
+	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
+	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/gorilla/websocket"
 )
 
@@ -15,15 +21,29 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
+// connect to the echo server
+var (
+	rslmsg    []interface{}
+	conn      *websocket.Conn
+	nostrRepo nostr.NostrRepo
+	err       error
+	ctx              = context.Background()
+	prj              = "ivm-ostr-srv"
+	dlv       int    = 20
+	ecn       string = "events"
+	pool             = gopool.NewPool(128, 2, 1)
+	session          = NewSession(pool)
+)
+
 var client = Client{
-	conn:    nil,
-	lgr:     nil,
-	id:      0,
-	name:    "",
-	session: nil,
-	repo:    nil,
-	lrepo:   nil,
-	//challenge:       "",
+	conn:            nil,
+	lgr:             log.New(log.Writer(), "client: ", log.LstdFlags),
+	id:              0,
+	name:            "",
+	session:         nil,
+	repo:            nostrRepo,
+	lrepo:           nil,
+	challenge:       "",
 	npub:            "",
 	Subscription_id: "",
 	Filetrs:         []map[string]interface{}{},
@@ -32,9 +52,33 @@ var client = Client{
 	Authed:          false,
 }
 
+// create a new echo server
+
 func init() {
+	// Init the repo
+	clientFrst, err := firestore.NewClient(ctx, prj)
+	if err != nil {
+		client.lgr.Printf("error creating firestore client: %v", err)
+		panic(err)
+	}
+	//defer clientFrst.Close()
+
+	nostrRepo, err = firestoredb.NewNostrRepository(&ctx, clientFrst, dlv, ecn)
+	if err != nil {
+		client.lgr.Printf("error creating firestore repo: %v", err)
+		panic(err)
+	}
+
 	// create a new echo server
 	go EchoServer()
+	GetConnected(nil)
+}
+
+func GetConnected(t *testing.T) {
+	conn, _, err = websocket.DefaultDialer.Dial("ws://localhost:8080/echo", nil)
+	if err != nil {
+		t.Fatalf("error connecting to echo server: %v", err)
+	}
 }
 
 func Echo(w http.ResponseWriter, r *http.Request) {
@@ -68,12 +112,6 @@ func EchoServer() {
 // generate unit test for the write method of the client using the echo server above
 func TestWrite(t *testing.T) {
 
-	// connect to the echo server
-	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:8080/echo", nil)
-	if err != nil {
-		t.Fatalf("error connecting to echo server: %v", err)
-	}
-
 	// set the client's connection to the echo server
 	client.conn = conn
 
@@ -87,9 +125,7 @@ func TestWrite(t *testing.T) {
 	}
 
 	// read the message from the echo server
-	var rslmsg []interface{}
 	err = conn.ReadJSON(&rslmsg)
-
 	if err != nil {
 		t.Fatalf("error reading message from echo server: %v", err)
 	}
@@ -98,51 +134,67 @@ func TestWrite(t *testing.T) {
 	if string(rslmsg[0].(string)) != "hello world" {
 		t.Fatalf("error: message received from echo server is not the same as message sent to client")
 	}
-
-	// close the connection to the echo server
-	conn.Close()
 }
 
 // using the EchoServer above write some tests for handlerEventMsgs
 func TestHandlerEventMsgs(t *testing.T) {
 
-	// connect to the echo server
-	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:8080/echo", nil)
-	if err != nil {
-		t.Fatalf("error connecting to echo server: %v", err)
-	}
-
 	// set the client's connection to the echo server
 	client.conn = conn
+	client.session = session
+	client.repo = nostrRepo
 
 	// create a message to send to the client
-	message := []interface{}{"EVENT", map[string]interface{}{
-		"id":         "1234567890",
-		"pubkey":     "npub1234567890",
-		"created_at": 1654907465,
-		"kind":       3,
-		"tags":       [][]string{{"contact", "list"}},
-		"content":    "hello world",
-		"sig":        "sig1234567890",
+	message := []interface{}{"EVENT", map[string]interface{}{"id": "b22f429ac7222530b6111191c160cdf5730a482ab18177c380b138278e443afa", "pubkey": "9f9c3e46933b9a33702abde78383745a1ebcd99f59a53ec9286beee72a1072de",
+		"created_at": 1697743946,
+		"kind":       1,
+		"tags":       []interface{}{[]string{"e", "", "wss://nostr.ivmanto.dev"}},
+		"content":    "Test event by ivmanto", "sig": "77d4065b1dda7320f3257083efecbc2db6265f3b2c5b28607ffd31acb3d0f5f1a272f81d9482cd56c96368cb0c8f1a840845e9adb13bb295b639040ae91333e1",
 	}}
 
-	// write the message to the client
-	err = client.write(&message)
-	if err != nil {
-		t.Fatalf("error writing message to client: %v", err)
+	// first delete the event from firestore repo
+	doc_id := message[1].(map[string]interface{})["id"].(string)
+	if doc_id == "" {
+		t.Fatalf("error: id not found or it is in wrong format")
 	}
 
-	// read the message from the echo server
-	var rslmsg []interface{}
-	err = conn.ReadJSON(&rslmsg)
-
+	err = client.repo.DeleteEvent(doc_id)
 	if err != nil {
-		t.Fatalf("error reading message from echo server: %v", err)
+		t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
 	}
 
+	// test TestHandlerEventMsgs -supposed to store the event in the DB
+	err = client.handlerEventMsgs(&message)
+	if err != nil {
+		t.Fatalf("error storing event in firestore repo: %v", err)
+	}
+
+	_ = conn.ReadJSON(&rslmsg)
 	// check that the message received from the echo server is the same as the message sent to the client
-	if string(rslmsg[0].(string)) != "OK" {
-		t.Fatalf("error: message received from echo server is not the same as message sent to client")
+	// string(`["OK","b22f429ac7222530b6111191c160cdf5730a482ab18177c380b138278e443afa",true,""]`)
+	if string(rslmsg[0].(string)) != "OK" || rslmsg[2].(bool) != true {
+		client.lgr.Printf("msg: %v", rslmsg...)
+		t.Fatalf("error: message received from echo server is not expected")
+	}
+
+	// testing TestHandlerEventMsgs function - return duplicated error message
+
+	err = client.handlerEventMsgs(&message)
+	if err != nil {
+		t.Fatalf("error: should return duplicated error message")
+	}
+
+	_ = conn.ReadJSON(&rslmsg)
+	// check that the message received from the echo server is the same as the message sent to the client
+	// recv:
+	//["OK","b22f429ac7222530b6111191c160cdf5730a482ab18177c380b138278e443afa",false,"duplicate: unable to save in clients repository. error: rpc error: code = AlreadyExists desc = Document already exists: projects/ivm-ostr-srv/databases/(default)/documents/events/b22f429ac7222530b6111191c160cdf5730a482ab18177c380b138278e443afa"]
+	if string(rslmsg[0].(string)) != "OK" || string(rslmsg[1].(string)) != "b22f429ac7222530b6111191c160cdf5730a482ab18177c380b138278e443afa" || !strings.Contains(string(rslmsg[3].(string)), "duplicate:") {
+		t.Fatalf("error: message received from echo server is not expected")
+	}
+
+	err = client.repo.DeleteEvent(doc_id)
+	if err != nil {
+		t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
 	}
 
 	// close the connection to the echo server

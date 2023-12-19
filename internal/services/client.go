@@ -382,7 +382,7 @@ func mapToEvent(m map[string]interface{}) (*gn.Event, error) {
 		case "created_at":
 			e.CreatedAt = getTS(value)
 		case "kind":
-			e.Kind = int(value.(float64))
+			e.Kind = getKind(value)
 		case "tags":
 			e.Tags = getTags(value.([]interface{}))
 		case "content":
@@ -402,17 +402,58 @@ func getTags(value []interface{}) gn.Tags {
 
 	for _, v := range value {
 		ss := []string{}
-		for _, v2 := range v.([]interface{}) {
-			ss = append(ss, fmt.Sprint(v2))
+		if _, ok := v.([]interface{}); !ok {
+			if _, ok := v.([]string); ok {
+				ss = append(ss, v.([]string)...)
+			} else {
+				t = gn.Tags{}
+				break
+			}
+		} else {
+			for _, v2 := range v.([]interface{}) {
+				ss = append(ss, fmt.Sprint(v2))
+			}
 		}
 		t = append(t, ss)
 	}
-
 	return t
 }
 
 func getTS(value interface{}) gn.Timestamp {
-	return gn.Timestamp(value.(float64))
+	if value == nil {
+		return gn.Timestamp(time.Now().Unix())
+	}
+
+	if _, ok := value.(float64); !ok {
+		if _, ok := value.(int); !ok {
+			if _, ok := value.(int64); !ok {
+				log.Println("invalid timestamp")
+				return 0
+			} else {
+				return gn.Timestamp(value.(int64))
+			}
+		} else {
+			return gn.Timestamp(value.(int))
+		}
+	} else {
+		return gn.Timestamp(value.(float64))
+	}
+}
+
+func getKind(value interface{}) int {
+	if _, ok := value.(float64); !ok {
+		if _, ok := value.(int64); !ok {
+			if _, ok := value.(int); !ok {
+				return -1
+			} else {
+				return value.(int)
+			}
+		} else {
+			return int(value.(int64))
+		}
+	} else {
+		return int(value.(float64))
+	}
 }
 
 func composeErrorMsg(err error) string {
