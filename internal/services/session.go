@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/logging"
+	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/dasiyes/ivmostr-tdd/tools"
@@ -35,6 +36,7 @@ type Session struct {
 	elgr    *log.Logger
 	clgr    *logging.Logger
 	pool    *gopool.Pool
+	cfg     *config.ServiceConfig
 }
 
 // NewSession creates a new WebSocket session.
@@ -54,19 +56,6 @@ func NewSession(pool *gopool.Pool) *Session {
 
 	return &session
 }
-
-// HandleWebSocket handles incoming WebSocket connections.
-// func (s *Session) HandleWebSocket(client *Client) error {
-// 	s.TuneClientConn(client)
-// 	s.ilgr.Printf("DEBUG: client-IP %s (handle-websocket) as: %s, client conn (RemoteAddr): %v", client.IP, client.name, client.conn.RemoteAddr())
-// 	//s.pool.Schedule(func() {
-// 	if err := client.ReceiveMsg(); err != nil {
-// 		s.elgr.Printf("ERROR client-side %s (start): %v", client.IP, err)
-// 		s.Remove(client)
-// 		return err
-// 	}
-// 	return nil
-// }
 
 // Register upgraded websocket connection as client in the sessions
 func (s *Session) Register(
@@ -179,7 +168,7 @@ func (s *Session) TuneClientConn(client *Client) {
 }
 
 func (s *Session) BroadcasterQueue(e gn.Event) {
-	// [ ]: form a queue of events to be broadcasted
+	// [x]: form a queue of events to be broadcasted
 	s.mu.Lock()
 	s.bq[e.ID] = e
 	s.mu.Unlock()
@@ -241,4 +230,8 @@ func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
 		}
 	}
 	return false
+}
+
+func (s *Session) SetConfig(cfg *config.ServiceConfig) {
+	s.cfg = cfg
 }

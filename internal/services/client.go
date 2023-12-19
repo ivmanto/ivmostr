@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -19,14 +20,14 @@ var (
 )
 
 type Client struct {
-	conn    *websocket.Conn
-	lgr     *log.Logger
-	id      uint
-	name    string
-	session *Session
-	repo    nostr.NostrRepo
-	lrepo   nostr.ListRepo
-	//challenge       string
+	conn            *websocket.Conn
+	lgr             *log.Logger
+	id              uint
+	name            string
+	session         *Session
+	repo            nostr.NostrRepo
+	lrepo           nostr.ListRepo
+	challenge       string
 	npub            string
 	Subscription_id string
 	Filetrs         []map[string]interface{}
@@ -123,24 +124,6 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 		c.lgr.Printf("ERROR: unknown message type: %v", (*msg)[0])
 	}
 
-	return nil
-}
-
-func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
-	// [ ]: implement the logic to handle the CLOSE message type
-	if len(*msg) < 2 {
-		c.lgr.Printf("ERROR: invalid CLOSE message: %v", *msg)
-		return fmt.Errorf("invalid CLOSE message: %v", *msg)
-	}
-	return nil
-}
-
-func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
-	// [ ]: implement the logic to handle the AUTH message type
-	if len(*msg) < 2 {
-		c.lgr.Printf("ERROR: invalid AUTH message: %v", *msg)
-		return fmt.Errorf("invalid AUTH message: %v", *msg)
-	}
 	return nil
 }
 
@@ -278,7 +261,81 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
 
 	return c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
+}
 
+func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
+
+	//[x] remove subscription id
+
+	if len(*msg) == 2 {
+		subscription_id := (*msg)[1].(string)
+		if c.Subscription_id == subscription_id {
+			c.Subscription_id = ""
+			c.Filetrs = []map[string]interface{}{}
+			return c.writeCustomNotice("Update: The subscription has been clodsed")
+		} else {
+			return c.writeCustomNotice("Error: Invalid subscription_id provided")
+		}
+	} else {
+		return c.writeCustomNotice("Error: Bad format of CLOSE message")
+	}
+}
+
+func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
+	// ["AUTH", <signed-event-json>] used to authenticate the client to the relay.
+
+	se, ok := (*msg)[1].(map[string]interface{})
+	if !ok {
+		_ = c.writeEventNotice("0", false, "invalid: unknown message format")
+	}
+
+	e, err := mapToEvent(se)
+	if err != nil {
+		return c.writeEventNotice(e.ID, false, "invalid:"+err.Error())
+	}
+
+	// [x]: The signed event is an ephemeral event **not meant to be published or queried**,
+	// [x]: It must be of `kind: 22242` and it should have at least **two tags**, one for the `relay URL` and one for the `challenge string` as received from the relay.
+	// [x]: Relays MUST exclude kind: 22242 events from being broadcasted to any client.
+	// [x]: created_at should be the current time (~ 10 mins max).
+
+	rsl, errv := e.CheckSignature()
+	if errv != nil {
+		lmsg := fmt.Sprintf("result %v, invalid: %v", rsl, errv.Error())
+		return c.writeEventNotice(e.ID, false, lmsg)
+	}
+
+	if e.Kind != 22242 {
+		return c.writeEventNotice(e.ID, false, "invalid: invalid AUTH message kind")
+	}
+
+	var t1, t2 bool
+
+	for _, v := range e.Tags {
+
+		// [x]: Convert v[1] value to URL format and verify the domain & subdomain names only. Avoid path, query, schemas and fragment.
+		if v[0] == "relay" && c.confirmURLDomainMatch(v[1]) {
+			t1 = true
+		}
+
+		if v[0] == "challenge" && v[1] == c.challenge {
+			t2 = true
+		}
+	}
+
+	if t1 && t2 {
+		now := gn.Timestamp(time.Now().Unix())
+		age := gn.Timestamp(600)
+		if e.CreatedAt+age > now {
+			c.Authed = true
+			c.npub = e.PubKey
+			return c.writeEventNotice(e.ID, true, "")
+		} else {
+			return c.writeEventNotice(e.ID, false, "Authentication failed")
+		}
+	} else {
+		return c.writeEventNotice(e.ID, false, "Authentication failed")
+	}
 }
 
 // ****************************** Auxilary methods ***********************************************
@@ -375,6 +432,21 @@ func (c *Client) GetFilters() []map[string]interface{} {
 	return c.Filetrs
 }
 
+func (c *Client) confirmURLDomainMatch(relayURL string) bool {
+
+	// convert url string to URL object
+	relURL, err := url.Parse(relayURL)
+	if err != nil {
+		_ = c.writeCustomNotice("ERROR: parsing provided relay URL")
+		return false
+	}
+
+	// get the relay HOST name from the configuration
+	cfg_relayHost := c.session.cfg.Relay_Host
+
+	return relURL.Hostname() == cfg_relayHost
+}
+
 // *****************************************************************************
 // 		Subscription Supplier method for initial subs load
 // *****************************************************************************
@@ -439,3 +511,5 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		return nil
 	}()
 }
+
+// ################# End of Subscription Supplier ##############################

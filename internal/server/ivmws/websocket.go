@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/logging"
+	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
@@ -25,23 +26,33 @@ var (
 type WSHandler struct {
 	lgr  *log.Logger
 	clgr *logging.Logger
+	cfg  *config.ServiceConfig
 }
 
-func NewWSHandler(l *log.Logger, cl *logging.Logger, _repo nostr.NostrRepo, _lrepo nostr.ListRepo) *WSHandler {
+func NewWSHandler(
+	l *log.Logger,
+	cl *logging.Logger,
+	_repo nostr.NostrRepo,
+	_lrepo nostr.ListRepo,
+	cfg *config.ServiceConfig,
+
+) *WSHandler {
 
 	hndlr := WSHandler{
 		lgr:  l,
 		clgr: cl,
+		cfg:  cfg,
 	}
 	// Setting up the repositories
 	repo = _repo
 	lrepo = _lrepo
 	// Setting up the websocket session and pool
-	workers := 128
-	queue := 2
+	workers := cfg.PoolMaxWorkers
+	queue := cfg.PoolQueue
 	spawn := 1
 	pool = gopool.NewPool(workers, queue, spawn)
 	session = services.NewSession(pool)
+	session.SetConfig(cfg)
 	return &hndlr
 }
 
