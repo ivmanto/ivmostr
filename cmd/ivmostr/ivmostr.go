@@ -139,7 +139,7 @@ func main() {
 	errs := make(chan error, 2)
 	go func() {
 		addr := ":" + cfg.Port
-		ml.Printf("...starting ivmostr instance at %s...", addr)
+		ml.Printf("...starting ivmostr (-tdd) instance at %s...", addr)
 		errs <- httpServer.Start(addr, hdlr)
 	}()
 

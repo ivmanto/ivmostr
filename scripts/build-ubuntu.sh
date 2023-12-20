@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-cd /Users/tonevSr/Documents/Programming/_proProjects/ivmostr
+cd /Users/tonevSr/Documents/Programming/_proProjects/ivmostr-tdd
 
 go clean
 # Set the environment variables
@@ -27,18 +27,20 @@ executable_file="ivmostr"
 scp "build/linux/ivmostr" "tonev@$server_ip:/home/tonev"
 
 # Handle the app versioning
-export VERSION_FILE=version.go
-export VERSION = $(shell git describe --tags --abbrev=0)
+VERSION_FILE="version"
+VERSION=$(git describe --tags --abbrev=0)
+pwd
+echo $VERSION
 
-if [ ! -f "$VERSION_FILE" ]; then
-  echo "Version file not found: $VERSION_FILE"
-  exit 1
+if [[ ! -f "$VERSION_FILE" ]]; then
+    echo "Version file not found: $VERSION_FILE"
+    exit 1
 fi
 
-NEW_VERSION=$((${VERSION:1} + 1))
+NEW_VERSION=$(((${VERSION:1} + 1)))
 
 echo "Updating version to $NEW_VERSION..."
 
-sed -i "s/const Version.*/const Version = \"$NEW_VERSION\"/" $VERSION_FILE
+sed -i "s/const Version.*/const Version = \"$NEW_VERSION\"\"/" $VERSION_FILE
 
 git add $VERSION_FILE

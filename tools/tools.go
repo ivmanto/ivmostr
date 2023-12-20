@@ -131,16 +131,16 @@ func ConvertToTS(v interface{}) (gn.Timestamp, error) {
 
 func PrintVersion() {
 
-	f, err := os.OpenFile("version.go", os.O_RDONLY, 0666)
+	f, err := os.OpenFile("version", os.O_RDONLY, 0666)
 	if err != nil {
-		fmt.Println("Error opening version.go file")
+		fmt.Println("Error opening version file")
 		return
 	}
 	defer f.Close()
 	b := make([]byte, 100)
 	_, err = f.Read(b)
 	if err != nil {
-		fmt.Println("Error reading version.go file")
+		fmt.Println("Error reading version file")
 		return
 	}
 	fmt.Println(string(b))
