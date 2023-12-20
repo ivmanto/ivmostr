@@ -18,11 +18,12 @@ import (
 func main() {
 	var (
 		// addr      = flag.String("listen", ":3333", "address to bind to")
-		// debug     = flag.String("pprof", "", "address for pprof http")
+		debug = flag.Bool("debug", false, "debug mode")
+		// pprof   = flag.String("pprof", "", "address for pprof http")
 		workers = flag.Int("workers", 0, "max workers count")
 		queue   = flag.Int("queue", 0, "workers task queue size")
 		// ioTimeout = flag.Duration("io_timeout", time.Millisecond*100, "i/o operations timeout")
-		cfgfn    = flag.String("config", "../../configs/config_debug.yaml", "--config=<file_name> configuration file name. Default is configs/config.yaml")
+		cfgfn    = flag.String("config", "configs/config.yaml", "--config=<file_name> configuration file name. Default is configs/config.yaml")
 		newEvent = flag.String("newEvent", "", "prints new event on the console as configured in the tools create-event")
 	)
 
@@ -33,6 +34,14 @@ func main() {
 		tools.PrintNewEvent()
 		os.Exit(0)
 	}
+
+	// Check debug mode request
+	if *debug {
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+		*cfgfn = "../../configs/config_debug.yaml"
+	}
+
+	//
 
 	// initializing the web application as a handler
 	var (
