@@ -40,6 +40,6 @@ fi
 echo "Updating version to $VERSION..."
 # sed -i "s/const Version.*/const Version = \"$VERSION\"\"/" $VERSION_FILE
 
-echo "w! $VERSION" > $VERSION_FILE
+echo "version: $VERSION" > $VERSION_FILE
 git add $VERSION_FILE
 git commit "version update to $VERSION"

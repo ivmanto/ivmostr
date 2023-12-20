@@ -19,13 +19,13 @@ func main() {
 	var (
 		// addr      = flag.String("listen", ":3333", "address to bind to")
 		debug = flag.Bool("debug", false, "debug mode")
+		vers  = flag.Bool("version", false, "prints version")
 		// pprof   = flag.String("pprof", "", "address for pprof http")
 		workers = flag.Int("workers", 0, "max workers count")
 		queue   = flag.Int("queue", 0, "workers task queue size")
 		// ioTimeout = flag.Duration("io_timeout", time.Millisecond*100, "i/o operations timeout")
 		cfgfn    = flag.String("config", "configs/config.yaml", "--config=<file_name> configuration file name. Default is configs/config.yaml")
 		newEvent = flag.String("newEvent", "", "prints new event on the console as configured in the tools create-event")
-		vers     = flag.String("version", "!", "prints version")
 	)
 
 	flag.Parse()
@@ -36,16 +36,16 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Request to print out the build version
+	if *vers {
+		tools.PrintVersion()
+		os.Exit(0)
+	}
+
 	// Check debug mode request
 	if *debug {
 		log.SetFlags(log.LstdFlags | log.Lshortfile)
 		*cfgfn = "../../configs/config_debug.yaml"
-	}
-
-	// Request to print out the build version
-	if *vers == "" {
-		tools.PrintVersion()
-		os.Exit(0)
 	}
 
 	// initializing the web application as a handler
