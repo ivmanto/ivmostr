@@ -89,13 +89,14 @@ func (s *Session) Register(
 
 		s.clients = append(s.clients, &client)
 
-		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": %s, "ts":%d}`, client.id, client.IP, client.name, time.Now().Unix())
+		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "ts":%d}`, client.id, client.IP, client.name, time.Now().Unix())
 
 		s.ilgr.Printf("%v", pld)
-		s.clgr.Log(logging.Entry{
+		lep := logging.Entry{
 			Severity: logging.Notice,
 			Payload:  pld,
-		})
+		}
+		s.clgr.Log(lep)
 
 	case "authenticated":
 		// generate the challenge string required by nip-42 authentication protocol
