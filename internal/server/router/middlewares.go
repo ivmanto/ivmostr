@@ -1,7 +1,7 @@
 package router
 
 import (
-	"log"
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
@@ -50,14 +50,14 @@ func controlIPConn(h http.Handler) http.Handler {
 				ip = r.RemoteAddr
 			}
 			if ivmws.IPCount[ip] > 0 {
-				log.Printf("[MW-ipc] Too many requests [%d] from %s", ivmws.IPCount[ip], ip)
+				fmt.Printf("[MW-ipc] Too many requests [%d] from %s\n", ivmws.IPCount[ip], ip)
 				http.Error(w, "Bad request", http.StatusForbidden)
 				return
 			}
 			mu.Lock()
 			ivmws.IPCount[ip]++
 			mu.Unlock()
-			log.Printf("[MW-ipc] [+] client IP %s increased to %d active connection", ip, ivmws.IPCount[ip])
+			fmt.Printf("[MW-ipc] [+] client IP %s increased to %d active connection\n", ip, ivmws.IPCount[ip])
 		}
 
 		h.ServeHTTP(w, r)

@@ -115,7 +115,7 @@ func (s *Session) Register(
 		_ = client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
 	}
 
-	fmt.Printf(" - %d active clients\n", len(s.clients))
+	fmt.Printf(" - %d active clients connected\n", len(s.clients))
 
 	return &client
 }

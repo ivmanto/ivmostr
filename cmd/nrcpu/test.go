@@ -12,7 +12,7 @@ func main() {
 	runtime.GOMAXPROCS(2)
 	var wg sync.WaitGroup
 	wg.Add(2)
-	fmt.Printf("Starting")
+	fmt.Printf("Starting\n")
 	go func() {
 		defer wg.Done()
 		for n := 0; n < 10; n++ {
