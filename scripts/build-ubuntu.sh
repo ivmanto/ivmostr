@@ -26,5 +26,19 @@ executable_file="ivmostr"
 # Copy the executable file to the Ubuntu server
 scp "build/linux/ivmostr" "tonev@$server_ip:/home/tonev"
 
-# Change the permissions of the executable file on the Ubuntu server
-#ssh "tonev@$server_ip" "chmod +x /usr/local/bin/$executable_file"
+# Handle the app versioning
+export VERSION_FILE=version.go
+export VERSION = $(shell git describe --tags --abbrev=0)
+
+if [ ! -f "$VERSION_FILE" ]; then
+  echo "Version file not found: $VERSION_FILE"
+  exit 1
+fi
+
+NEW_VERSION=$((${VERSION:1} + 1))
+
+echo "Updating version to $NEW_VERSION..."
+
+sed -i "s/const Version.*/const Version = \"$NEW_VERSION\"/" $VERSION_FILE
+
+git add $VERSION_FILE

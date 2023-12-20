@@ -25,6 +25,7 @@ func main() {
 		// ioTimeout = flag.Duration("io_timeout", time.Millisecond*100, "i/o operations timeout")
 		cfgfn    = flag.String("config", "configs/config.yaml", "--config=<file_name> configuration file name. Default is configs/config.yaml")
 		newEvent = flag.String("newEvent", "", "prints new event on the console as configured in the tools create-event")
+		vers     = flag.String("version", "!", "prints version")
 	)
 
 	flag.Parse()
@@ -41,7 +42,11 @@ func main() {
 		*cfgfn = "../../configs/config_debug.yaml"
 	}
 
-	//
+	// Request to print out the build version
+	if *vers == "" {
+		tools.PrintVersion()
+		os.Exit(0)
+	}
 
 	// initializing the web application as a handler
 	var (
