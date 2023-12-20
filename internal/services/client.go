@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -122,9 +122,8 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 		return c.handlerAuthMsgs(msg)
 	default:
 		c.lgr.Printf("ERROR: unknown message type: %v", (*msg)[0])
+		return c.writeCustomNotice("Error: invalid format of the received message")
 	}
-
-	return nil
 }
 
 // ****************************** Messages types Handlers ***********************************************
@@ -369,103 +368,28 @@ func (c *Client) writeEOSE(subID string) error {
 	return c.write(&eose)
 }
 
-// mapToEvent converts a map[string]interface{} to a gn.Event
-func mapToEvent(m map[string]interface{}) (*gn.Event, error) {
-	var e gn.Event
+// Generate challenge for the client to authenticate.
+func (c *Client) GenChallenge() {
 
-	for key, value := range m {
-		switch key {
-		case "id":
-			e.ID = value.(string)
-		case "pubkey":
-			e.PubKey = value.(string)
-		case "created_at":
-			e.CreatedAt = getTS(value)
-		case "kind":
-			e.Kind = getKind(value)
-		case "tags":
-			e.Tags = getTags(value.([]interface{}))
-		case "content":
-			e.Content = value.(string)
-		case "sig":
-			e.Sig = value.(string)
-		default:
-			log.Println("Unknown key:", key)
-		}
+	const charset = "abcdefghijklmnopqrstuvwxyz" +
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+	var seededRand *rand.Rand = rand.New(
+		rand.NewSource(time.Now().UnixNano()))
+
+	b := make([]byte, 16)
+
+	for i := range b {
+		b[i] = charset[seededRand.Intn(len(charset))]
 	}
 
-	return &e, nil
+	c.challenge = string(b)
 }
 
-func getTags(value []interface{}) gn.Tags {
-	var t gn.Tags
-
-	for _, v := range value {
-		ss := []string{}
-		if _, ok := v.([]interface{}); !ok {
-			if _, ok := v.([]string); ok {
-				ss = append(ss, v.([]string)...)
-			} else {
-				t = gn.Tags{}
-				break
-			}
-		} else {
-			for _, v2 := range v.([]interface{}) {
-				ss = append(ss, fmt.Sprint(v2))
-			}
-		}
-		t = append(t, ss)
-	}
-	return t
-}
-
-func getTS(value interface{}) gn.Timestamp {
-	if value == nil {
-		return gn.Timestamp(time.Now().Unix())
-	}
-
-	if _, ok := value.(float64); !ok {
-		if _, ok := value.(int); !ok {
-			if _, ok := value.(int64); !ok {
-				log.Println("invalid timestamp")
-				return 0
-			} else {
-				return gn.Timestamp(value.(int64))
-			}
-		} else {
-			return gn.Timestamp(value.(int))
-		}
-	} else {
-		return gn.Timestamp(value.(float64))
-	}
-}
-
-func getKind(value interface{}) int {
-	if _, ok := value.(float64); !ok {
-		if _, ok := value.(int64); !ok {
-			if _, ok := value.(int); !ok {
-				return -1
-			} else {
-				return value.(int)
-			}
-		} else {
-			return int(value.(int64))
-		}
-	} else {
-		return int(value.(float64))
-	}
-}
-
-func composeErrorMsg(err error) string {
-	var emsg string
-
-	if strings.Contains(err.Error(), "code = AlreadyExists") {
-		emsg = "duplicate: " + err.Error()
-	} else {
-		emsg = "error:" + err.Error()
-	}
-
-	return emsg
+// Protocol definition: ["AUTH", <challenge>], (nip-42) used to request authentication from the client.
+func (c *Client) writeAUTHChallenge() error {
+	var note = []interface{}{"AUTH", c.challenge}
+	return c.write(&note)
 }
 
 // Get Filters returns the filters of the current client's subscription

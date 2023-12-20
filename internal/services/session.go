@@ -51,7 +51,7 @@ func NewSession(pool *gopool.Pool) *Session {
 		pool: pool,
 	}
 
-	// [ ]: review and rework the event broadcaster
+	// [x]: review and rework the event broadcaster
 	go session.NewEventBroadcaster()
 
 	return &session
@@ -84,8 +84,35 @@ func (s *Session) Register(
 	}
 	s.mu.Unlock()
 
-	s.clients = append(s.clients, &client)
-	s.ilgr.Printf("DEBUG: client-IP %s (register) as: %s", client.IP, client.name)
+	switch s.cfg.Relay_access {
+	case "public":
+
+		s.clients = append(s.clients, &client)
+
+		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": %s, "ts":%d}`, client.id, client.IP, client.name, time.Now().Unix())
+
+		s.ilgr.Printf("%v", pld)
+		s.clgr.Log(logging.Entry{
+			Severity: logging.Notice,
+			Payload:  pld,
+		})
+
+	case "authenticated":
+		// generate the challenge string required by nip-42 authentication protocol
+		client.GenChallenge()
+
+		// Challenge the client to send AUTH message
+		_ = client.writeAUTHChallenge()
+
+	case "paid":
+		// [ ]: 1) required authentication - check for it and 2) check for active payment
+		_ = client.writeCustomNotice("restricted: this relay provides paid access only. Visit https://relay.ivmanto.dev for more information.")
+
+	default:
+		// Unknown relay access type - by default it is public
+		s.clients = append(s.clients, &client)
+		_ = client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
+	}
 
 	return &client
 }
