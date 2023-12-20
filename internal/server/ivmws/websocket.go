@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/logging"
@@ -21,6 +22,7 @@ var (
 	pool    *gopool.Pool
 	repo    nostr.NostrRepo
 	lrepo   nostr.ListRepo
+	IPCount map[string]int = make(map[string]int)
 )
 
 type WSHandler struct {
@@ -93,7 +95,6 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	org := r.Header.Get("Origin")
 
 	_ = pool.ScheduleTimeout(time.Millisecond, func() {
-
 		handle(conn, ip, org)
 	})
 }
@@ -116,9 +117,21 @@ func handle(conn *websocket.Conn, ip, org string) {
 			}
 
 			session.Remove(client)
+			RemoveIPCount(ip)
 			conn.Close()
 			return
 		}
 	})
+}
 
+// Handling clients' IP addresses
+func RemoveIPCount(ip string) {
+
+	mu := sync.Mutex{}
+	if ip != "" && IPCount[ip] > 0 {
+		mu.Lock()
+		IPCount[ip]--
+		mu.Unlock()
+		fmt.Printf("[ws-handle] [-] IP: %s", ip)
+	}
 }
