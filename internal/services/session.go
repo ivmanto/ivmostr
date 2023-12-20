@@ -40,14 +40,14 @@ type Session struct {
 }
 
 // NewSession creates a new WebSocket session.
-func NewSession(pool *gopool.Pool) *Session {
+func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 	session := Session{
 		ns:   make(map[string]*Client),
 		bq:   make(map[string]gn.Event),
 		out:  make(chan []byte, 1),
 		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
-		clgr: nil,
+		clgr: cl,
 		pool: pool,
 	}
 
