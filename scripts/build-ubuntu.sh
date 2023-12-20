@@ -37,10 +37,10 @@ if [[ ! -f "$VERSION_FILE" ]]; then
     exit 1
 fi
 
-NEW_VERSION=$(((${VERSION:1} + 1)))
+echo "Updating version to $VERSION..."
+# sed -i "s/const Version.*/const Version = \"$VERSION\"\"/" $VERSION_FILE
 
-echo "Updating version to $NEW_VERSION..."
-
-sed -i "s/const Version.*/const Version = \"$NEW_VERSION\"\"/" $VERSION_FILE
+ed 'w! ${VERSION}' > $VERSION_FILE
 
 git add $VERSION_FILE
+git commit -m 'version update to $VERSION'
