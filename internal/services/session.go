@@ -227,7 +227,9 @@ func (s *Session) NewEventBroadcaster() {
 					if len(recp) > 1 {
 						if client.npub == recp[1] {
 							evs := []interface{}{e}
+							s.mu.Lock()
 							err := client.write(&evs)
+							s.mu.Unlock()
 							if err != nil {
 								client.lgr.Printf("ERROR: error while sending event to client: %v", err)
 							}
