@@ -39,6 +39,11 @@ type Session struct {
 	cfg     *config.ServiceConfig
 }
 
+type CloseHandler struct {
+	code int
+	text string
+}
+
 // NewSession creates a new WebSocket session.
 func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 	session := Session{
@@ -181,7 +186,8 @@ func (s *Session) TuneClientConn(client *Client) {
 	}
 
 	client.conn.SetCloseHandler(func(code int, text string) error {
-		client.lgr.Printf("DEBUG: Closing client %v, code: %v, text: %v", client.conn.RemoteAddr().String(), code, text)
+		stop <- struct{}{}
+		client.lgr.Printf("[close]: Closing client %v, code: %v, text: %v", client.IP, code, text)
 		return nil
 	})
 
@@ -189,7 +195,9 @@ func (s *Session) TuneClientConn(client *Client) {
 		if appData == "ping" || appData == "PING" || appData == "Ping" {
 			fmt.Println("Received ping:", appData)
 			// Send a pong message in response to the ping
+			s.mu.Lock()
 			err := client.conn.WriteMessage(websocket.PingMessage, []byte("pong"))
+			s.mu.Unlock()
 			if err != nil {
 				client.lgr.Printf("ERROR client-side %s (ping-handler): %v", client.IP, err)
 			}
