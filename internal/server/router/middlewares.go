@@ -92,9 +92,8 @@ func serverinfo(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Header.Get("Accept") == "application/nostr+json" {
-			if r.URL.Path == "" || r.URL.Path == "/" {
-				r.URL.Path = "/v1/api/nip11"
-			}
+			http.Redirect(w, r, "/v1/api/nip11", http.StatusFound)
+			return
 		}
 		h.ServeHTTP(w, r)
 	})
