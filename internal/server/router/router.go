@@ -31,6 +31,7 @@ import (
 
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/api"
+	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 	"github.com/go-chi/chi"
@@ -42,6 +43,7 @@ type srvHandler struct {
 	clgr  *logging.Logger
 	repo  nostr.NostrRepo
 	lrepo nostr.ListRepo
+	cfg   *config.ServiceConfig
 	// ... add other dependencies here
 }
 
@@ -57,7 +59,7 @@ func (h *srvHandler) router() chi.Router {
 	// Handle requests to the root URL "/"
 	rtr.Route("/", func(wr chi.Router) {
 		lgr := log.New(os.Stdout, "[wsh] ", log.LstdFlags)
-		ws := ivmws.NewWSHandler(lgr, h.clgr, h.repo, h.lrepo)
+		ws := ivmws.NewWSHandler(lgr, h.clgr, h.repo, h.lrepo, h.cfg)
 		wr.Mount("/", ws.Router())
 	})
 
@@ -72,13 +74,14 @@ func (h *srvHandler) router() chi.Router {
 }
 
 // Handler to manage endpoints
-func NewHandler(l *log.Logger, cl *logging.Logger, repo nostr.NostrRepo, lrepo nostr.ListRepo) http.Handler {
+func NewHandler(l *log.Logger, cl *logging.Logger, repo nostr.NostrRepo, lrepo nostr.ListRepo, cfg *config.ServiceConfig) http.Handler {
 
 	e := srvHandler{
 		l:     l,
 		clgr:  cl,
 		repo:  repo,
 		lrepo: lrepo,
+		cfg:   cfg,
 	}
 	e.l.Printf("...initializing router (http server Handler) ...")
 

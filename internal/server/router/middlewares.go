@@ -1,15 +1,17 @@
 package router
 
 import (
-	"log"
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
+
+	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 )
 
 var (
-	ipCount = make(map[string]int)
-	mu      = &sync.Mutex{}
+	//ipCount = make(map[string]int)
+	mu = &sync.Mutex{}
 )
 
 // Handles the CORS part
@@ -32,35 +34,31 @@ func accessControl(h http.Handler) http.Handler {
 // Handles the IP address control part
 func controlIPConn(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ip string
 
-		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		ip = r.Header.Get("X-Real-IP")
+		if ip == "" {
+			ip = r.Header.Get("X-Forwarded-For")
+		}
 
 		if ip == "" {
-			ip = r.Header.Get("X-Real-IP")
+			ip, _, _ = net.SplitHostPort(r.RemoteAddr)
 		}
 
 		if ip != "" {
 			if ip == "127.0.0.1" {
 				ip = r.RemoteAddr
 			}
+			if ivmws.IPCount[ip] > 0 {
+				fmt.Printf("[MW-ipc] Too many requests [%d] from %s\n", ivmws.IPCount[ip], ip)
+				http.Error(w, "Bad request", http.StatusForbidden)
+				return
+			}
 			mu.Lock()
-			ipCount[ip]++
+			ivmws.IPCount[ip]++
 			mu.Unlock()
-			log.Printf("[MW-ipc] [+] IP: %s", ip)
+			fmt.Printf("[MW-ipc] [+] client IP %s increased to %d active connection\n", ip, ivmws.IPCount[ip])
 		}
-
-		if ipCount[ip] >= 3 {
-			log.Printf("[MW-ipc] Too many requests [%d] from %s", ipCount[ip], ip)
-			http.Error(w, "Bad request", http.StatusForbidden)
-			return
-		}
-
-		// defer func() {
-		// 	mu.Lock()
-		// 	ipCount[ip]--
-		// 	mu.Unlock()
-		// 	log.Printf("[MW-ipc] [-] IP: %s", ip)
-		// }()
 
 		h.ServeHTTP(w, r)
 	})

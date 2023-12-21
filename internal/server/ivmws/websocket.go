@@ -5,9 +5,11 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/logging"
+	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
@@ -20,28 +22,39 @@ var (
 	pool    *gopool.Pool
 	repo    nostr.NostrRepo
 	lrepo   nostr.ListRepo
+	IPCount map[string]int = make(map[string]int)
 )
 
 type WSHandler struct {
 	lgr  *log.Logger
 	clgr *logging.Logger
+	cfg  *config.ServiceConfig
 }
 
-func NewWSHandler(l *log.Logger, cl *logging.Logger, _repo nostr.NostrRepo, _lrepo nostr.ListRepo) *WSHandler {
+func NewWSHandler(
+	l *log.Logger,
+	cl *logging.Logger,
+	_repo nostr.NostrRepo,
+	_lrepo nostr.ListRepo,
+	cfg *config.ServiceConfig,
+
+) *WSHandler {
 
 	hndlr := WSHandler{
 		lgr:  l,
 		clgr: cl,
+		cfg:  cfg,
 	}
 	// Setting up the repositories
 	repo = _repo
 	lrepo = _lrepo
 	// Setting up the websocket session and pool
-	workers := 128
-	queue := 2
+	workers := cfg.PoolMaxWorkers
+	queue := cfg.PoolQueue
 	spawn := 1
 	pool = gopool.NewPool(workers, queue, spawn)
-	session = services.NewSession(pool)
+	session = services.NewSession(pool, cl)
+	session.SetConfig(cfg)
 	return &hndlr
 }
 
@@ -82,7 +95,6 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	org := r.Header.Get("Origin")
 
 	_ = pool.ScheduleTimeout(time.Millisecond, func() {
-
 		handle(conn, ip, org)
 	})
 }
@@ -91,7 +103,7 @@ func handle(conn *websocket.Conn, ip, org string) {
 
 	client := session.Register(conn, repo, lrepo, ip)
 
-	fmt.Printf("DEBUG: client %v connected from [%v], Origin: [%v]", client.Name(), ip, org)
+	fmt.Printf("DEBUG: client %v connected from [%v], Origin: [%v]\n", client.Name(), ip, org)
 
 	session.TuneClientConn(client)
 
@@ -99,15 +111,27 @@ func handle(conn *websocket.Conn, ip, org string) {
 	pool.Schedule(func() {
 		if err := client.ReceiveMsg(); err != nil {
 			if strings.Contains(err.Error(), "websocket: close 1001") {
-				fmt.Printf("ERROR: client %s closed the connection. %v", client.IP, err)
+				fmt.Printf("ERROR: client %s closed the connection. %v\n", client.IP, err)
 			} else {
-				fmt.Printf("ERROR client-side %s (HandleWebSocket): %v", client.IP, err)
+				fmt.Printf("ERROR client-side %s (HandleWebSocket): %v\n", client.IP, err)
 			}
 
 			session.Remove(client)
+			RemoveIPCount(ip)
 			conn.Close()
 			return
 		}
 	})
+}
 
+// Handling clients' IP addresses
+func RemoveIPCount(ip string) {
+
+	mu := sync.Mutex{}
+	if ip != "" && IPCount[ip] > 0 {
+		mu.Lock()
+		IPCount[ip]--
+		mu.Unlock()
+		fmt.Printf("[ws-handle] [-] client IP %s decreased active connections to %d\n", ip, IPCount[ip])
+	}
 }

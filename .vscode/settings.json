@@ -1,0 +1,4 @@
+{
+    "cloudcode.duetAI.inlineSuggestions.enableAuto": true,
+    "dbt.queryLimit": 500
+}

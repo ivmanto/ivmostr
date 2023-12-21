@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"math/big"
+	"os"
 	"strconv"
 
 	gn "github.com/nbd-wtf/go-nostr"
@@ -41,7 +42,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "ids":
 			ids, ok := v.([]interface{})
 			if !ok {
-				fmt.Printf("ids value %v is not `[]interface{}`", v)
+				fmt.Printf("ids value %v is not `[]interface{}`\n", v)
 				return false
 			}
 			for _, id := range ids {
@@ -52,7 +53,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "authors":
 			authors, ok := v.([]interface{})
 			if !ok {
-				fmt.Printf("authors value %v is not `[]interface{}`", v)
+				fmt.Printf("authors value %v is not `[]interface{}`\n", v)
 				return false
 			}
 			for _, author := range authors {
@@ -63,7 +64,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "kinds":
 			kinds, ok := v.([]interface{})
 			if !ok {
-				fmt.Printf("kinds value %v is not `[]interface{}`", v)
+				fmt.Printf("kinds value %v is not `[]interface{}`\n", v)
 				return false
 			}
 			for _, kind := range kinds {
@@ -74,7 +75,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "since":
 			since, err := ConvertToTS(v)
 			if err != nil {
-				fmt.Printf("Error %v converting the since value", err)
+				fmt.Printf("Error %v converting the since value\n", err)
 				return false
 			}
 			if since <= e.CreatedAt {
@@ -83,7 +84,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "until":
 			until, err := ConvertToTS(v)
 			if err != nil {
-				fmt.Printf("Error %v converting the until value", err)
+				fmt.Printf("Error %v converting the until value\n", err)
 				return false
 			}
 			if until >= e.CreatedAt {
@@ -126,4 +127,21 @@ func ConvertToTS(v interface{}) (gn.Timestamp, error) {
 		return ts, nil
 	}
 	return gn.Timestamp(int64(0)), fmt.Errorf("value %v is unknown type", v)
+}
+
+func PrintVersion() {
+
+	f, err := os.OpenFile("version", os.O_RDONLY, 0666)
+	if err != nil {
+		fmt.Println("Error opening version file")
+		return
+	}
+	defer f.Close()
+	b := make([]byte, 100)
+	_, err = f.Read(b)
+	if err != nil {
+		fmt.Println("Error reading version file")
+		return
+	}
+	fmt.Println(string(b))
 }

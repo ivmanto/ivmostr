@@ -279,6 +279,27 @@ SINCE:
 	return events, nil
 }
 
+// DeleteEvent deletes an event identified by its id
+func (r *nostrRepo) DeleteEvent(id string) error {
+	_, err := r.client.Collection(r.events_collection).Doc(id).Delete(*r.ctx)
+	if err != nil {
+		r.elgr.Printf("Error deleting event with id: %s from the database: %v", id, err)
+	}
+	return err
+}
+
+// DeleteEvents delete a series of events identified by their ids provided as an array of strings
+func (r *nostrRepo) DeleteEvents(ids []string) error {
+	var err error
+	for _, id := range ids {
+		err = r.DeleteEvent(id)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // NewNostrRepository - creates a new nostr relay repository
 // [x]: get the repo params from the config
 func NewNostrRepository(ctx *context.Context, client *firestore.Client, dlv int, ecn string) (nostr.NostrRepo, error) {

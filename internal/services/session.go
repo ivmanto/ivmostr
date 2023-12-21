@@ -7,19 +7,21 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"cloud.google.com/go/logging"
+	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
 )
 
 var (
 	NewEvent = make(chan *gn.Event)
-	queue    []*gn.Event
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -28,42 +30,32 @@ type Session struct {
 	seq     uint
 	clients []*Client
 	ns      map[string]*Client
+	bq      map[string]gn.Event
 	out     chan []byte
 	ilgr    *log.Logger
 	elgr    *log.Logger
 	clgr    *logging.Logger
 	pool    *gopool.Pool
+	cfg     *config.ServiceConfig
 }
 
 // NewSession creates a new WebSocket session.
-func NewSession(pool *gopool.Pool) *Session {
+func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 	session := Session{
 		ns:   make(map[string]*Client),
+		bq:   make(map[string]gn.Event),
 		out:  make(chan []byte, 1),
 		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
-		clgr: nil,
+		clgr: cl,
 		pool: pool,
 	}
 
-	// [ ]: review and rework the event broadcaster
-	// go session.NewEventBroadcaster()
+	// [x]: review and rework the event broadcaster
+	go session.NewEventBroadcaster()
 
 	return &session
 }
-
-// HandleWebSocket handles incoming WebSocket connections.
-// func (s *Session) HandleWebSocket(client *Client) error {
-// 	s.TuneClientConn(client)
-// 	s.ilgr.Printf("DEBUG: client-IP %s (handle-websocket) as: %s, client conn (RemoteAddr): %v", client.IP, client.name, client.conn.RemoteAddr())
-// 	//s.pool.Schedule(func() {
-// 	if err := client.ReceiveMsg(); err != nil {
-// 		s.elgr.Printf("ERROR client-side %s (start): %v", client.IP, err)
-// 		s.Remove(client)
-// 		return err
-// 	}
-// 	return nil
-// }
 
 // Register upgraded websocket connection as client in the sessions
 func (s *Session) Register(
@@ -92,8 +84,38 @@ func (s *Session) Register(
 	}
 	s.mu.Unlock()
 
-	s.clients = append(s.clients, &client)
-	s.ilgr.Printf("DEBUG: client-IP %s (register) as: %s", client.IP, client.name)
+	switch s.cfg.Relay_access {
+	case "public":
+
+		s.clients = append(s.clients, &client)
+
+		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "ts":%d}`, client.id, client.IP, client.name, time.Now().Unix())
+
+		s.ilgr.Printf("%v", pld)
+		lep := logging.Entry{
+			Severity: logging.Notice,
+			Payload:  pld,
+		}
+		s.clgr.Log(lep)
+
+	case "authenticated":
+		// generate the challenge string required by nip-42 authentication protocol
+		client.GenChallenge()
+
+		// Challenge the client to send AUTH message
+		_ = client.writeAUTHChallenge()
+
+	case "paid":
+		// [ ]: 1) required authentication - check for it and 2) check for active payment
+		_ = client.writeCustomNotice("restricted: this relay provides paid access only. Visit https://relay.ivmanto.dev for more information.")
+
+	default:
+		// Unknown relay access type - by default it is public
+		s.clients = append(s.clients, &client)
+		_ = client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
+	}
+
+	fmt.Printf(" - %d active clients connected\n", len(s.clients))
 
 	return &client
 }
@@ -118,7 +140,6 @@ func (s *Session) randName() string {
 		}
 		suffix += strconv.Itoa(rand.Intn(10))
 	}
-	// return ""
 }
 
 // mutex must be held.
@@ -176,50 +197,71 @@ func (s *Session) TuneClientConn(client *Client) {
 	})
 }
 
-func (s *Session) BroadcasterQueue(e *gn.Event) {
-	// [ ]: form a queue of events to be broadcasted
-	queue = append(queue, e)
+func (s *Session) BroadcasterQueue(e gn.Event) {
+	// [x]: form a queue of events to be broadcasted
+	s.mu.Lock()
+	s.bq[e.ID] = e
+	s.mu.Unlock()
+	for _, v := range s.bq {
+		NewEvent <- &v
+	}
 }
 
-// [ ]: to re-work the event broadcaster
-// func (s *Session) NewEventBroadcaster() {
-// 	for {
-// 		e := <-NewEvent
-// 		if e != nil && e.Kind != 22242 {
-// 			for _, client := range s.ns {
-// 				if client.Subscription_id == "" {
-// 					continue
-// 				}
-// 				//nip-04 requires clients authentication before sending kind:4 encrypted Dms
-// 				if e.Kind == 4 && !client.Authed {
-// 					continue
-// 				} else if e.Kind == 4 && client.Authed {
-// 					tag := e.Tags[0]
-// 					recp := strings.Split(tag[1], ",")
-// 					if len(recp) > 1 {
-// 						if client.npub == recp[1] {
-// 							evs := []*gn.Event{e}
-// 							err := client.write(evs)
-// 							if err != nil {
-// 								client.lgr.Printf("ERROR: error while sending event to client: %v", err)
-// 							}
-// 							break
-// 						}
-// 					}
-// 				}
-// 				//client.lgr.Printf("NewEventBroadcaster for client: %s, event %v", client.name, e)
-// 				if filterMatch(e, client.GetFilters()) {
-// 					evs := []*gn.Event{e}
-// 					err := client.Send2(evs)
-// 					if err != nil {
-// 						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
-// 						continue
-// 					}
-// 					continue
-// 				}
-// 				//client.lgr.Printf("No matching filter found for event: %v", e)
-// 			}
-// 		}
-// 		//e = nil
-// 	}
-// }
+// [x]: to re-work the event broadcaster
+func (s *Session) NewEventBroadcaster() {
+	for {
+		e := <-NewEvent
+		if e != nil && e.Kind != 22242 {
+			s.ilgr.Printf(" ...-= starting new event braodcasting =-...")
+			for _, client := range s.ns {
+				if client.Subscription_id == "" || client.name == e.GetExtraString("cname") {
+					continue
+				}
+				//nip-04 requires clients authentication before sending kind:4 encrypted Dms
+				if e.Kind == 4 && !client.Authed {
+					continue
+				} else if e.Kind == 4 && client.Authed {
+					tag := e.Tags[0]
+					recp := strings.Split(tag[1], ",")
+					if len(recp) > 1 {
+						if client.npub == recp[1] {
+							evs := []interface{}{e}
+							err := client.write(&evs)
+							if err != nil {
+								client.lgr.Printf("ERROR: error while sending event to client: %v", err)
+							}
+							break
+						}
+					}
+				}
+
+				if filterMatch(e, client.GetFilters()) {
+					evs := []interface{}{e}
+					err := client.write(&evs)
+					if err != nil {
+						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
+						continue
+					}
+				}
+			}
+			s.mu.Lock()
+			delete(s.bq, e.ID)
+			s.mu.Unlock()
+			continue
+		}
+	}
+}
+
+// Checking if the specific event `e` matches atleast one of the filters of customers subscription;
+func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
+	for _, filter := range filters {
+		if tools.FilterMatchSingle(e, filter) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Session) SetConfig(cfg *config.ServiceConfig) {
+	s.cfg = cfg
+}
