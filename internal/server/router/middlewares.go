@@ -38,12 +38,12 @@ func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		currentTimestamp := time.Now()
 		ip := getIP(r)
-
+		rc := &ivmws.RequestContext{IP: ip}
 		// Create a new RequestContext
-		ctx := context.WithValue(r.Context(), ivmws.KeyRC("requestContext"), &ivmws.RequestContext{IP: ip})
+		ctx := context.WithValue(r.Context(), ivmws.KeyRC("requestContext"), rc)
 
 		// Retrieve the RateLimit for the IP address from the context
-		rateLimit := ctx.Value("requestContext").(*ivmws.RequestContext).RateLimit
+		rateLimit := ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext).RateLimit
 
 		// Check if the IP address has made too many requests recently
 		if time.Since(rateLimit.Timestamp) < time.Second*10 {
