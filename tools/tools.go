@@ -1,9 +1,12 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	gn "github.com/nbd-wtf/go-nostr"
@@ -144,4 +147,30 @@ func PrintVersion() {
 		return
 	}
 	fmt.Println(string(b))
+}
+
+func ServerInfo(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("providing server info ...\n")
+	assetsPath, err := filepath.Abs("assets")
+	if err != nil {
+		fmt.Printf("ERROR: Failed to get absolute path to assets folder: %v", err)
+	}
+
+	// Read the contents of the server_info.json file
+	filePath := filepath.Join(assetsPath, "server_info.json")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Printf("ERROR:Failed to read server_info.json file from path %v, error: %v", filePath, err)
+	}
+
+	if len(data) > 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// send the data as json object in the response body
+		_ = json.NewEncoder(w).Encode(data)
+
+	} else {
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("{\"name\":\"ivmostr\"}"))
+	}
 }

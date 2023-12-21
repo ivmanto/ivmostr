@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 )
 
 var (
@@ -92,13 +93,10 @@ func serverinfo(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Header.Get("Accept") == "application/nostr+json" {
-			// http.Redirect(w, r, "/v1/api/nip11", http.StatusFound)
-			if r.URL.Path == "" || r.URL.Path == "/" {
-				r.URL.Path = "/v1/api/nip11"
-			}
+			tools.ServerInfo(w, r)
 			return
 		}
-		h.ServeHTTP(w, r)
+		//h.ServeHTTP(w, r)
 	})
 }
 
