@@ -53,9 +53,9 @@ func (h *srvHandler) router() chi.Router {
 
 	// Building middleware chain
 	rtr.Use(accessControl)
+	rtr.Use(serverinfo)
 	rtr.Use(rateLimiter)
 	rtr.Use(controlIPConn)
-	rtr.Use(serverinfo)
 
 	// Handle requests to the root URL "/"
 	rtr.Route("/", func(wr chi.Router) {
