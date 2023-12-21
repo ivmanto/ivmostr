@@ -96,7 +96,7 @@ func serverinfo(h http.Handler) http.Handler {
 			tools.ServerInfo(w, r)
 			return
 		}
-		//h.ServeHTTP(w, r)
+		h.ServeHTTP(w, r)
 	})
 }
 
