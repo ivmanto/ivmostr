@@ -22,6 +22,7 @@ import (
 
 var (
 	NewEvent = make(chan *gn.Event)
+	Exit     = make(chan struct{})
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -53,6 +54,9 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 
 	// [x]: review and rework the event broadcaster
 	go session.NewEventBroadcaster()
+
+	// regular connection health checker
+	go session.ConnectionHealthChecker()
 
 	return &session
 }
@@ -260,6 +264,48 @@ func (s *Session) NewEventBroadcaster() {
 	}
 }
 
+func (s *Session) SetConfig(cfg *config.ServiceConfig) {
+	s.cfg = cfg
+}
+
+func (s *Session) ConnectionHealthChecker() {
+
+	var err error
+	ticker := time.NewTicker(3 * time.Minute)
+	pm := websocket.PingMessage
+	dl := time.Millisecond * 100
+
+	for {
+		select {
+		case <-ticker.C:
+			fmt.Printf("   ...--- === ---...   ")
+			for _, client := range s.ns {
+				err = client.conn.WriteControl(pm, []byte("ping"), time.Time.Add(time.Now(), dl))
+				if err != nil {
+					fmt.Printf("Error sending ping message:%v\n", err)
+					client.conn.Close()
+					continue
+				}
+
+				// Read the pong message from the client
+				mt, pongMsg, err := client.conn.ReadMessage()
+				if err != nil {
+					fmt.Printf("Error reading pong message:%v", err)
+					client.conn.Close()
+					continue
+				}
+				if mt != websocket.PongMessage || string(pongMsg) != "pong" {
+					client.conn.Close()
+				}
+			}
+
+		case <-Exit:
+			break
+		}
+	}
+}
+
+// ================================ aux functions =================================
 // Checking if the specific event `e` matches atleast one of the filters of customers subscription;
 func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
 	for _, filter := range filters {
@@ -268,8 +314,4 @@ func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
 		}
 	}
 	return false
-}
-
-func (s *Session) SetConfig(cfg *config.ServiceConfig) {
-	s.cfg = cfg
 }
