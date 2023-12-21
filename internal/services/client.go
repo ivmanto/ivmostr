@@ -89,7 +89,6 @@ func (c *Client) write(msg *[]interface{}) error {
 					err := c.conn.WriteJSON(msg)
 					mutex.Unlock()
 					if err != nil {
-						c.lgr.Printf("[write] Error writing message: %v", err)
 						errWM <- err
 					}
 					msg = nil
@@ -101,7 +100,7 @@ func (c *Client) write(msg *[]interface{}) error {
 
 	for err := range errWM {
 		if err != nil {
-			fmt.Println("Error received:", err)
+			fmt.Println("[write] Error received: ", err)
 			// Perform error handling or logging here
 			return err
 		} else {

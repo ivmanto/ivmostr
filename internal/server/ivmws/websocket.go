@@ -132,6 +132,6 @@ func RemoveIPCount(ip string) {
 		mu.Lock()
 		IPCount[ip]--
 		mu.Unlock()
-		fmt.Printf("[ws-handle] [-] client IP %s decreased active connections to %d\n", ip, IPCount[ip])
+		fmt.Printf("[ws-handle] [-] Closing client IP %s decreased active connections to %d\n", ip, IPCount[ip])
 	}
 }

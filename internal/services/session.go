@@ -39,11 +39,6 @@ type Session struct {
 	cfg     *config.ServiceConfig
 }
 
-type CloseHandler struct {
-	code int
-	text string
-}
-
 // NewSession creates a new WebSocket session.
 func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 	session := Session{
@@ -187,7 +182,7 @@ func (s *Session) TuneClientConn(client *Client) {
 
 	client.conn.SetCloseHandler(func(code int, text string) error {
 		stop <- struct{}{}
-		client.lgr.Printf("[close]: Closing client %v, code: %v, text: %v", client.IP, code, text)
+		client.lgr.Printf("[close]: [-] Closing client %v, code: %v, text: %v", client.IP, code, text)
 		return nil
 	})
 
@@ -239,7 +234,7 @@ func (s *Session) NewEventBroadcaster() {
 							err := client.write(&evs)
 							s.mu.Unlock()
 							if err != nil {
-								client.lgr.Printf("ERROR: error while sending event to client: %v", err)
+								client.lgr.Printf("ERROR [auth]: error while sending event (kind=4) to client: %v", err)
 							}
 							break
 						}

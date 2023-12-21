@@ -173,3 +173,12 @@ func ServerInfo(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("{\"name\":\"ivmostr\"}"))
 	}
 }
+
+func Contains(slice []string, element string) bool {
+	for _, item := range slice {
+		if item == element {
+			return true
+		}
+	}
+	return false
+}
