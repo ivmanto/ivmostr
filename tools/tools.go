@@ -167,7 +167,11 @@ func ServerInfo(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		// send the data as json object in the response body
-		_ = json.NewEncoder(w).Encode(data)
+		bdata, err := json.Marshal(data)
+		if err != nil {
+			fmt.Printf("ERROR: Failed to marshal server_info.json file, error: %v\n", err)
+		}
+		_, _ = w.Write(bdata)
 
 	} else {
 		w.WriteHeader(http.StatusPartialContent)
