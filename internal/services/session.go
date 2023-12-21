@@ -238,7 +238,9 @@ func (s *Session) NewEventBroadcaster() {
 
 				if filterMatch(e, client.GetFilters()) {
 					evs := []interface{}{e}
+					s.mu.Lock()
 					err := client.write(&evs)
+					s.mu.Unlock()
 					if err != nil {
 						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
 						continue
