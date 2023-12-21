@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -167,11 +166,7 @@ func ServerInfo(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		// send the data as json object in the response body
-		bdata, err := json.Marshal(data)
-		if err != nil {
-			fmt.Printf("ERROR: Failed to marshal server_info.json file, error: %v\n", err)
-		}
-		_, _ = w.Write(bdata)
+		_, _ = w.Write(data)
 
 	} else {
 		w.WriteHeader(http.StatusPartialContent)
