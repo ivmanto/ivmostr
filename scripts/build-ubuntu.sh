@@ -43,3 +43,4 @@ echo "Updating version to $VERSION..."
 echo "version: $VERSION" > $VERSION_FILE
 git add $VERSION_FILE
 git commit -a -m "version update to $VERSION"
+git push
