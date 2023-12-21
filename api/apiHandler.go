@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -39,6 +40,7 @@ func (ah *ApiHandler) welcome(w http.ResponseWriter, r *http.Request) {
 
 func (ah *ApiHandler) serverinfo(w http.ResponseWriter, r *http.Request) {
 
+	fmt.Printf("providing server info ...")
 	assetsPath, err := filepath.Abs("assets")
 	if err != nil {
 		ah.Lgr.Printf("Failed to get absolute path to assets folder: %v", err)
@@ -53,7 +55,7 @@ func (ah *ApiHandler) serverinfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(data) > 0 {
-		w.Header().Set("Content-Type", "application/nostr+json")
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(data)
 	} else {
