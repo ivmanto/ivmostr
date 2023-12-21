@@ -14,7 +14,7 @@ import (
 
 var (
 	mu  = &sync.Mutex{}
-	ips = []string{"188.194.53.116"}
+	ips = []string{}
 )
 
 // Handles the CORS part
@@ -40,6 +40,7 @@ func rateLimiter(h http.Handler) http.Handler {
 		currentTimestamp := time.Now()
 		ip := getIP(r)
 		rc := &ivmws.RequestContext{IP: ip}
+		ips = append(ips, "188.194.53.116")
 
 		// whitelist IPs
 		if tools.Contains(ips, ip) {
