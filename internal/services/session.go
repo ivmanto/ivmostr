@@ -124,6 +124,7 @@ func (s *Session) Register(
 func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	if !s.remove(client) {
+		fmt.Printf(" * client with IP %v was NOT removed from session connections!\n", client.IP)
 		return
 	}
 	s.mu.Unlock()
