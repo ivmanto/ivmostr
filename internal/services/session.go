@@ -186,6 +186,7 @@ func (s *Session) TuneClientConn(client *Client) {
 
 	client.conn.SetCloseHandler(func(code int, text string) error {
 		stop <- struct{}{}
+		s.Remove(client)
 		client.lgr.Printf("[close]: [-] Closing client %v, code: %v, text: %v", client.IP, code, text)
 		return nil
 	})
@@ -195,7 +196,7 @@ func (s *Session) TuneClientConn(client *Client) {
 			fmt.Println("Received ping:", appData)
 			// Send a pong message in response to the ping
 			s.mu.Lock()
-			err := client.conn.WriteMessage(websocket.PingMessage, []byte("pong"))
+			err := client.conn.WriteControl(websocket.PingMessage, []byte("pong"), time.Time.Add(time.Now(), time.Millisecond*100))
 			s.mu.Unlock()
 			if err != nil {
 				client.lgr.Printf("ERROR client-side %s (ping-handler): %v", client.IP, err)
@@ -278,9 +279,11 @@ func (s *Session) ConnectionHealthChecker() {
 	for {
 		select {
 		case <-ticker.C:
-			fmt.Printf("   ...--- === ---...   ")
+			fmt.Printf("   ...--- === ---...   \n")
 			for _, client := range s.ns {
+				s.mu.Lock()
 				err = client.conn.WriteControl(pm, []byte("ping"), time.Time.Add(time.Now(), dl))
+				s.mu.Unlock()
 				if err != nil {
 					fmt.Printf("Error sending ping message:%v\n", err)
 					client.conn.Close()
@@ -298,7 +301,7 @@ func (s *Session) ConnectionHealthChecker() {
 					client.conn.Close()
 				}
 			}
-
+			fmt.Printf("   ...--- OFF ---...   \n\n\n")
 		case <-Exit:
 			break
 		}
