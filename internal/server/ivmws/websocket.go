@@ -79,17 +79,18 @@ func (h *WSHandler) Router() chi.Router {
 func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	org := r.Header.Get("Origin")
-	fmt.Printf("DEBUG: ... Origin Header value: %v", org)
+	hst := r.Header.Get("Host")
+	fmt.Printf("DEBUG: ... Host Header value: %v, Origin: %v\n", hst, org)
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
 		EnableCompression: true,
 		CheckOrigin: func(r *http.Request) bool {
-			if org == "" {
+			if org == "" && hst == "" {
 				return false
 			}
-			trustedOrigins := []string{"https://nostr.ivmanto.dev", "https://nostr.watch", "http://localhost:9090"}
-			return tools.Contains(trustedOrigins, org)
+			trustedOrigins := []string{"nostr.ivmanto.dev", "nostr.watch", "localhost", "127.0.0.1"}
+			return tools.Contains(trustedOrigins, org) || tools.Contains(trustedOrigins, hst)
 		},
 	}
 
@@ -97,7 +98,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(fmt.Sprintf("Error while upgrading connection: %v", err)))
-		return
+		//return
 	}
 
 	ip := tools.GetIP(r)
