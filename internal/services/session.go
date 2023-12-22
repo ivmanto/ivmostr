@@ -91,8 +91,6 @@ func (s *Session) Register(
 	switch s.cfg.Relay_access {
 	case "public":
 
-		s.clients = append(s.clients, &client)
-
 		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "ts":%d}`, client.id, client.IP, client.name, time.Now().Unix())
 
 		s.ilgr.Printf("%v", pld)
@@ -114,12 +112,17 @@ func (s *Session) Register(
 		_ = client.writeCustomNotice("restricted: this relay provides paid access only. Visit https://relay.ivmanto.dev for more information.")
 
 	default:
-		// Unknown relay access type - by default it is public
-		s.clients = append(s.clients, &client)
+		// Unknown relay access type - by default it is publi
 		_ = client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
 	}
 
-	fmt.Printf(" - %d active clients connected\n", len(s.clients))
+	pldac := fmt.Sprintf(`{"active_clients_connected":%d, "as_of_time":%v}`, len(s.ns), time.Now())
+	s.ilgr.Printf("%v", pldac)
+	lep2 := logging.Entry{
+		Severity: logging.Notice,
+		Payload:  pldac,
+	}
+	s.clgr.Log(lep2)
 
 	return &client
 }
@@ -305,7 +308,7 @@ func (s *Session) ConnectionHealthChecker() {
 					client.conn.Close()
 				}
 			}
-			fmt.Printf("[hc]: * %d active clients connections", len(s.ns))
+			fmt.Printf("[hc]: * %d active clients connections\n", len(s.ns))
 			fmt.Printf("   ...--- OFF ---...   \n\n\n")
 
 		case <-Exit:
