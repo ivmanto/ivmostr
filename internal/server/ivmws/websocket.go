@@ -83,16 +83,12 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	org := r.Header.Get("Origin")
 	hst := r.Header.Get("Host")
 	ip := tools.GetIP(r)
-	fmt.Printf("WSU-REQ: ... ip: %v,Host: %v, Origin: %v\n", ip, hst, org)
+	h.lgr.Printf("WSU-REQ: ... ip: %v, Host: %v, Origin: %v", ip, hst, org)
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
 		EnableCompression: true,
 		CheckOrigin: func(r *http.Request) bool {
-			if org == "" && hst == "" {
-				return false
-			}
-
 			for _, v := range trustedOrigins {
 				if strings.Contains(org, v) || strings.Contains(hst, v) {
 					return true
