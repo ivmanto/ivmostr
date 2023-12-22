@@ -96,9 +96,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(fmt.Sprintf("Error while upgrading connection: %v", err)))
-		//return
+		fmt.Printf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v\n", err)
 	}
 
 	ip := tools.GetIP(r)
