@@ -14,7 +14,7 @@ import (
 
 var (
 	mu  = &sync.Mutex{}
-	ips = []string{}
+	ips = []string{"188.194.53.116"}
 )
 
 // Handles the CORS part
@@ -40,7 +40,6 @@ func rateLimiter(h http.Handler) http.Handler {
 		currentTimestamp := time.Now()
 		ip := getIP(r)
 		rc := &ivmws.RequestContext{IP: ip}
-		ips = append(ips, "188.194.53.116")
 
 		// whitelist IPs
 		if tools.Contains(ips, ip) {
@@ -82,6 +81,13 @@ func controlIPConn(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		ip := getIP(r)
+
+		// whitelist IPs
+		if tools.Contains(ips, ip) {
+			h.ServeHTTP(w, r)
+			return
+		}
+
 		if ivmws.IPCount[ip] > 0 {
 			fmt.Printf("[MW-ipc] Too many requests [%d] from %s\n", ivmws.IPCount[ip], ip)
 			http.Error(w, "Bad request", http.StatusForbidden)
