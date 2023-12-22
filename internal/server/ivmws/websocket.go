@@ -19,13 +19,13 @@ import (
 )
 
 var (
-	session        *services.Session
-	pool           *gopool.Pool
-	repo           nostr.NostrRepo
-	lrepo          nostr.ListRepo
-	IPCount        map[string]int = make(map[string]int)
-	mu             sync.Mutex
-	trustedOrigins = []string{"nostr", "nostr.ivmanto.dev", "nostr.watch", "localhost", "127.0.0.1", "nostr.band", "nostrcheck.me"}
+	session *services.Session
+	pool    *gopool.Pool
+	repo    nostr.NostrRepo
+	lrepo   nostr.ListRepo
+	IPCount map[string]int = make(map[string]int)
+	mu      sync.Mutex
+	//trustedOrigins = []string{"nostr", "nostr.ivmanto.dev", "nostr.watch", "localhost", "127.0.0.1", "nostr.band", "nostrcheck.me"}
 )
 
 type WSHandler struct {
@@ -86,18 +86,18 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
 		EnableCompression: true,
-		CheckOrigin: func(r *http.Request) bool {
-			if org == "" && hst == "" {
-				return false
-			}
+		// CheckOrigin: func(r *http.Request) bool {
+		// 	if org == "" && hst == "" {
+		// 		return false
+		// 	}
 
-			for _, v := range trustedOrigins {
-				if strings.Contains(org, v) || strings.Contains(hst, v) {
-					return true
-				}
-			}
-			return false
-		},
+		// 	for _, v := range trustedOrigins {
+		// 		if strings.Contains(org, v) || strings.Contains(hst, v) {
+		// 			return true
+		// 		}
+		// 	}
+		// 	return false
+		// },
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
