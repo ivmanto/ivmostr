@@ -3,10 +3,9 @@ package api
 import (
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 )
 
@@ -38,26 +37,5 @@ func (ah *ApiHandler) welcome(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ah *ApiHandler) serverinfo(w http.ResponseWriter, r *http.Request) {
-
-	assetsPath, err := filepath.Abs("assets")
-	if err != nil {
-		ah.Lgr.Printf("Failed to get absolute path to assets folder: %v", err)
-
-	}
-
-	// Read the contents of the server_info.json file
-	filePath := filepath.Join(assetsPath, "server_info.json")
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		ah.Lgr.Printf("Failed to read server_info.json file from path %v, error: %v", filePath, err)
-	}
-
-	if len(data) > 0 {
-		w.Header().Set("Content-Type", "application/nostr+json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(data)
-	} else {
-		w.WriteHeader(http.StatusPartialContent)
-		_, _ = w.Write([]byte("{\"name\":\"ivmostr\"}"))
-	}
+	tools.ServerInfo(w, r)
 }

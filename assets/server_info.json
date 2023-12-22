@@ -27,5 +27,5 @@
         {"kinds": [[30000, 39999]], "count": 1000},
         {"time": 3600, "count": 10000}
     ],
-    "relay_contries": ["EU","DE", "BG"]  
+    "relay_countries": ["EU","DE", "BG"]  
 }

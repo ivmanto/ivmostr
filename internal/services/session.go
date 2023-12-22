@@ -22,6 +22,7 @@ import (
 
 var (
 	NewEvent = make(chan *gn.Event)
+	Exit     = make(chan struct{})
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -53,6 +54,9 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 
 	// [x]: review and rework the event broadcaster
 	go session.NewEventBroadcaster()
+
+	// regular connection health checker
+	go session.ConnectionHealthChecker()
 
 	return &session
 }
@@ -87,8 +91,6 @@ func (s *Session) Register(
 	switch s.cfg.Relay_access {
 	case "public":
 
-		s.clients = append(s.clients, &client)
-
 		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "ts":%d}`, client.id, client.IP, client.name, time.Now().Unix())
 
 		s.ilgr.Printf("%v", pld)
@@ -110,12 +112,17 @@ func (s *Session) Register(
 		_ = client.writeCustomNotice("restricted: this relay provides paid access only. Visit https://relay.ivmanto.dev for more information.")
 
 	default:
-		// Unknown relay access type - by default it is public
-		s.clients = append(s.clients, &client)
+		// Unknown relay access type - by default it is publi
 		_ = client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
 	}
 
-	fmt.Printf(" - %d active clients connected\n", len(s.clients))
+	pldac := fmt.Sprintf(`{"active_clients_connected":%d, "as_of_time":%v}`, len(s.ns), time.Now())
+	s.ilgr.Printf("%v", pldac)
+	lep2 := logging.Entry{
+		Severity: logging.Notice,
+		Payload:  pldac,
+	}
+	s.clgr.Log(lep2)
 
 	return &client
 }
@@ -123,11 +130,13 @@ func (s *Session) Register(
 // Remove removes client from session.
 func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
-	if !s.remove(client) {
+	removed := s.remove(client)
+	s.mu.Unlock()
+	if !removed {
+		fmt.Printf(" * client with IP %v was NOT removed from session connections!\n", client.IP)
 		return
 	}
-	s.mu.Unlock()
-
+	fmt.Printf(" - %d active clients connected\n", len(s.clients))
 }
 
 // Give code-word as name to the client connection
@@ -180,7 +189,9 @@ func (s *Session) TuneClientConn(client *Client) {
 	}
 
 	client.conn.SetCloseHandler(func(code int, text string) error {
-		client.lgr.Printf("DEBUG: Closing client %v, code: %v, text: %v", client.conn.RemoteAddr().String(), code, text)
+		stop <- struct{}{}
+		s.Remove(client)
+		client.lgr.Printf("[close]: [-] Closing client %v, code: %v, text: %v", client.IP, code, text)
 		return nil
 	})
 
@@ -188,7 +199,9 @@ func (s *Session) TuneClientConn(client *Client) {
 		if appData == "ping" || appData == "PING" || appData == "Ping" {
 			fmt.Println("Received ping:", appData)
 			// Send a pong message in response to the ping
-			err := client.conn.WriteMessage(websocket.PingMessage, []byte("pong"))
+			s.mu.Lock()
+			err := client.conn.WriteControl(websocket.PingMessage, []byte("pong"), time.Time.Add(time.Now(), time.Millisecond*100))
+			s.mu.Unlock()
 			if err != nil {
 				client.lgr.Printf("ERROR client-side %s (ping-handler): %v", client.IP, err)
 			}
@@ -226,9 +239,11 @@ func (s *Session) NewEventBroadcaster() {
 					if len(recp) > 1 {
 						if client.npub == recp[1] {
 							evs := []interface{}{e}
+							s.mu.Lock()
 							err := client.write(&evs)
+							s.mu.Unlock()
 							if err != nil {
-								client.lgr.Printf("ERROR: error while sending event to client: %v", err)
+								client.lgr.Printf("ERROR [auth]: error while sending event (kind=4) to client: %v", err)
 							}
 							break
 						}
@@ -237,7 +252,9 @@ func (s *Session) NewEventBroadcaster() {
 
 				if filterMatch(e, client.GetFilters()) {
 					evs := []interface{}{e}
+					s.mu.Lock()
 					err := client.write(&evs)
+					s.mu.Unlock()
 					if err != nil {
 						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
 						continue
@@ -252,6 +269,58 @@ func (s *Session) NewEventBroadcaster() {
 	}
 }
 
+func (s *Session) SetConfig(cfg *config.ServiceConfig) {
+	s.cfg = cfg
+}
+
+func (s *Session) ConnectionHealthChecker() {
+
+	var err error
+	ticker := time.NewTicker(3 * time.Minute)
+	pm := websocket.PingMessage
+	dl := time.Millisecond * 100
+
+	for {
+		select {
+		case <-ticker.C:
+			fmt.Printf("   ...--- === ---...   \n")
+			for _, client := range s.ns {
+				s.mu.Lock()
+				err = client.conn.WriteControl(pm, []byte("ping"), time.Time.Add(time.Now(), dl))
+				s.mu.Unlock()
+				if err != nil {
+					fmt.Printf("[hc]: [%v] ERROR sending ping message:%v\n", client.IP, err)
+					client.conn.Close()
+					continue
+				}
+				fmt.Printf("[hc]: [%v] successful PING!\n", client.IP)
+
+				// Read the pong message from the client
+				mt, pongMsg, err := client.conn.ReadMessage()
+				if err != nil {
+					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v", client.IP, err)
+					client.conn.Close()
+					continue
+				}
+
+				bpong := string(pongMsg) == "pong" || string(pongMsg) == "PONG" || string(pongMsg) == "Pong"
+				if mt == websocket.PongMessage && bpong {
+					fmt.Printf("[hc]: [%v] successful PONG!\n", client.IP)
+				} else {
+					client.conn.Close()
+				}
+			}
+
+			fmt.Printf("[hc]: * %d active clients connections\n", len(s.ns))
+			fmt.Printf("   ...--- OFF ---...   \n\n\n")
+
+		case <-Exit:
+			break
+		}
+	}
+}
+
+// ================================ aux functions =================================
 // Checking if the specific event `e` matches atleast one of the filters of customers subscription;
 func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
 	for _, filter := range filters {
@@ -260,8 +329,4 @@ func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
 		}
 	}
 	return false
-}
-
-func (s *Session) SetConfig(cfg *config.ServiceConfig) {
-	s.cfg = cfg
 }

@@ -3,7 +3,10 @@ package tools
 import (
 	"fmt"
 	"math/big"
+	"net"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	gn "github.com/nbd-wtf/go-nostr"
@@ -144,4 +147,57 @@ func PrintVersion() {
 		return
 	}
 	fmt.Println(string(b))
+}
+
+func ServerInfo(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("providing server info ...\n")
+	assetsPath, err := filepath.Abs("assets")
+	if err != nil {
+		fmt.Printf("ERROR: Failed to get absolute path to assets folder: %v", err)
+	}
+
+	// Read the contents of the server_info.json file
+	filePath := filepath.Join(assetsPath, "server_info.json")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Printf("ERROR:Failed to read server_info.json file from path %v, error: %v", filePath, err)
+	}
+
+	if len(data) > 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// send the data as json object in the response body
+		_, _ = w.Write(data)
+
+	} else {
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("{\"name\":\"ivmostr\"}"))
+	}
+}
+
+func Contains(slice []string, element string) bool {
+	for _, item := range slice {
+		if item == element {
+			return true
+		}
+	}
+	return false
+}
+
+// getIP identifies the real IP address of the request
+func GetIP(r *http.Request) string {
+	var ip string
+
+	ip = r.Header.Get("X-Real-IP")
+	if ip == "" {
+		ip = r.Header.Get("X-Forwarded-For")
+	}
+
+	if ip == "" {
+		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
+	}
+	if ip == "127.0.0.1" {
+		ip = r.RemoteAddr
+	}
+	return ip
 }

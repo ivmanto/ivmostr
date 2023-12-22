@@ -17,6 +17,7 @@ import (
 
 var (
 	nbmrevents int
+	stop       = make(chan struct{})
 )
 
 type Client struct {
@@ -74,29 +75,32 @@ func (c *Client) ReceiveMsg() error {
 
 func (c *Client) write(msg *[]interface{}) error {
 	errWM := make(chan error)
-	mutex := sync.Mutex{}
-
 	go func() {
+		mutex := sync.Mutex{}
 		for {
-			// [ ]: implement the logic to send the message to the client
-			if msg != nil {
-				mutex.Lock()
-				err := c.conn.WriteJSON(msg)
-				mutex.Unlock()
-				if err != nil {
-					c.lgr.Printf("[write] Error writing message: %v", err)
-					errWM <- err
+			select {
+			case <-stop:
+				c.lgr.Printf("[write] Stopping the write channel")
+				return
+			default:
+				// [ ]: implement the logic to send the message to the client
+				if msg != nil {
+					mutex.Lock()
+					err := c.conn.WriteJSON(msg)
+					mutex.Unlock()
+					if err != nil {
+						errWM <- err
+					}
+					msg = nil
 				}
-				msg = nil
+				errWM <- nil
 			}
-
-			errWM <- nil
 		}
 	}()
 
 	for err := range errWM {
 		if err != nil {
-			fmt.Println("Error received:", err)
+			fmt.Println("[write] Error received: ", err)
 			// Perform error handling or logging here
 			return err
 		} else {

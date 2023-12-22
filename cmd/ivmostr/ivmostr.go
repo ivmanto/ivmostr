@@ -12,6 +12,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/data/firestoredb"
 	"github.com/dasiyes/ivmostr-tdd/internal/server"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/router"
+	"github.com/dasiyes/ivmostr-tdd/internal/services"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 )
 
@@ -141,6 +142,7 @@ func main() {
 		addr := ":" + cfg.Port
 		ml.Printf("...starting ivmostr (-tdd) instance at %s...", addr)
 		errs <- httpServer.Start(addr, hdlr)
+		services.Exit <- struct{}{}
 	}()
 
 	ml.Printf("ivmostr http server terminated! %v", <-errs)

@@ -13,16 +13,19 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
 )
 
 var (
-	session *services.Session
-	pool    *gopool.Pool
-	repo    nostr.NostrRepo
-	lrepo   nostr.ListRepo
-	IPCount map[string]int = make(map[string]int)
+	session        *services.Session
+	pool           *gopool.Pool
+	repo           nostr.NostrRepo
+	lrepo          nostr.ListRepo
+	IPCount        map[string]int = make(map[string]int)
+	mu             sync.Mutex
+	trustedOrigins = []string{"nostr.ivmanto.dev", "nostr.watch", "localhost", "127.0.0.1", "nostr.band", "nostrcheck.me", "nostr", ""}
 )
 
 type WSHandler struct {
@@ -55,6 +58,7 @@ func NewWSHandler(
 	pool = gopool.NewPool(workers, queue, spawn)
 	session = services.NewSession(pool, cl)
 	session.SetConfig(cfg)
+
 	return &hndlr
 }
 
@@ -76,34 +80,45 @@ func (h *WSHandler) Router() chi.Router {
 // and contions to the websocket server
 func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
+	org := r.Header.Get("Origin")
+	hst := r.Header.Get("Host")
+	ip := tools.GetIP(r)
+	h.lgr.Printf("WSU-REQ: ... ip: %v, Host: %v, Origin: %v", ip, hst, org)
+
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
 		EnableCompression: true,
+		CheckOrigin: func(r *http.Request) bool {
+			for _, v := range trustedOrigins {
+				if strings.Contains(org, v) || strings.Contains(hst, v) {
+					return true
+				}
+			}
+			return false
+		},
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error while upgrading connection: %v", err), http.StatusBadRequest)
+		h.lgr.Printf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v", err)
 		return
 	}
 
-	ip := r.Header.Get("X-Real-IP")
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
-
-	org := r.Header.Get("Origin")
+	mu.Lock()
+	IPCount[ip]++
+	mu.Unlock()
+	h.lgr.Printf("[connman] [+] client IP %s increased to %d active connection", ip, IPCount[ip])
 
 	_ = pool.ScheduleTimeout(time.Millisecond, func() {
-		handle(conn, ip, org)
+		handle(conn, ip, org, hst)
 	})
 }
 
-func handle(conn *websocket.Conn, ip, org string) {
+func handle(conn *websocket.Conn, ip, org, hst string) {
 
 	client := session.Register(conn, repo, lrepo, ip)
 
-	fmt.Printf("DEBUG: client %v connected from [%v], Origin: [%v]\n", client.Name(), ip, org)
+	fmt.Printf("[ivmws][handle]: client %v connected from [%v], Origin: [%v], Host: [%v]\n", client.Name(), ip, org, hst)
 
 	session.TuneClientConn(client)
 
@@ -116,7 +131,6 @@ func handle(conn *websocket.Conn, ip, org string) {
 				fmt.Printf("ERROR client-side %s (HandleWebSocket): %v\n", client.IP, err)
 			}
 
-			session.Remove(client)
 			RemoveIPCount(ip)
 			conn.Close()
 			return
@@ -132,6 +146,6 @@ func RemoveIPCount(ip string) {
 		mu.Lock()
 		IPCount[ip]--
 		mu.Unlock()
-		fmt.Printf("[ws-handle] [-] client IP %s decreased active connections to %d\n", ip, IPCount[ip])
+		fmt.Printf("[ws-handle] [-] Closing client IP %s decreased active connections to %d\n", ip, IPCount[ip])
 	}
 }
