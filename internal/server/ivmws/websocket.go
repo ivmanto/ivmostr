@@ -82,7 +82,8 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	org := r.Header.Get("Origin")
 	hst := r.Header.Get("Host")
-	fmt.Printf("DEBUG: ... Host: %v, Origin: %v\n", hst, org)
+	ip := tools.GetIP(r)
+	fmt.Printf("WSU-REQ: ... ip: %v,Host: %v, Origin: %v\n", ip, hst, org)
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
@@ -107,7 +108,6 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := tools.GetIP(r)
 	mu.Lock()
 	IPCount[ip]++
 	mu.Unlock()
