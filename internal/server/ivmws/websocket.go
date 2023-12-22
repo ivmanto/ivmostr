@@ -19,13 +19,13 @@ import (
 )
 
 var (
-	session *services.Session
-	pool    *gopool.Pool
-	repo    nostr.NostrRepo
-	lrepo   nostr.ListRepo
-	IPCount map[string]int = make(map[string]int)
-	mu      sync.Mutex
-	//trustedOrigins = []string{"nostr", "nostr.ivmanto.dev", "nostr.watch", "localhost", "127.0.0.1", "nostr.band", "nostrcheck.me"}
+	session        *services.Session
+	pool           *gopool.Pool
+	repo           nostr.NostrRepo
+	lrepo          nostr.ListRepo
+	IPCount        map[string]int = make(map[string]int)
+	mu             sync.Mutex
+	trustedOrigins = []string{"nostr.ivmanto.dev", "nostr.watch", "localhost", "127.0.0.1", "nostr.band", "nostrcheck.me", "nostr", ""}
 )
 
 type WSHandler struct {
@@ -58,6 +58,7 @@ func NewWSHandler(
 	pool = gopool.NewPool(workers, queue, spawn)
 	session = services.NewSession(pool, cl)
 	session.SetConfig(cfg)
+
 	return &hndlr
 }
 
@@ -81,28 +82,28 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	org := r.Header.Get("Origin")
 	hst := r.Header.Get("Host")
-	fmt.Printf("DEBUG: ... Host Header value: %v, Origin: %v\n", hst, org)
+	fmt.Printf("DEBUG: ... Host: %v, Origin: %v\n", hst, org)
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
 		EnableCompression: true,
-		// CheckOrigin: func(r *http.Request) bool {
-		// 	if org == "" && hst == "" {
-		// 		return false
-		// 	}
+		CheckOrigin: func(r *http.Request) bool {
+			if org == "" && hst == "" {
+				return false
+			}
 
-		// 	for _, v := range trustedOrigins {
-		// 		if strings.Contains(org, v) || strings.Contains(hst, v) {
-		// 			return true
-		// 		}
-		// 	}
-		// 	return false
-		// },
+			for _, v := range trustedOrigins {
+				if strings.Contains(org, v) || strings.Contains(hst, v) {
+					return true
+				}
+			}
+			return false
+		},
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		fmt.Printf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v\n", err)
+		h.lgr.Printf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v", err)
 		return
 	}
 
@@ -110,7 +111,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	IPCount[ip]++
 	mu.Unlock()
-	h.lgr.Printf("[connman] [+] client IP %s increased to %d active connection\n", ip, IPCount[ip])
+	h.lgr.Printf("[connman] [+] client IP %s increased to %d active connection", ip, IPCount[ip])
 
 	_ = pool.ScheduleTimeout(time.Millisecond, func() {
 		handle(conn, ip, org, hst)

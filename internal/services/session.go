@@ -302,12 +302,15 @@ func (s *Session) ConnectionHealthChecker() {
 					client.conn.Close()
 					continue
 				}
-				if mt != websocket.PongMessage || string(pongMsg) != "pong" {
+
+				bpong := string(pongMsg) == "pong" || string(pongMsg) == "PONG" || string(pongMsg) == "Pong"
+				if mt == websocket.PongMessage && bpong {
 					fmt.Printf("[hc]: [%v] successful PONG!\n", client.IP)
 				} else {
 					client.conn.Close()
 				}
 			}
+
 			fmt.Printf("[hc]: * %d active clients connections\n", len(s.ns))
 			fmt.Printf("   ...--- OFF ---...   \n\n\n")
 
