@@ -286,23 +286,28 @@ func (s *Session) ConnectionHealthChecker() {
 				err = client.conn.WriteControl(pm, []byte("ping"), time.Time.Add(time.Now(), dl))
 				s.mu.Unlock()
 				if err != nil {
-					fmt.Printf("Error sending ping message:%v\n", err)
+					fmt.Printf("[hc]: [%v] ERROR sending ping message:%v\n", client.IP, err)
 					client.conn.Close()
 					continue
 				}
+				fmt.Printf("[hc]: [%v] successful PING!\n", client.IP)
 
 				// Read the pong message from the client
 				mt, pongMsg, err := client.conn.ReadMessage()
 				if err != nil {
-					fmt.Printf("Error reading pong message:%v", err)
+					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v", client.IP, err)
 					client.conn.Close()
 					continue
 				}
 				if mt != websocket.PongMessage || string(pongMsg) != "pong" {
+					fmt.Printf("[hc]: [%v] successful PONG!\n", client.IP)
+				} else {
 					client.conn.Close()
 				}
 			}
+			fmt.Printf("[hc]: * %d active clients connections", len(s.ns))
 			fmt.Printf("   ...--- OFF ---...   \n\n\n")
+
 		case <-Exit:
 			break
 		}

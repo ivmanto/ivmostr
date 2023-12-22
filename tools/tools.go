@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -181,4 +182,22 @@ func Contains(slice []string, element string) bool {
 		}
 	}
 	return false
+}
+
+// getIP identifies the real IP address of the request
+func GetIP(r *http.Request) string {
+	var ip string
+
+	ip = r.Header.Get("X-Real-IP")
+	if ip == "" {
+		ip = r.Header.Get("X-Forwarded-For")
+	}
+
+	if ip == "" {
+		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
+	}
+	if ip == "127.0.0.1" {
+		ip = r.RemoteAddr
+	}
+	return ip
 }

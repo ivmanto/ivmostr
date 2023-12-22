@@ -13,6 +13,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
 )
@@ -23,6 +24,7 @@ var (
 	repo    nostr.NostrRepo
 	lrepo   nostr.ListRepo
 	IPCount map[string]int = make(map[string]int)
+	mu      sync.Mutex
 )
 
 type WSHandler struct {
@@ -76,9 +78,15 @@ func (h *WSHandler) Router() chi.Router {
 // and contions to the websocket server
 func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
+	org := r.Header.Get("Origin")
+
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
 		EnableCompression: true,
+		CheckOrigin: func(r *http.Request) bool {
+			trustedOrigins := []string{"https://nostr.ivmanto.dev", "https://nostr.watch", "http://localhost:9090"}
+			return tools.Contains(trustedOrigins, org)
+		},
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -87,12 +95,11 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := r.Header.Get("X-Real-IP")
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
-
-	org := r.Header.Get("Origin")
+	ip := tools.GetIP(r)
+	mu.Lock()
+	IPCount[ip]++
+	mu.Unlock()
+	h.lgr.Printf("[MW-ipc] [+] client IP %s increased to %d active connection\n", ip, IPCount[ip])
 
 	_ = pool.ScheduleTimeout(time.Millisecond, func() {
 		handle(conn, ip, org)
@@ -103,7 +110,7 @@ func handle(conn *websocket.Conn, ip, org string) {
 
 	client := session.Register(conn, repo, lrepo, ip)
 
-	fmt.Printf("DEBUG: client %v connected from [%v], Origin: [%v]\n", client.Name(), ip, org)
+	fmt.Printf("[ivmws][handle]: client %v connected from [%v], Origin: [%v]\n", client.Name(), ip, org)
 
 	session.TuneClientConn(client)
 

@@ -3,9 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
@@ -13,7 +11,6 @@ import (
 )
 
 var (
-	mu  = &sync.Mutex{}
 	ips = []string{"188.194.53.116"}
 )
 
@@ -38,7 +35,7 @@ func accessControl(h http.Handler) http.Handler {
 func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		currentTimestamp := time.Now()
-		ip := getIP(r)
+		ip := tools.GetIP(r)
 		rc := &ivmws.RequestContext{IP: ip}
 
 		// whitelist IPs
@@ -80,7 +77,7 @@ func rateLimiter(h http.Handler) http.Handler {
 func controlIPConn(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		ip := getIP(r)
+		ip := tools.GetIP(r)
 
 		// whitelist IPs
 		if tools.Contains(ips, ip) {
@@ -93,10 +90,6 @@ func controlIPConn(h http.Handler) http.Handler {
 			http.Error(w, "Bad request", http.StatusForbidden)
 			return
 		}
-		mu.Lock()
-		ivmws.IPCount[ip]++
-		mu.Unlock()
-		fmt.Printf("[MW-ipc] [+] client IP %s increased to %d active connection\n", ip, ivmws.IPCount[ip])
 
 		h.ServeHTTP(w, r)
 	})
@@ -112,22 +105,4 @@ func serverinfo(h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
-}
-
-// getIP identifies the real IP address of the request
-func getIP(r *http.Request) string {
-	var ip string
-
-	ip = r.Header.Get("X-Real-IP")
-	if ip == "" {
-		ip = r.Header.Get("X-Forwarded-For")
-	}
-
-	if ip == "" {
-		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
-	}
-	if ip == "127.0.0.1" {
-		ip = r.RemoteAddr
-	}
-	return ip
 }
