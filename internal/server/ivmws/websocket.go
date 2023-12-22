@@ -90,13 +90,19 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 				return false
 			}
 			trustedOrigins := []string{"nostr.ivmanto.dev", "nostr.watch", "localhost", "127.0.0.1"}
-			return tools.Contains(trustedOrigins, org) || tools.Contains(trustedOrigins, hst)
+			for _, v := range trustedOrigins {
+				if strings.Contains(org, v) || strings.Contains(hst, v) {
+					return true
+				}
+			}
+			return false
 		},
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Printf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v\n", err)
+		return
 	}
 
 	ip := tools.GetIP(r)
@@ -106,15 +112,15 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	h.lgr.Printf("[MW-ipc] [+] client IP %s increased to %d active connection\n", ip, IPCount[ip])
 
 	_ = pool.ScheduleTimeout(time.Millisecond, func() {
-		handle(conn, ip, org)
+		handle(conn, ip, org, hst)
 	})
 }
 
-func handle(conn *websocket.Conn, ip, org string) {
+func handle(conn *websocket.Conn, ip, org, hst string) {
 
 	client := session.Register(conn, repo, lrepo, ip)
 
-	fmt.Printf("[ivmws][handle]: client %v connected from [%v], Origin: [%v]\n", client.Name(), ip, org)
+	fmt.Printf("[ivmws][handle]: client %v connected from [%v], Origin: [%v], Host: [%v]\n", client.Name(), ip, org, hst)
 
 	session.TuneClientConn(client)
 
