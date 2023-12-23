@@ -34,6 +34,23 @@ func accessControl(h http.Handler) http.Handler {
 // Handles the rate Limit control
 func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uh := r.Header.Get("Upgrade")
+		ac := r.Header.Get("Accept")
+		//wsp := r.Header.Get("Sec-WebSocket-Protocol")
+
+		if uh != "websocket" && ac != "application/nostr+json" {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Bad request")
+			return
+		}
+		// [ ]: To review later but as of now (20231223) no-one is setting this Header properlly
+		// if !strings.Contains(wsp, "nostr") {
+		// 	w.WriteHeader(http.StatusFailedDependency)
+		// 	fmt.Fprintf(w, "Bad protocol")
+		// 	return
+		// }
+
+		// Get the current timestamp and IP address
 		currentTimestamp := time.Now()
 		ip := tools.GetIP(r)
 		rc := &ivmws.RequestContext{IP: ip}
@@ -85,8 +102,9 @@ func controlIPConn(h http.Handler) http.Handler {
 			return
 		}
 
-		if ivmws.IPCount[ip] > 0 {
-			fmt.Printf("[MW-ipc] Too many requests [%d] from %s\n", ivmws.IPCount[ip], ip)
+		if tools.IPCount[ip] > 0 {
+			fmt.Printf(
+				"[MW-ipc] Too many requests [%d] from %s, headers [upgrade %v, accept %v, sec-ws-p %v], req URL [%v]\n", tools.IPCount[ip], ip, r.Header.Get("Upgrade"), r.Header.Get("Accept"), r.Header.Get("Sec-WebSocket-Protocol"), r.URL)
 			http.Error(w, "Bad request", http.StatusForbidden)
 			return
 		}

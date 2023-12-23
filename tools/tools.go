@@ -12,6 +12,10 @@ import (
 	gn "github.com/nbd-wtf/go-nostr"
 )
 
+var (
+	IPCount = make(map[string]int)
+)
+
 // Filter attributes containing lists (ids, authors, kinds and tag filters like #e) are JSON arrays with one or more values.
 // [x] At least one of the arrays' values must match the relevant field in an event for the condition to be considered a match.
 // [ ] For scalar event attributes such as authors and kind, the attribute from the event must be contained in the filter list.
@@ -200,4 +204,31 @@ func GetIP(r *http.Request) string {
 		ip = r.RemoteAddr
 	}
 	return ip
+}
+
+func DiscoverHost(r *http.Request) string {
+	var host string
+	_host := r.Host
+	h_host := r.Header.Get("Host")
+	fh_host := r.Header.Get("X-Forwarded-Host")
+	url_host := r.URL.Host
+
+	// find NOT empty host
+	if _host == "" {
+		if h_host == "" {
+			if fh_host == "" {
+				if url_host == "" {
+					fmt.Printf("HOST value not find in the request")
+				}
+			} else {
+				host = fh_host
+			}
+		} else {
+			host = h_host
+		}
+	} else {
+		host = _host
+	}
+
+	return host
 }

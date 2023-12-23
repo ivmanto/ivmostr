@@ -23,6 +23,7 @@ import (
 var (
 	NewEvent = make(chan *gn.Event)
 	Exit     = make(chan struct{})
+	ticker   = time.NewTicker(60 * time.Minute)
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -91,7 +92,7 @@ func (s *Session) Register(
 	switch s.cfg.Relay_access {
 	case "public":
 
-		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "ts":%d}`, client.id, client.IP, client.name, time.Now().Unix())
+		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, len(s.ns), time.Now().Unix())
 
 		s.ilgr.Printf("%v", pld)
 		lep := logging.Entry{
@@ -115,15 +116,6 @@ func (s *Session) Register(
 		// Unknown relay access type - by default it is publi
 		_ = client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
 	}
-
-	pldac := fmt.Sprintf(`{"active_clients_connected":%d, "as_of_time":%v}`, len(s.ns), time.Now())
-	s.ilgr.Printf("%v", pldac)
-	lep2 := logging.Entry{
-		Severity: logging.Notice,
-		Payload:  pldac,
-	}
-	s.clgr.Log(lep2)
-
 	return &client
 }
 
@@ -131,6 +123,7 @@ func (s *Session) Register(
 func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	removed := s.remove(client)
+	tools.IPCount[client.IP]--
 	s.mu.Unlock()
 	if !removed {
 		fmt.Printf(" * client with IP %v was NOT removed from session connections!\n", client.IP)
@@ -183,6 +176,10 @@ func (s *Session) TuneClientConn(client *Client) {
 	if err != nil {
 		s.elgr.Printf("ERROR client-side %s (set-read-deadline): %v", client.IP, err)
 	}
+
+	// Set read message size limit as stated in the server_info.json file
+	client.conn.SetReadLimit(int64(16384))
+
 	err = client.conn.SetWriteDeadline(t)
 	if err != nil {
 		s.elgr.Printf("ERROR client-side %s (set-write-deadline): %v", client.IP, err)
@@ -276,7 +273,6 @@ func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 func (s *Session) ConnectionHealthChecker() {
 
 	var err error
-	ticker := time.NewTicker(3 * time.Minute)
 	pm := websocket.PingMessage
 	dl := time.Millisecond * 100
 
@@ -284,7 +280,10 @@ func (s *Session) ConnectionHealthChecker() {
 		select {
 		case <-ticker.C:
 			fmt.Printf("   ...--- === ---...   \n")
-			for _, client := range s.ns {
+
+			// avoid concurent changes to cause slice out of range error
+			nsc := s.ns
+			for _, client := range nsc {
 				s.mu.Lock()
 				err = client.conn.WriteControl(pm, []byte("ping"), time.Time.Add(time.Now(), dl))
 				s.mu.Unlock()
@@ -295,10 +294,11 @@ func (s *Session) ConnectionHealthChecker() {
 				}
 				fmt.Printf("[hc]: [%v] successful PING!\n", client.IP)
 
-				// Read the pong message from the client
+				// Read the pong message from the client (timeout 1 s)
+				_ = client.conn.SetReadDeadline(time.Time.Add(time.Now(), 1*time.Second))
 				mt, pongMsg, err := client.conn.ReadMessage()
 				if err != nil {
-					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v", client.IP, err)
+					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v\n", client.IP, err)
 					client.conn.Close()
 					continue
 				}
@@ -306,6 +306,7 @@ func (s *Session) ConnectionHealthChecker() {
 				bpong := string(pongMsg) == "pong" || string(pongMsg) == "PONG" || string(pongMsg) == "Pong"
 				if mt == websocket.PongMessage && bpong {
 					fmt.Printf("[hc]: [%v] successful PONG!\n", client.IP)
+					_ = client.conn.SetReadDeadline(time.Time{})
 				} else {
 					client.conn.Close()
 				}

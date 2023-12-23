@@ -23,9 +23,8 @@ var (
 	pool           *gopool.Pool
 	repo           nostr.NostrRepo
 	lrepo          nostr.ListRepo
-	IPCount        map[string]int = make(map[string]int)
 	mu             sync.Mutex
-	trustedOrigins = []string{"nostr.ivmanto.dev", "nostr.watch", "localhost", "127.0.0.1", "nostr.band", "nostrcheck.me", "nostr", ""}
+	trustedOrigins = []string{"nostr.ivmanto.dev", "localhost", "127.0.0.1", "nostr.watch", "nostr.info", "nostr.band", "nostrcheck.me", "nostr"}
 )
 
 type WSHandler struct {
@@ -81,8 +80,9 @@ func (h *WSHandler) Router() chi.Router {
 func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	org := r.Header.Get("Origin")
-	hst := r.Header.Get("Host")
+	hst := tools.DiscoverHost(r)
 	ip := tools.GetIP(r)
+
 	h.lgr.Printf("WSU-REQ: ... ip: %v, Host: %v, Origin: %v", ip, hst, org)
 
 	upgrader := websocket.Upgrader{
@@ -105,9 +105,9 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mu.Lock()
-	IPCount[ip]++
+	tools.IPCount[ip]++
 	mu.Unlock()
-	h.lgr.Printf("[connman] [+] client IP %s increased to %d active connection", ip, IPCount[ip])
+	h.lgr.Printf("[connman] [+] client IP %s increased to %d active connection", ip, tools.IPCount[ip])
 
 	_ = pool.ScheduleTimeout(time.Millisecond, func() {
 		handle(conn, ip, org, hst)
@@ -126,9 +126,9 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 	pool.Schedule(func() {
 		if err := client.ReceiveMsg(); err != nil {
 			if strings.Contains(err.Error(), "websocket: close 1001") {
-				fmt.Printf("ERROR: client %s closed the connection. %v\n", client.IP, err)
+				fmt.Printf("[wsh] ERROR: client %s closed the connection. %v\n", client.IP, err)
 			} else {
-				fmt.Printf("ERROR client-side %s (HandleWebSocket): %v\n", client.IP, err)
+				fmt.Printf("[wsh] ERROR: client-side %s (HandleWebSocket): %v\n", client.IP, err)
 			}
 
 			RemoveIPCount(ip)
@@ -140,12 +140,11 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 
 // Handling clients' IP addresses
 func RemoveIPCount(ip string) {
-
 	mu := sync.Mutex{}
-	if ip != "" && IPCount[ip] > 0 {
+	if ip != "" && tools.IPCount[ip] > 0 {
 		mu.Lock()
-		IPCount[ip]--
+		tools.IPCount[ip]--
 		mu.Unlock()
-		fmt.Printf("[ws-handle] [-] Closing client IP %s decreased active connections to %d\n", ip, IPCount[ip])
+		fmt.Printf("[wsh] [-] Closing client IP %s decreased active connections to %d\n", ip, tools.IPCount[ip])
 	}
 }
