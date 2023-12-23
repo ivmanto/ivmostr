@@ -185,6 +185,10 @@ func (s *Session) TuneClientConn(client *Client) {
 	if err != nil {
 		s.elgr.Printf("ERROR client-side %s (set-read-deadline): %v", client.IP, err)
 	}
+
+	// Set read message size limit as stated in the server_info.json file
+	client.conn.SetReadLimit(int64(16384))
+
 	err = client.conn.SetWriteDeadline(t)
 	if err != nil {
 		s.elgr.Printf("ERROR client-side %s (set-write-deadline): %v", client.IP, err)
@@ -285,7 +289,10 @@ func (s *Session) ConnectionHealthChecker() {
 		select {
 		case <-ticker.C:
 			fmt.Printf("   ...--- === ---...   \n")
-			for _, client := range s.ns {
+
+			// avoid concurent changes to cause slice out of range error
+			nsc := s.ns
+			for _, client := range nsc {
 				s.mu.Lock()
 				err = client.conn.WriteControl(pm, []byte("ping"), time.Time.Add(time.Now(), dl))
 				s.mu.Unlock()
