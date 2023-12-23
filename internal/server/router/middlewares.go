@@ -34,6 +34,15 @@ func accessControl(h http.Handler) http.Handler {
 // Handles the rate Limit control
 func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uh := r.Header.Get("Upgrade")
+		ac := r.Header.Get("Accept")
+		if uh != "websocket" && ac != "application/nostr+json" {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Bad request")
+			return
+		}
+
+		// Get the current timestamp and IP address
 		currentTimestamp := time.Now()
 		ip := tools.GetIP(r)
 		rc := &ivmws.RequestContext{IP: ip}
