@@ -205,3 +205,30 @@ func GetIP(r *http.Request) string {
 	}
 	return ip
 }
+
+func DiscoverHost(r *http.Request) string {
+	var host string
+	_host := r.Host
+	h_host := r.Header.Get("Host")
+	fh_host := r.Header.Get("X-Forwarded-Host")
+	url_host := r.URL.Host
+
+	// find NOT empty host
+	if _host == "" {
+		if h_host == "" {
+			if fh_host == "" {
+				if url_host == "" {
+					fmt.Printf("HOST value not find in the request")
+				}
+			} else {
+				host = fh_host
+			}
+		} else {
+			host = h_host
+		}
+	} else {
+		host = _host
+	}
+
+	return host
+}

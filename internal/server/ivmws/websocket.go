@@ -80,8 +80,9 @@ func (h *WSHandler) Router() chi.Router {
 func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	org := r.Header.Get("Origin")
-	hst := r.Header.Get("Host")
+	hst := tools.DiscoverHost(r)
 	ip := tools.GetIP(r)
+
 	h.lgr.Printf("WSU-REQ: ... ip: %v, Host: %v, Origin: %v", ip, hst, org)
 
 	upgrader := websocket.Upgrader{
