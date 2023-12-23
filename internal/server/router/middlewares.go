@@ -95,7 +95,8 @@ func controlIPConn(h http.Handler) http.Handler {
 		}
 
 		if tools.IPCount[ip] > 0 {
-			fmt.Printf("[MW-ipc] Too many requests [%d] from %s\n", tools.IPCount[ip], ip)
+			fmt.Printf(
+				"[MW-ipc] Too many requests [%d] from %s, headers [upgrade %v, accept %v], req URL [%v]\n", tools.IPCount[ip], ip, r.Header.Get("Upgrade"), r.Header.Get("Accept"), r.URL)
 			http.Error(w, "Bad request", http.StatusForbidden)
 			return
 		}
