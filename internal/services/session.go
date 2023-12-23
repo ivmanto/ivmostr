@@ -23,7 +23,7 @@ import (
 var (
 	NewEvent = make(chan *gn.Event)
 	Exit     = make(chan struct{})
-	ticker   = time.NewTicker(3 * time.Minute)
+	ticker   = time.NewTicker(60 * time.Minute)
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
