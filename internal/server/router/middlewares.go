@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
@@ -36,9 +37,16 @@ func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		uh := r.Header.Get("Upgrade")
 		ac := r.Header.Get("Accept")
+		wsp := r.Header.Get("Sec-WebSocket-Protocol")
+
 		if uh != "websocket" && ac != "application/nostr+json" {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "Bad request")
+			return
+		}
+		if !strings.Contains(wsp, "nostr") {
+			w.WriteHeader(http.StatusFailedDependency)
+			fmt.Fprintf(w, "Bad protocol")
 			return
 		}
 
@@ -96,7 +104,7 @@ func controlIPConn(h http.Handler) http.Handler {
 
 		if tools.IPCount[ip] > 0 {
 			fmt.Printf(
-				"[MW-ipc] Too many requests [%d] from %s, headers [upgrade %v, accept %v], req URL [%v]\n", tools.IPCount[ip], ip, r.Header.Get("Upgrade"), r.Header.Get("Accept"), r.URL)
+				"[MW-ipc] Too many requests [%d] from %s, headers [upgrade %v, accept %v, sec-ws-p %v], req URL [%v]\n", tools.IPCount[ip], ip, r.Header.Get("Upgrade"), r.Header.Get("Accept"), r.Header.Get("Sec-WebSocket-Protocol"), r.URL)
 			http.Error(w, "Bad request", http.StatusForbidden)
 			return
 		}

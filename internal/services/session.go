@@ -298,7 +298,7 @@ func (s *Session) ConnectionHealthChecker() {
 				_ = client.conn.SetReadDeadline(time.Time.Add(time.Now(), 1*time.Second))
 				mt, pongMsg, err := client.conn.ReadMessage()
 				if err != nil {
-					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v", client.IP, err)
+					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v\n", client.IP, err)
 					client.conn.Close()
 					continue
 				}
