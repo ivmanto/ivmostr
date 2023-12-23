@@ -23,6 +23,7 @@ import (
 var (
 	NewEvent = make(chan *gn.Event)
 	Exit     = make(chan struct{})
+	ticker   = time.NewTicker(3 * time.Minute)
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -131,6 +132,7 @@ func (s *Session) Register(
 func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	removed := s.remove(client)
+	tools.IPCount[client.IP]--
 	s.mu.Unlock()
 	if !removed {
 		fmt.Printf(" * client with IP %v was NOT removed from session connections!\n", client.IP)
@@ -276,7 +278,7 @@ func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 func (s *Session) ConnectionHealthChecker() {
 
 	var err error
-	ticker := time.NewTicker(3 * time.Minute)
+
 	pm := websocket.PingMessage
 	dl := time.Millisecond * 100
 

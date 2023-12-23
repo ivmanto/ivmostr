@@ -23,7 +23,6 @@ var (
 	pool           *gopool.Pool
 	repo           nostr.NostrRepo
 	lrepo          nostr.ListRepo
-	IPCount        map[string]int = make(map[string]int)
 	mu             sync.Mutex
 	trustedOrigins = []string{"nostr.ivmanto.dev", "nostr.watch", "localhost", "127.0.0.1", "nostr.band", "nostrcheck.me", "nostr", ""}
 )
@@ -105,9 +104,9 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mu.Lock()
-	IPCount[ip]++
+	tools.IPCount[ip]++
 	mu.Unlock()
-	h.lgr.Printf("[connman] [+] client IP %s increased to %d active connection", ip, IPCount[ip])
+	h.lgr.Printf("[connman] [+] client IP %s increased to %d active connection", ip, tools.IPCount[ip])
 
 	_ = pool.ScheduleTimeout(time.Millisecond, func() {
 		handle(conn, ip, org, hst)
@@ -140,12 +139,11 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 
 // Handling clients' IP addresses
 func RemoveIPCount(ip string) {
-
 	mu := sync.Mutex{}
-	if ip != "" && IPCount[ip] > 0 {
+	if ip != "" && tools.IPCount[ip] > 0 {
 		mu.Lock()
-		IPCount[ip]--
+		tools.IPCount[ip]--
 		mu.Unlock()
-		fmt.Printf("[ws-handle] [-] Closing client IP %s decreased active connections to %d\n", ip, IPCount[ip])
+		fmt.Printf("[ws-handle] [-] Closing client IP %s decreased active connections to %d\n", ip, tools.IPCount[ip])
 	}
 }

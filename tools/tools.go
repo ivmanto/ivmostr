@@ -12,6 +12,10 @@ import (
 	gn "github.com/nbd-wtf/go-nostr"
 )
 
+var (
+	IPCount = make(map[string]int)
+)
+
 // Filter attributes containing lists (ids, authors, kinds and tag filters like #e) are JSON arrays with one or more values.
 // [x] At least one of the arrays' values must match the relevant field in an event for the condition to be considered a match.
 // [ ] For scalar event attributes such as authors and kind, the attribute from the event must be contained in the filter list.
