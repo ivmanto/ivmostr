@@ -92,7 +92,7 @@ func (s *Session) Register(
 	switch s.cfg.Relay_access {
 	case "public":
 
-		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "ts":%d}`, client.id, client.IP, client.name, time.Now().Unix())
+		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, len(s.ns), time.Now().Unix())
 
 		s.ilgr.Printf("%v", pld)
 		lep := logging.Entry{
@@ -116,15 +116,6 @@ func (s *Session) Register(
 		// Unknown relay access type - by default it is publi
 		_ = client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
 	}
-
-	pldac := fmt.Sprintf(`{"active_clients_connected":%d, "as_of_time":%v}`, len(s.ns), time.Now())
-	s.ilgr.Printf("%v", pldac)
-	lep2 := logging.Entry{
-		Severity: logging.Notice,
-		Payload:  pldac,
-	}
-	s.clgr.Log(lep2)
-
 	return &client
 }
 
