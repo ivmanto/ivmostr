@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
@@ -37,18 +36,19 @@ func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		uh := r.Header.Get("Upgrade")
 		ac := r.Header.Get("Accept")
-		wsp := r.Header.Get("Sec-WebSocket-Protocol")
+		//wsp := r.Header.Get("Sec-WebSocket-Protocol")
 
 		if uh != "websocket" && ac != "application/nostr+json" {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "Bad request")
 			return
 		}
-		if !strings.Contains(wsp, "nostr") {
-			w.WriteHeader(http.StatusFailedDependency)
-			fmt.Fprintf(w, "Bad protocol")
-			return
-		}
+		// [ ]: To review later but as of now (20231223) no-one is setting this Header properlly
+		// if !strings.Contains(wsp, "nostr") {
+		// 	w.WriteHeader(http.StatusFailedDependency)
+		// 	fmt.Fprintf(w, "Bad protocol")
+		// 	return
+		// }
 
 		// Get the current timestamp and IP address
 		currentTimestamp := time.Now()
