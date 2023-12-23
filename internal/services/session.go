@@ -278,7 +278,6 @@ func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 func (s *Session) ConnectionHealthChecker() {
 
 	var err error
-
 	pm := websocket.PingMessage
 	dl := time.Millisecond * 100
 
@@ -297,7 +296,8 @@ func (s *Session) ConnectionHealthChecker() {
 				}
 				fmt.Printf("[hc]: [%v] successful PING!\n", client.IP)
 
-				// Read the pong message from the client
+				// Read the pong message from the client (timeout 1 s)
+				_ = client.conn.SetReadDeadline(time.Time.Add(time.Now(), 1*time.Second))
 				mt, pongMsg, err := client.conn.ReadMessage()
 				if err != nil {
 					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v", client.IP, err)
@@ -308,6 +308,7 @@ func (s *Session) ConnectionHealthChecker() {
 				bpong := string(pongMsg) == "pong" || string(pongMsg) == "PONG" || string(pongMsg) == "Pong"
 				if mt == websocket.PongMessage && bpong {
 					fmt.Printf("[hc]: [%v] successful PONG!\n", client.IP)
+					_ = client.conn.SetReadDeadline(time.Time{})
 				} else {
 					client.conn.Close()
 				}
