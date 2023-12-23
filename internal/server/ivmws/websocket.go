@@ -125,9 +125,9 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 	pool.Schedule(func() {
 		if err := client.ReceiveMsg(); err != nil {
 			if strings.Contains(err.Error(), "websocket: close 1001") {
-				fmt.Printf("ERROR: client %s closed the connection. %v\n", client.IP, err)
+				fmt.Printf("[ivmws][handle] ERROR: client %s closed the connection. %v\n", client.IP, err)
 			} else {
-				fmt.Printf("ERROR client-side %s (HandleWebSocket): %v\n", client.IP, err)
+				fmt.Printf("[ivmws][handle] ERROR: client-side %s (HandleWebSocket): %v\n", client.IP, err)
 			}
 
 			RemoveIPCount(ip)
