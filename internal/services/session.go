@@ -186,7 +186,6 @@ func (s *Session) TuneClientConn(client *Client) {
 	}
 
 	client.conn.SetCloseHandler(func(code int, text string) error {
-		stop <- struct{}{}
 		s.Remove(client)
 		client.lgr.Printf("[close]: [-] Closing client %v, code: %v, text: %v", client.IP, code, text)
 		return nil
