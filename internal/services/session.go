@@ -23,7 +23,7 @@ import (
 var (
 	NewEvent = make(chan *gn.Event)
 	Exit     = make(chan struct{})
-	ticker   = time.NewTicker(60 * time.Minute)
+	ticker   = time.NewTicker(1440 * time.Minute)
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -57,7 +57,7 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 	go session.NewEventBroadcaster()
 
 	// regular connection health checker
-	go session.ConnectionHealthChecker()
+	//go session.ConnectionHealthChecker()
 
 	return &session
 }
