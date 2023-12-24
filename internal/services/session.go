@@ -313,7 +313,7 @@ func (s *Session) ConnectionHealthChecker() {
 			}
 
 			fmt.Printf("[hc]: * %d active clients connections\n", len(s.ns))
-			fmt.Printf("   ...--- OFF ---...   \n\n\n")
+			fmt.Printf("   ...--- OFF ---...   \n")
 
 		case <-Exit:
 			break

@@ -51,6 +51,7 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 		return fmt.Errorf("unable to save Tags for Event ID: %s. error: %v", ec.ID, errt)
 	}
 
+	fmt.Printf("Event ID: %s saved in repository\n", ec.ID)
 	return nil
 }
 

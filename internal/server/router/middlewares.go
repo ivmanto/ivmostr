@@ -68,11 +68,12 @@ func rateLimiter(h http.Handler) http.Handler {
 		rateLimit := ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext).RateLimit
 
 		// Check if the IP address has made too many requests recently
-		if time.Since(rateLimit.Timestamp) < time.Second*10 {
+		if time.Since(rateLimit.Timestamp) < time.Second*30 {
 			if rateLimit.Requests >= 10 {
 				// Block the request
 				w.WriteHeader(http.StatusTooManyRequests)
-				fmt.Fprintf(w, "Too many requests from IP address %s within 10 seconds.\n", ip)
+				fmt.Fprintf(w, "Too many requests! If continue the ip will be blacklisted!")
+				fmt.Printf("[rateLimiter] Too many requests from IP address %s within 30 seconds.\n", ip)
 				// [ ]: add the ip to the blacklist (once blocking of IPs from the blacklist is implemented)
 				return
 			} else {
@@ -102,10 +103,10 @@ func controlIPConn(h http.Handler) http.Handler {
 			return
 		}
 
-		if tools.IPCount[ip] > 0 {
-			fmt.Printf(
-				"[MW-ipc] Too many requests [%d] from %s, headers [upgrade %v, accept %v, sec-ws-p %v], req URL [%v]\n", tools.IPCount[ip], ip, r.Header.Get("Upgrade"), r.Header.Get("Accept"), r.Header.Get("Sec-WebSocket-Protocol"), r.URL)
-			http.Error(w, "Bad request", http.StatusForbidden)
+		if tools.IPCount[ip] > 1 {
+			// fmt.Printf(
+			// 	"[MW-ipc] Too many requests [%d] from %s, headers [upgrade %v, accept %v, sec-ws-p %v], req URL [%v]\n", tools.IPCount[ip], ip, r.Header.Get("Upgrade"), r.Header.Get("Accept"), r.Header.Get("Sec-WebSocket-Protocol"), r.URL)
+			http.Error(w, "Too many requests", http.StatusTooManyRequests)
 			return
 		}
 

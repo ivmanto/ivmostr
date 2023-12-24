@@ -154,7 +154,10 @@ func PrintVersion() {
 }
 
 func ServerInfo(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("providing server info ...\n")
+
+	host := DiscoverHost(r)
+	fmt.Printf("providing server info to %v...\n", host)
+
 	assetsPath, err := filepath.Abs("assets")
 	if err != nil {
 		fmt.Printf("ERROR: Failed to get absolute path to assets folder: %v", err)
@@ -172,7 +175,6 @@ func ServerInfo(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		// send the data as json object in the response body
 		_, _ = w.Write(data)
-
 	} else {
 		w.WriteHeader(http.StatusPartialContent)
 		_, _ = w.Write([]byte("{\"name\":\"ivmostr\"}"))
