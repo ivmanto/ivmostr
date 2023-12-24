@@ -155,8 +155,9 @@ func PrintVersion() {
 
 func ServerInfo(w http.ResponseWriter, r *http.Request) {
 
-	host := DiscoverHost(r)
-	fmt.Printf("providing server info to %v...\n", host)
+	ip := GetIP(r)
+	org := r.Header.Get("Origin")
+	fmt.Printf("providing server info to %v, %v...\n", ip, org)
 
 	assetsPath, err := filepath.Abs("assets")
 	if err != nil {

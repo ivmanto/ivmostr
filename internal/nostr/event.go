@@ -13,4 +13,5 @@ type NostrRepo interface {
 	GetEventsByFilter(filter map[string]interface{}) ([]*gn.Event, error)
 	DeleteEvent(id string) error
 	DeleteEvents(ids []string) error
+	TotalDocs() (int, error)
 }
