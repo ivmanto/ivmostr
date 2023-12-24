@@ -39,10 +39,11 @@ type Session struct {
 	clgr    *logging.Logger
 	pool    *gopool.Pool
 	cfg     *config.ServiceConfig
+	repo    nostr.NostrRepo
 }
 
 // NewSession creates a new WebSocket session.
-func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
+func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo) *Session {
 	session := Session{
 		ns:   make(map[string]*Client),
 		bq:   make(map[string]gn.Event),
@@ -51,7 +52,11 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
 		clgr: cl,
 		pool: pool,
+		repo: repo,
 	}
+
+	td, _ := repo.TotalDocs()
+	session.ilgr.Printf("total events in the DB %d", td)
 
 	// [x]: review and rework the event broadcaster
 	go session.NewEventBroadcaster()
@@ -64,14 +69,12 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 
 // Register upgraded websocket connection as client in the sessions
 func (s *Session) Register(
-	conn *websocket.Conn, rp nostr.NostrRepo, lrepo nostr.ListRepo, ip string) *Client {
+	conn *websocket.Conn, ip string) *Client {
 
 	client := Client{
 		session:   s,
 		conn:      conn,
 		lgr:       log.New(os.Stderr, "[client] ", log.LstdFlags),
-		repo:      rp,
-		lrepo:     lrepo,
 		IP:        ip,
 		Authed:    false,
 		errorRate: make(map[string]int),
@@ -129,7 +132,7 @@ func (s *Session) Remove(client *Client) {
 		fmt.Printf(" * client with IP %v was NOT removed from session connections!\n", client.IP)
 		return
 	}
-	fmt.Printf(" - %d active clients connected\n", len(s.clients))
+	fmt.Printf(" - %d active clients, %d [by ns] connected\n", len(s.clients), len(s.ns))
 }
 
 // Give code-word as name to the client connection

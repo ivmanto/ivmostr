@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
 	"golang.org/x/sync/errgroup"
@@ -26,8 +25,6 @@ type Client struct {
 	id              uint
 	name            string
 	session         *Session
-	repo            nostr.NostrRepo
-	lrepo           nostr.ListRepo
 	challenge       string
 	npub            string
 	Subscription_id string
@@ -163,7 +160,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// Keep it disabled until [ ]TODO: find a way to clone the execution context
 		// NewEvent <- e
 
-		err := c.repo.StoreEventK3(e)
+		err := c.session.repo.StoreEventK3(e)
 		if err != nil {
 			return c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		}
@@ -185,7 +182,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	// Keep it disabled until [ ]TODO: find a way to clone the execution context
 	// NewEvent <- e
 
-	err = c.repo.StoreEvent(e)
+	err = c.session.repo.StoreEvent(e)
 	if err != nil {
 		return c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 	}
@@ -465,7 +462,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		// method is used for DEBUG info review
 		//c.session.printFilter(filter, c)
 
-		events, err := c.repo.GetEventsByFilter(filter)
+		events, err := c.session.repo.GetEventsByFilter(filter)
 		if err != nil {
 			c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 			return err
