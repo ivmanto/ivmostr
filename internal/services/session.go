@@ -55,7 +55,10 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo) *Se
 		repo: repo,
 	}
 
-	td, _ := repo.TotalDocs()
+	td, err := repo.TotalDocs()
+	if err != nil {
+		session.elgr.Printf("error getting total number of docs: %v ", err)
+	}
 	session.ilgr.Printf("total events in the DB %d", td)
 
 	// [x]: review and rework the event broadcaster
