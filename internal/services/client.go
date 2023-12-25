@@ -457,6 +457,8 @@ func (c *Client) fetchAllFilters(ctx context.Context) error {
 
 func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) error {
 	// Function to fetch data from the specified filter
+	mu := sync.Mutex{}
+
 	return func() error {
 
 		// method is used for DEBUG info review
@@ -469,7 +471,9 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		}
 		nbmrevents += len(events)
 
+		mu.Lock()
 		err = c.write(&[]interface{}{events})
+		mu.Unlock()
 		if err != nil {
 			c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 			return err
