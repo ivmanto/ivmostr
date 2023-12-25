@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
 	"golang.org/x/sync/errgroup"
@@ -60,12 +61,10 @@ func (c *Client) ReceiveMsg() error {
 		}
 	}()
 
-	go func() {
-		err := c.write()
-		if err != nil {
-			errRM <- fmt.Errorf("Error while writing message: %v", err)
-		}
-	}()
+	err := c.write()
+	if err != nil {
+		errRM <- fmt.Errorf("Error while writing message: %v", err)
+	}
 
 	// Receive errors from the channel and handle them
 	for err := range errRM {
@@ -100,7 +99,8 @@ func (c *Client) write() error {
 					if err != nil {
 						errWM <- err
 					}
-					c.lgr.Printf(" * %d bytes written to ws connection", len(*msg))
+
+					c.lgr.Printf(" * %d bytes written to ws connection", tools.CalcLenghtInBytes(msg))
 					msg = nil
 				}
 				errWM <- nil

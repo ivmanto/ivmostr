@@ -235,3 +235,11 @@ func DiscoverHost(r *http.Request) string {
 
 	return host
 }
+
+func CalcLenghtInBytes(i *[]interface{}) int {
+	var wstr string
+	for _, intf := range *i {
+		wstr = wstr + intf.(string)
+	}
+	return len([]byte(wstr))
+}
