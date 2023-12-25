@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
@@ -250,6 +251,9 @@ func CalcLenghtInBytes(i *[]interface{}) int {
 			} else {
 				wstr = wstr + "false"
 			}
+		case "[]*nostr.Event":
+			out, _ := json.Marshal(intf)
+			wstr = wstr + string(out)
 		default:
 			wstr = wstr + intf.(string)
 		}
