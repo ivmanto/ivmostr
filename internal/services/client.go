@@ -60,6 +60,13 @@ func (c *Client) ReceiveMsg() error {
 		}
 	}()
 
+	go func() {
+		err := c.write()
+		if err != nil {
+			errRM <- fmt.Errorf("Error while writing message: %v", err)
+		}
+	}()
+
 	// Receive errors from the channel and handle them
 	for err := range errRM {
 		if err != nil {
@@ -93,6 +100,7 @@ func (c *Client) write() error {
 					if err != nil {
 						errWM <- err
 					}
+					c.lgr.Printf(" * %d bytes written to ws connection", len(*msg))
 					msg = nil
 				}
 				errWM <- nil
