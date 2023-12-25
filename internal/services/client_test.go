@@ -32,7 +32,7 @@ var (
 	dlv       int    = 20
 	ecn       string = "events"
 	pool             = gopool.NewPool(128, 2, 1)
-	session          = NewSession(pool, nil)
+	session          = NewSession(pool, nil, nostrRepo)
 	message   []interface{}
 )
 
@@ -42,8 +42,6 @@ var client = Client{
 	id:              0,
 	name:            "",
 	session:         nil,
-	repo:            nostrRepo,
-	lrepo:           nil,
 	challenge:       "",
 	npub:            "",
 	Subscription_id: "",
@@ -84,7 +82,7 @@ func GetConnected(t *testing.T) {
 	// set the client's connection to the echo server
 	client.conn = conn
 	client.session = session
-	client.repo = nostrRepo
+	client.session.repo = nostrRepo
 }
 
 func Echo(w http.ResponseWriter, r *http.Request) {
@@ -122,10 +120,7 @@ func TestWrite(t *testing.T) {
 	message := []interface{}{"hello world"}
 
 	// write the message to the client
-	err = client.write(&message)
-	if err != nil {
-		t.Fatalf("error writing message to client: %v", err)
-	}
+	msgw <- &message
 
 	// read the message from the echo server
 	err = conn.ReadJSON(&rslmsg)
@@ -156,7 +151,7 @@ func TestHandlerEventMsgs(t *testing.T) {
 		t.Fatalf("error: id not found or it is in wrong format")
 	}
 
-	err = client.repo.DeleteEvent(doc_id)
+	err = client.session.repo.DeleteEvent(doc_id)
 	if err != nil {
 		t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
 	}
@@ -190,7 +185,7 @@ func TestHandlerEventMsgs(t *testing.T) {
 		t.Fatalf("error: message received from echo server is not expected")
 	}
 
-	err = client.repo.DeleteEvent(doc_id)
+	err = client.session.repo.DeleteEvent(doc_id)
 	if err != nil {
 		t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
 	}

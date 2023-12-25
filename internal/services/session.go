@@ -112,15 +112,15 @@ func (s *Session) Register(
 		client.GenChallenge()
 
 		// Challenge the client to send AUTH message
-		_ = client.writeAUTHChallenge()
+		client.writeAUTHChallenge()
 
 	case "paid":
 		// [ ]: 1) required authentication - check for it and 2) check for active payment
-		_ = client.writeCustomNotice("restricted: this relay provides paid access only. Visit https://relay.ivmanto.dev for more information.")
+		client.writeCustomNotice("restricted: this relay provides paid access only. Visit https://relay.ivmanto.dev for more information.")
 
 	default:
 		// Unknown relay access type - by default it is publi
-		_ = client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
+		client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
 	}
 	return &client
 }
@@ -240,27 +240,15 @@ func (s *Session) NewEventBroadcaster() {
 					recp := strings.Split(tag[1], ",")
 					if len(recp) > 1 {
 						if client.npub == recp[1] {
-							evs := []interface{}{e}
-							s.mu.Lock()
-							err := client.write(&evs)
-							s.mu.Unlock()
-							if err != nil {
-								client.lgr.Printf("ERROR [auth]: error while sending event (kind=4) to client: %v", err)
-							}
+							msgw <- &[]interface{}{e}
 							break
 						}
 					}
 				}
 
 				if filterMatch(e, client.GetFilters()) {
-					evs := []interface{}{e}
-					s.mu.Lock()
-					err := client.write(&evs)
-					s.mu.Unlock()
-					if err != nil {
-						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
-						continue
-					}
+					msgw <- &[]interface{}{e}
+					continue
 				}
 			}
 			s.mu.Lock()
