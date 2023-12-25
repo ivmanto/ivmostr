@@ -132,7 +132,8 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 				fmt.Printf("[wsh] ERROR: client-side %s (HandleWebSocket): %v\n", client.IP, err)
 			}
 
-			RemoveIPCount(ip)
+			//RemoveIPCount(ip)
+			session.Remove(client)
 			conn.Close()
 			return
 		}
