@@ -99,8 +99,8 @@ func (c *Client) write() error {
 					if err != nil {
 						errWM <- err
 					}
-
-					c.lgr.Printf(" * %d bytes written to ws connection", tools.CalcLenghtInBytes(msg))
+					lb := tools.CalcLenghtInBytes(msg)
+					c.lgr.Printf(" * %d bytes written to ws connection", lb)
 					msg = nil
 				}
 				errWM <- nil

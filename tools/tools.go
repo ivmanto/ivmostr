@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 
 	gn "github.com/nbd-wtf/go-nostr"
@@ -239,7 +240,19 @@ func DiscoverHost(r *http.Request) string {
 func CalcLenghtInBytes(i *[]interface{}) int {
 	var wstr string
 	for _, intf := range *i {
-		wstr = wstr + intf.(string)
+
+		fmt.Printf("type of: %v", reflect.TypeOf(intf).String())
+
+		switch reflect.TypeOf(intf).String() {
+		case "bool":
+			if intf.(bool) {
+				wstr = wstr + "true"
+			} else {
+				wstr = wstr + "false"
+			}
+		default:
+			wstr = wstr + intf.(string)
+		}
 	}
 	return len([]byte(wstr))
 }
