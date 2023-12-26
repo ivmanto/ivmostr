@@ -101,7 +101,7 @@ func (c *Client) write() error {
 					}
 					// [ ]: Remove the next two lines for production performance
 					lb := tools.CalcLenghtInBytes(msg)
-					c.lgr.Printf(" * %d bytes written to ws connection", lb)
+					c.lgr.Printf(" * %d bytes sent to [%s] over ws connection", lb, c.IP)
 
 					msg = nil
 				}
@@ -137,7 +137,7 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 	case "AUTH":
 		return c.handlerAuthMsgs(msg)
 	default:
-		c.lgr.Printf("ERROR: unknown message type: %v", (*msg)[0])
+		c.lgr.Printf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
 		c.writeCustomNotice("Error: invalid format of the received message")
 		return nil
 	}
@@ -199,10 +199,6 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// default will handle all other kinds of events that do not have specifics handlers
 		// do nothing
 	}
-
-	// sending the event to a channel, will hijack the event to the broadcaster
-	// Keep it disabled until [ ]TODO: find a way to clone the execution context
-	// NewEvent <- e
 
 	err = c.session.repo.StoreEvent(e)
 	if err != nil {
