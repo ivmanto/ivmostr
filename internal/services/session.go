@@ -23,7 +23,7 @@ import (
 var (
 	NewEvent = make(chan *gn.Event)
 	Exit     = make(chan struct{})
-	ticker   = time.NewTicker(3 * time.Minute)
+	ticker   = time.NewTicker(60 * time.Minute)
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -129,13 +129,17 @@ func (s *Session) Register(
 func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	removed := s.remove(client)
-	tools.IPCount[client.IP]--
 	s.mu.Unlock()
 	if !removed {
-		fmt.Printf(" * client with IP %v was NOT removed from session connections!\n", client.IP)
+		fmt.Printf("[rmv]: * client with IP %v was NOT removed from session connections!\n", client.IP)
 		return
 	}
-	fmt.Printf(" - %d active clients, %d [by ns] connected\n", len(s.clients), len(s.ns))
+
+	// Only remove from IPCount if removed from the session
+	s.mu.Lock()
+	tools.IPCount[client.IP]--
+	s.mu.Unlock()
+	fmt.Printf("[rmv]: - %d active clients, %d [by ns] connected\n", len(s.clients), len(s.ns))
 }
 
 // Give code-word as name to the client connection
@@ -273,7 +277,7 @@ func (s *Session) ConnectionHealthChecker() {
 	for {
 		select {
 		case <-ticker.C:
-			fmt.Printf("   ...--- === ---...   \n")
+			fmt.Printf("[hc]:   ...--- === ---...   \n")
 
 			// avoid concurent changes to cause slice out of range error
 			nsc := s.ns
@@ -314,7 +318,7 @@ func (s *Session) ConnectionHealthChecker() {
 			}
 
 			fmt.Printf("[hc]: * %d active clients connections, %d dummy (empty)\n", len(s.ns), dmc)
-			fmt.Printf("   ...--- OFF ---...   \n")
+			fmt.Printf("[hc]:   ...--- OFF ---...   \n")
 
 		case <-Exit:
 			break

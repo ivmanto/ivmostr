@@ -99,8 +99,10 @@ func (c *Client) write() error {
 					if err != nil {
 						errWM <- err
 					}
+					// [ ]: Remove the next two lines for production performance
 					lb := tools.CalcLenghtInBytes(msg)
 					c.lgr.Printf(" * %d bytes written to ws connection", lb)
+
 					msg = nil
 				}
 				errWM <- nil
