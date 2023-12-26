@@ -23,7 +23,7 @@ import (
 var (
 	NewEvent = make(chan *gn.Event)
 	Exit     = make(chan struct{})
-	ticker   = time.NewTicker(1440 * time.Minute)
+	ticker   = time.NewTicker(3 * time.Minute)
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -65,7 +65,7 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo) *Se
 	go session.NewEventBroadcaster()
 
 	// regular connection health checker
-	//go session.ConnectionHealthChecker()
+	go session.ConnectionHealthChecker()
 
 	return &session
 }
@@ -268,6 +268,7 @@ func (s *Session) ConnectionHealthChecker() {
 	var err error
 	pm := websocket.PingMessage
 	dl := time.Millisecond * 100
+	dmc := 0
 
 	for {
 		select {
@@ -282,6 +283,7 @@ func (s *Session) ConnectionHealthChecker() {
 				s.mu.Unlock()
 				if err != nil {
 					fmt.Printf("[hc]: [%v] ERROR sending ping message:%v\n", client.IP, err)
+					s.Remove(client)
 					client.conn.Close()
 					continue
 				}
@@ -292,6 +294,7 @@ func (s *Session) ConnectionHealthChecker() {
 				mt, pongMsg, err := client.conn.ReadMessage()
 				if err != nil {
 					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v\n", client.IP, err)
+					s.Remove(client)
 					client.conn.Close()
 					continue
 				}
@@ -301,11 +304,16 @@ func (s *Session) ConnectionHealthChecker() {
 					fmt.Printf("[hc]: [%v] successful PONG!\n", client.IP)
 					_ = client.conn.SetReadDeadline(time.Time{})
 				} else {
+					s.Remove(client)
 					client.conn.Close()
+				}
+				//Count dummy (empty) connections with no subscriptions
+				if client.Subscription_id == "" && len(client.Filetrs) == 0 {
+					dmc++
 				}
 			}
 
-			fmt.Printf("[hc]: * %d active clients connections\n", len(s.ns))
+			fmt.Printf("[hc]: * %d active clients connections, %d dummy (empty)\n", len(s.ns), dmc)
 			fmt.Printf("   ...--- OFF ---...   \n")
 
 		case <-Exit:
