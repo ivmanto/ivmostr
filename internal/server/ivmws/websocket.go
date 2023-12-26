@@ -19,10 +19,10 @@ import (
 )
 
 var (
-	session        *services.Session
-	pool           *gopool.Pool
-	repo           nostr.NostrRepo
-	lrepo          nostr.ListRepo
+	session *services.Session
+	pool    *gopool.Pool
+	repo    nostr.NostrRepo
+	//lrepo          nostr.ListRepo
 	mu             sync.Mutex
 	trustedOrigins = []string{"nostr.ivmanto.dev", "localhost", "127.0.0.1", "nostr.watch", "nostr.info", "nostr.band", "nostrcheck.me", "nostr"}
 )
@@ -30,6 +30,7 @@ var (
 type WSHandler struct {
 	lgr  *log.Logger
 	clgr *logging.Logger
+	repo nostr.NostrRepo
 	cfg  *config.ServiceConfig
 }
 
@@ -49,13 +50,13 @@ func NewWSHandler(
 	}
 	// Setting up the repositories
 	repo = _repo
-	lrepo = _lrepo
+	//lrepo = _lrepo
 	// Setting up the websocket session and pool
 	workers := cfg.PoolMaxWorkers
 	queue := cfg.PoolQueue
 	spawn := 1
 	pool = gopool.NewPool(workers, queue, spawn)
-	session = services.NewSession(pool, cl)
+	session = services.NewSession(pool, cl, repo)
 	session.SetConfig(cfg)
 
 	return &hndlr
@@ -116,7 +117,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 func handle(conn *websocket.Conn, ip, org, hst string) {
 
-	client := session.Register(conn, repo, lrepo, ip)
+	client := session.Register(conn, ip)
 
 	fmt.Printf("[ivmws][handle]: client %v connected from [%v], Origin: [%v], Host: [%v]\n", client.Name(), ip, org, hst)
 
@@ -131,7 +132,8 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 				fmt.Printf("[wsh] ERROR: client-side %s (HandleWebSocket): %v\n", client.IP, err)
 			}
 
-			RemoveIPCount(ip)
+			//RemoveIPCount(ip)
+			session.Remove(client)
 			conn.Close()
 			return
 		}

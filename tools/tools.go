@@ -1,12 +1,14 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 
 	gn "github.com/nbd-wtf/go-nostr"
@@ -154,7 +156,11 @@ func PrintVersion() {
 }
 
 func ServerInfo(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("providing server info ...\n")
+
+	ip := GetIP(r)
+	org := r.Header.Get("Origin")
+	fmt.Printf("providing server info to %v, %v...\n", ip, org)
+
 	assetsPath, err := filepath.Abs("assets")
 	if err != nil {
 		fmt.Printf("ERROR: Failed to get absolute path to assets folder: %v", err)
@@ -172,7 +178,6 @@ func ServerInfo(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		// send the data as json object in the response body
 		_, _ = w.Write(data)
-
 	} else {
 		w.WriteHeader(http.StatusPartialContent)
 		_, _ = w.Write([]byte("{\"name\":\"ivmostr\"}"))
@@ -231,4 +236,30 @@ func DiscoverHost(r *http.Request) string {
 	}
 
 	return host
+}
+
+func CalcLenghtInBytes(i *[]interface{}) int {
+	var wstr string
+	for _, intf := range *i {
+
+		fmt.Printf("type of: %v\n", reflect.TypeOf(intf).String())
+
+		switch reflect.TypeOf(intf).String() {
+		case "bool":
+			if intf.(bool) {
+				wstr = wstr + "true"
+			} else {
+				wstr = wstr + "false"
+			}
+		case "[]*nostr.Event":
+			out, _ := json.Marshal(intf)
+			wstr = wstr + string(out)
+		case "*nostr.Event":
+			out, _ := json.Marshal(intf)
+			wstr = wstr + string(out)
+		default:
+			wstr = wstr + intf.(string)
+		}
+	}
+	return len([]byte(wstr))
 }

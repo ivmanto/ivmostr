@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
 	"golang.org/x/sync/errgroup"
@@ -18,6 +18,7 @@ import (
 var (
 	nbmrevents int
 	stop       = make(chan struct{})
+	msgw       = make(chan *[]interface{})
 )
 
 type Client struct {
@@ -26,8 +27,6 @@ type Client struct {
 	id              uint
 	name            string
 	session         *Session
-	repo            nostr.NostrRepo
-	lrepo           nostr.ListRepo
 	challenge       string
 	npub            string
 	Subscription_id string
@@ -62,6 +61,11 @@ func (c *Client) ReceiveMsg() error {
 		}
 	}()
 
+	err := c.write()
+	if err != nil {
+		errRM <- fmt.Errorf("Error while writing message: %v", err)
+	}
+
 	// Receive errors from the channel and handle them
 	for err := range errRM {
 		if err != nil {
@@ -73,8 +77,11 @@ func (c *Client) ReceiveMsg() error {
 	return nil
 }
 
-func (c *Client) write(msg *[]interface{}) error {
+func (c *Client) write() error {
 	errWM := make(chan error)
+	var msg *[]interface{}
+
+	// [ ]: implement the logic to receive the message from the client
 	go func() {
 		mutex := sync.Mutex{}
 		for {
@@ -83,6 +90,7 @@ func (c *Client) write(msg *[]interface{}) error {
 				c.lgr.Printf("[write] Stopping the write channel")
 				return
 			default:
+				msg = <-msgw
 				// [ ]: implement the logic to send the message to the client
 				if msg != nil {
 					mutex.Lock()
@@ -91,6 +99,10 @@ func (c *Client) write(msg *[]interface{}) error {
 					if err != nil {
 						errWM <- err
 					}
+					// [ ]: Remove the next two lines for production performance
+					lb := tools.CalcLenghtInBytes(msg)
+					c.lgr.Printf(" * %d bytes sent to [%s] over ws connection", lb, c.IP)
+
 					msg = nil
 				}
 				errWM <- nil
@@ -125,8 +137,9 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 	case "AUTH":
 		return c.handlerAuthMsgs(msg)
 	default:
-		c.lgr.Printf("ERROR: unknown message type: %v", (*msg)[0])
-		return c.writeCustomNotice("Error: invalid format of the received message")
+		c.lgr.Printf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
+		c.writeCustomNotice("Error: invalid format of the received message")
+		return nil
 	}
 }
 
@@ -138,7 +151,8 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	se, ok := (*msg)[1].(map[string]interface{})
 	if !ok {
 		lmsg := "invalid: unknown message format"
-		_ = c.writeEventNotice("0", false, lmsg)
+		c.writeEventNotice("0", false, lmsg)
+		return nil
 	}
 
 	e, err := mapToEvent(se)
@@ -146,13 +160,15 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// [!] protocol error
 		c.errorRate[c.IP]++
 		lmsg := "invalid:" + err.Error()
-		return c.writeEventNotice(e.ID, false, lmsg)
+		c.writeEventNotice(e.ID, false, lmsg)
+		return err
 	}
 
 	rsl, errv := e.CheckSignature()
 	if errv != nil {
 		lmsg := fmt.Sprintf("result %v, invalid: %v", rsl, errv.Error())
-		return c.writeEventNotice(e.ID, false, lmsg)
+		c.writeEventNotice(e.ID, false, lmsg)
+		return errv
 	}
 
 	switch e.Kind {
@@ -163,17 +179,20 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// Keep it disabled until [ ]TODO: find a way to clone the execution context
 		// NewEvent <- e
 
-		err := c.repo.StoreEventK3(e)
+		err := c.session.repo.StoreEventK3(e)
 		if err != nil {
-			return c.writeEventNotice(e.ID, false, composeErrorMsg(err))
+			c.writeEventNotice(e.ID, false, composeErrorMsg(err))
+			return err
 		}
-		return c.writeEventNotice(e.ID, true, "")
+		c.writeEventNotice(e.ID, true, "")
+		return nil
 
 	case 4:
 		// Even if the relay access level is public, the private encrypted messages kind=4 should be rejected
 		if !c.Authed {
-			_ = c.writeCustomNotice("restricted: we can't serve DMs to unauthenticated users, does your client implement NIP-42?")
-			return c.writeEventNotice(e.ID, false, "Authentication required")
+			c.writeCustomNotice("restricted: we can't serve DMs to unauthenticated users, does your client implement NIP-42?")
+			c.writeEventNotice(e.ID, false, "Authentication required")
+			return nil
 		}
 
 	default:
@@ -181,22 +200,20 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// do nothing
 	}
 
-	// sending the event to a channel, will hijack the event to the broadcaster
-	// Keep it disabled until [ ]TODO: find a way to clone the execution context
-	// NewEvent <- e
-
-	err = c.repo.StoreEvent(e)
+	err = c.session.repo.StoreEvent(e)
 	if err != nil {
-		return c.writeEventNotice(e.ID, false, composeErrorMsg(err))
+		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
+		return err
 	}
 
 	// The customer name is required in NewEventBroadcaster method in order to skip the broadcast process for the customer that brought the event on the relay.
 	e.SetExtra("cname", c.name)
 
-	// [ ]: fire-up a new go routine to handle the NEW event broadcating for all the clients having subscriptions with at least one filter matching the event paramateres.
+	// [x]: fire-up a new go routine to handle the NEW event broadcating for all the clients having subscriptions with at least one filter matching the event paramateres.
 	go c.session.BroadcasterQueue(*e)
 
-	return c.writeEventNotice(e.ID, true, "")
+	c.writeEventNotice(e.ID, true, "")
+	return nil
 }
 
 func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
@@ -211,10 +228,12 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 		if subscription_id == "" || len(subscription_id) > 64 {
 			//[!] protocol error
 			c.errorRate[c.IP]++
-			return c.writeCustomNotice("Error: Invalid subscription_id")
+			c.writeCustomNotice("Error: Invalid subscription_id")
+			return fmt.Errorf("Error: Invalid subscription_id")
 		}
 	} else {
-		return c.writeCustomNotice("Error: Missing subscription_id")
+		c.writeCustomNotice("Error: Missing subscription_id")
+		return fmt.Errorf("Error: Missing subscription_id")
 	}
 
 	// Identify subscription filters
@@ -243,13 +262,14 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 			c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
-
-			return c.writeCustomNotice("Update: The subscription filter has been overwriten.")
+			c.writeCustomNotice("Update: The subscription filter has been overwriten.")
+			return nil
 		} else {
 			// [!] protocol error
 			c.errorRate[c.IP]++
 			em := fmt.Sprintf("Error: There is already an active subscription for this connection with subscription_id: %v, the new subID %v is ignored.", c.Subscription_id, subscription_id)
-			return c.writeCustomNotice(em)
+			c.writeCustomNotice(em)
+			return fmt.Errorf("There is already active subscription")
 		}
 	}
 	c.Subscription_id = subscription_id
@@ -262,8 +282,8 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 	c.lgr.Printf("NEW [%s]: subscription id: %s with filter %v", c.IP, c.Subscription_id, msgfilters)
 	c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
-
-	return c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
+	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
+	return nil
 }
 
 func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
@@ -275,12 +295,15 @@ func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 		if c.Subscription_id == subscription_id {
 			c.Subscription_id = ""
 			c.Filetrs = []map[string]interface{}{}
-			return c.writeCustomNotice("Update: The subscription has been clodsed")
+			c.writeCustomNotice("Update: The subscription has been clodsed")
+			return nil
 		} else {
-			return c.writeCustomNotice("Error: Invalid subscription_id provided")
+			c.writeCustomNotice("Error: Invalid subscription_id provided")
+			return fmt.Errorf("Error: Invalid subscription_id provided")
 		}
 	} else {
-		return c.writeCustomNotice("Error: Bad format of CLOSE message")
+		c.writeCustomNotice("Error: Bad format of CLOSE message")
+		return fmt.Errorf("Error: Bad format of CLOSE message")
 	}
 }
 
@@ -289,12 +312,13 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 
 	se, ok := (*msg)[1].(map[string]interface{})
 	if !ok {
-		_ = c.writeEventNotice("0", false, "invalid: unknown message format")
+		c.writeEventNotice("0", false, "invalid: unknown message format")
 	}
 
 	e, err := mapToEvent(se)
 	if err != nil {
-		return c.writeEventNotice(e.ID, false, "invalid:"+err.Error())
+		c.writeEventNotice(e.ID, false, "invalid:"+err.Error())
+		return err
 	}
 
 	// [x]: The signed event is an ephemeral event **not meant to be published or queried**,
@@ -305,11 +329,13 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 	rsl, errv := e.CheckSignature()
 	if errv != nil {
 		lmsg := fmt.Sprintf("result %v, invalid: %v", rsl, errv.Error())
-		return c.writeEventNotice(e.ID, false, lmsg)
+		c.writeEventNotice(e.ID, false, lmsg)
+		return errv
 	}
 
 	if e.Kind != 22242 {
-		return c.writeEventNotice(e.ID, false, "invalid: invalid AUTH message kind")
+		c.writeEventNotice(e.ID, false, "invalid: invalid AUTH message kind")
+		return nil
 	}
 
 	var t1, t2 bool
@@ -332,12 +358,15 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 		if e.CreatedAt+age > now {
 			c.Authed = true
 			c.npub = e.PubKey
-			return c.writeEventNotice(e.ID, true, "")
+			c.writeEventNotice(e.ID, true, "")
+			return nil
 		} else {
-			return c.writeEventNotice(e.ID, false, "Authentication failed")
+			c.writeEventNotice(e.ID, false, "Authentication failed")
+			return fmt.Errorf("Authentication failed")
 		}
 	} else {
-		return c.writeEventNotice(e.ID, false, "Authentication failed")
+		c.writeEventNotice(e.ID, false, "Authentication failed")
+		return fmt.Errorf("Authentication failed")
 	}
 }
 
@@ -356,20 +385,20 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 //		[ ] `rate-limited`,
 //		[x] `invalid`, and
 //		[x] `error` for when none of that fits.
-func (c *Client) writeEventNotice(event_id string, accepted bool, message string) error {
+func (c *Client) writeEventNotice(event_id string, accepted bool, message string) {
 	var note = []interface{}{"OK", event_id, accepted, message}
-	return c.write(&note)
+	msgw <- &note
 }
 
-func (c *Client) writeCustomNotice(notice_msg string) error {
+func (c *Client) writeCustomNotice(notice_msg string) {
 	var note = []interface{}{"NOTICE", notice_msg}
-	return c.write(&note)
+	msgw <- &note
 }
 
 // Protocol definition: ["EOSE", <subscription_id>], used to indicate that the relay has no more events to send for a subscription.
-func (c *Client) writeEOSE(subID string) error {
+func (c *Client) writeEOSE(subID string) {
 	var eose = []interface{}{"EOSE", subID}
-	return c.write(&eose)
+	msgw <- &eose
 }
 
 // Generate challenge for the client to authenticate.
@@ -391,9 +420,9 @@ func (c *Client) GenChallenge() {
 }
 
 // Protocol definition: ["AUTH", <challenge>], (nip-42) used to request authentication from the client.
-func (c *Client) writeAUTHChallenge() error {
+func (c *Client) writeAUTHChallenge() {
 	var note = []interface{}{"AUTH", c.challenge}
-	return c.write(&note)
+	msgw <- &note
 }
 
 // Get Filters returns the filters of the current client's subscription
@@ -406,7 +435,7 @@ func (c *Client) confirmURLDomainMatch(relayURL string) bool {
 	// convert url string to URL object
 	relURL, err := url.Parse(relayURL)
 	if err != nil {
-		_ = c.writeCustomNotice("ERROR: parsing provided relay URL")
+		c.writeCustomNotice("ERROR: parsing provided relay URL")
 		return false
 	}
 
@@ -431,10 +460,7 @@ func (c *Client) SubscriptionSuplier() error {
 	}
 
 	// Send EOSE
-	errcls := c.writeEOSE(c.Subscription_id)
-	if errcls != nil {
-		return errcls
-	}
+	c.writeEOSE(c.Subscription_id)
 
 	rslt := time.Now().UnixMilli() - responseRate
 	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
@@ -460,23 +486,25 @@ func (c *Client) fetchAllFilters(ctx context.Context) error {
 
 func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) error {
 	// Function to fetch data from the specified filter
+
 	return func() error {
 
 		// method is used for DEBUG info review
 		//c.session.printFilter(filter, c)
 
-		events, err := c.repo.GetEventsByFilter(filter)
+		events, err := c.session.repo.GetEventsByFilter(filter)
 		if err != nil {
 			c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 			return err
 		}
 		nbmrevents += len(events)
 
-		err = c.write(&[]interface{}{events})
-		if err != nil {
-			c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-			return err
-		}
+		msgw <- &[]interface{}{events}
+		// err = c.write(&[]interface{}{events})
+		// if err != nil {
+		// 	c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+		// 	return err
+		// }
 		return nil
 	}()
 }

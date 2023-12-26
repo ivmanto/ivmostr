@@ -39,10 +39,11 @@ type Session struct {
 	clgr    *logging.Logger
 	pool    *gopool.Pool
 	cfg     *config.ServiceConfig
+	repo    nostr.NostrRepo
 }
 
 // NewSession creates a new WebSocket session.
-func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
+func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo) *Session {
 	session := Session{
 		ns:   make(map[string]*Client),
 		bq:   make(map[string]gn.Event),
@@ -51,7 +52,14 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
 		clgr: cl,
 		pool: pool,
+		repo: repo,
 	}
+
+	td, err := repo.TotalDocs()
+	if err != nil {
+		session.elgr.Printf("error getting total number of docs: %v ", err)
+	}
+	session.ilgr.Printf("total events in the DB %d", td)
 
 	// [x]: review and rework the event broadcaster
 	go session.NewEventBroadcaster()
@@ -64,14 +72,12 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger) *Session {
 
 // Register upgraded websocket connection as client in the sessions
 func (s *Session) Register(
-	conn *websocket.Conn, rp nostr.NostrRepo, lrepo nostr.ListRepo, ip string) *Client {
+	conn *websocket.Conn, ip string) *Client {
 
 	client := Client{
 		session:   s,
 		conn:      conn,
 		lgr:       log.New(os.Stderr, "[client] ", log.LstdFlags),
-		repo:      rp,
-		lrepo:     lrepo,
 		IP:        ip,
 		Authed:    false,
 		errorRate: make(map[string]int),
@@ -106,15 +112,15 @@ func (s *Session) Register(
 		client.GenChallenge()
 
 		// Challenge the client to send AUTH message
-		_ = client.writeAUTHChallenge()
+		client.writeAUTHChallenge()
 
 	case "paid":
 		// [ ]: 1) required authentication - check for it and 2) check for active payment
-		_ = client.writeCustomNotice("restricted: this relay provides paid access only. Visit https://relay.ivmanto.dev for more information.")
+		client.writeCustomNotice("restricted: this relay provides paid access only. Visit https://relay.ivmanto.dev for more information.")
 
 	default:
 		// Unknown relay access type - by default it is publi
-		_ = client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
+		client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
 	}
 	return &client
 }
@@ -123,13 +129,17 @@ func (s *Session) Register(
 func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	removed := s.remove(client)
-	tools.IPCount[client.IP]--
 	s.mu.Unlock()
 	if !removed {
-		fmt.Printf(" * client with IP %v was NOT removed from session connections!\n", client.IP)
+		fmt.Printf("[rmv]: * client with IP %v was NOT removed from session connections!\n", client.IP)
 		return
 	}
-	fmt.Printf(" - %d active clients connected\n", len(s.clients))
+
+	// Only remove from IPCount if removed from the session
+	s.mu.Lock()
+	tools.IPCount[client.IP]--
+	s.mu.Unlock()
+	fmt.Printf("[rmv]: - %d active clients, %d [by ns] connected\n", len(s.clients), len(s.ns))
 }
 
 // Give code-word as name to the client connection
@@ -186,7 +196,6 @@ func (s *Session) TuneClientConn(client *Client) {
 	}
 
 	client.conn.SetCloseHandler(func(code int, text string) error {
-		stop <- struct{}{}
 		s.Remove(client)
 		client.lgr.Printf("[close]: [-] Closing client %v, code: %v, text: %v", client.IP, code, text)
 		return nil
@@ -235,27 +244,15 @@ func (s *Session) NewEventBroadcaster() {
 					recp := strings.Split(tag[1], ",")
 					if len(recp) > 1 {
 						if client.npub == recp[1] {
-							evs := []interface{}{e}
-							s.mu.Lock()
-							err := client.write(&evs)
-							s.mu.Unlock()
-							if err != nil {
-								client.lgr.Printf("ERROR [auth]: error while sending event (kind=4) to client: %v", err)
-							}
+							msgw <- &[]interface{}{e}
 							break
 						}
 					}
 				}
 
 				if filterMatch(e, client.GetFilters()) {
-					evs := []interface{}{e}
-					s.mu.Lock()
-					err := client.write(&evs)
-					s.mu.Unlock()
-					if err != nil {
-						client.lgr.Printf("ERROR: error while sending event to client: %v", err)
-						continue
-					}
+					msgw <- &[]interface{}{e}
+					continue
 				}
 			}
 			s.mu.Lock()
@@ -275,11 +272,12 @@ func (s *Session) ConnectionHealthChecker() {
 	var err error
 	pm := websocket.PingMessage
 	dl := time.Millisecond * 100
+	dmc := 0
 
 	for {
 		select {
 		case <-ticker.C:
-			fmt.Printf("   ...--- === ---...   \n")
+			fmt.Printf("[hc]:   ...--- === ---...   \n")
 
 			// avoid concurent changes to cause slice out of range error
 			nsc := s.ns
@@ -289,6 +287,7 @@ func (s *Session) ConnectionHealthChecker() {
 				s.mu.Unlock()
 				if err != nil {
 					fmt.Printf("[hc]: [%v] ERROR sending ping message:%v\n", client.IP, err)
+					s.Remove(client)
 					client.conn.Close()
 					continue
 				}
@@ -299,6 +298,7 @@ func (s *Session) ConnectionHealthChecker() {
 				mt, pongMsg, err := client.conn.ReadMessage()
 				if err != nil {
 					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v\n", client.IP, err)
+					s.Remove(client)
 					client.conn.Close()
 					continue
 				}
@@ -308,12 +308,17 @@ func (s *Session) ConnectionHealthChecker() {
 					fmt.Printf("[hc]: [%v] successful PONG!\n", client.IP)
 					_ = client.conn.SetReadDeadline(time.Time{})
 				} else {
+					s.Remove(client)
 					client.conn.Close()
+				}
+				//Count dummy (empty) connections with no subscriptions
+				if client.Subscription_id == "" && len(client.Filetrs) == 0 {
+					dmc++
 				}
 			}
 
-			fmt.Printf("[hc]: * %d active clients connections\n", len(s.ns))
-			fmt.Printf("   ...--- OFF ---...   \n\n\n")
+			fmt.Printf("[hc]: * %d active clients connections, %d dummy (empty)\n", len(s.ns), dmc)
+			fmt.Printf("[hc]:   ...--- OFF ---...   \n")
 
 		case <-Exit:
 			break

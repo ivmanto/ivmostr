@@ -2,6 +2,7 @@ package firestoredb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -51,6 +52,7 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 		return fmt.Errorf("unable to save Tags for Event ID: %s. error: %v", ec.ID, errt)
 	}
 
+	fmt.Printf("Event ID: %s saved in repository\n", ec.ID)
 	return nil
 }
 
@@ -134,6 +136,26 @@ func (r *nostrRepo) GetEvents(ids []string) ([]*gn.Event, error) {
 	}
 
 	return events, nil
+}
+
+// [ ]: To be tested if works
+func (r *nostrRepo) TotalDocs() (int, error) {
+	colRef := r.client.Collection(r.events_collection)
+
+	query := colRef.Where("ID", "!=", "")
+	aggregationQuery := query.NewAggregationQuery().WithCount("all")
+	results, err := aggregationQuery.Get(*r.ctx)
+	if err != nil {
+		r.elgr.Printf("error: %v", err)
+		return 0, err
+	}
+
+	count, ok := results["all"].(int)
+	if !ok {
+		return 0, errors.New("firestore could get the total number of docs")
+	}
+
+	return count, nil
 }
 
 // GetEventsByFilter - returns a list of events that match the filter provided from a client subscription
