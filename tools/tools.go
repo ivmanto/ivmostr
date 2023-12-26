@@ -242,7 +242,7 @@ func CalcLenghtInBytes(i *[]interface{}) int {
 	var wstr string
 	for _, intf := range *i {
 
-		fmt.Printf("type of: %v", reflect.TypeOf(intf).String())
+		fmt.Printf("type of: %v\n", reflect.TypeOf(intf).String())
 
 		switch reflect.TypeOf(intf).String() {
 		case "bool":
@@ -252,6 +252,9 @@ func CalcLenghtInBytes(i *[]interface{}) int {
 				wstr = wstr + "false"
 			}
 		case "[]*nostr.Event":
+			out, _ := json.Marshal(intf)
+			wstr = wstr + string(out)
+		case "*nostr.Event":
 			out, _ := json.Marshal(intf)
 			wstr = wstr + string(out)
 		default:
