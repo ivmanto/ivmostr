@@ -45,7 +45,7 @@ func (c *Client) ReceiveMsg() error {
 	errRM := make(chan error)
 
 	st := time.Now().UnixMilli()
-	fmt.Printf("[#] client [%v] read msg starts at: %v", c.IP, st)
+	fmt.Printf("[#] client [%v] read msg starts at: %v\n", c.IP, st)
 
 	go func() {
 		for {
@@ -96,7 +96,7 @@ func (c *Client) write() error {
 				msg = <-msgw
 
 				mat := time.Now().UnixMilli()
-				fmt.Printf("[#] client [%v] msg arrived to write at: %v", c.IP, mat)
+				fmt.Printf("[#] client [%v] msg arrived to write at: %v\n", c.IP, mat)
 
 				// [x]: implement the logic to send the message to the client
 				if msg != nil {
@@ -109,7 +109,7 @@ func (c *Client) write() error {
 					// [ ]: Remove the next 4 lines for production performance
 
 					mwtt := time.Now().UnixMilli()
-					fmt.Printf("[#] client [%v] message written at: %v", c.IP, mwtt)
+					fmt.Printf("[#] client [%v] message written at: %v\n", c.IP, mwtt)
 
 					lb := tools.CalcLenghtInBytes(msg)
 					c.lgr.Printf(" * %d bytes sent to [%s] over ws connection", lb, c.IP)
@@ -141,7 +141,7 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 
 	case "REQ":
 		dt := time.Now().UnixMilli()
-		fmt.Printf("[#] client [%v] dispatch msg starts at: %v", c.IP, dt)
+		fmt.Printf("[#] client [%v] dispatch msg starts at: %v\n", c.IP, dt)
 		return c.handlerReqMsgs(msg)
 
 	case "CLOSE":
@@ -269,7 +269,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 			c.Filetrs = append(c.Filetrs, msgfilters...)
 
 			ssust := time.Now().UnixMilli()
-			fmt.Printf("[#] client [%v] update subs supply msg starts at: %v", c.IP, ssust)
+			fmt.Printf("[#] client [%v] update subs supply msg starts at: %v\n", c.IP, ssust)
 
 			err := c.SubscriptionSuplier()
 			if err != nil {
@@ -277,7 +277,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 			}
 
 			ssuft := time.Now().UnixMilli()
-			fmt.Printf("[#] client [%v] update subs supply msg finishes at: %v", c.IP, ssuft)
+			fmt.Printf("[#] client [%v] update subs supply msg finishes at: %v\n", c.IP, ssuft)
 
 			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 			c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
@@ -295,7 +295,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
 	ssnst := time.Now().UnixMilli()
-	fmt.Printf("[#] client [%v] new subs supply msg starts at: %v", c.IP, ssnst)
+	fmt.Printf("[#] client [%v] new subs supply msg starts at: %v\n", c.IP, ssnst)
 
 	err := c.SubscriptionSuplier()
 	if err != nil {
@@ -303,7 +303,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	}
 
 	ssnft := time.Now().UnixMilli()
-	fmt.Printf("[#] client [%v] new subs supply msg finishes at: %v", c.IP, ssnft)
+	fmt.Printf("[#] client [%v] new subs supply msg finishes at: %v\n", c.IP, ssnft)
 
 	c.lgr.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
 	c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
