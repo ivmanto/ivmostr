@@ -26,6 +26,7 @@ var (
 	Exit         = make(chan struct{})
 	ticker       = time.NewTicker(60 * time.Minute)
 	relay_access string
+	clientCldLgr *logging.Client
 	cclnlgr      *logging.Logger
 	lep          = logging.Entry{Severity: logging.Notice, Payload: ""}
 )
@@ -51,9 +52,8 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	// Initate Cloud logging
 	ctx := context.Background()
-	clientCldLgr, err := logging.NewClient(ctx, cfg.Firestore.ProjectID)
+	clientCldLgr, _ = logging.NewClient(ctx, cfg.Firestore.ProjectID)
 	clgr := clientCldLgr.Logger("ivmostr-cnn")
-	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
 
 	session := Session{
 		ns:   make(map[string]*Client),
@@ -87,6 +87,8 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 // Register upgraded websocket connection as client in the sessions
 func (s *Session) Register(
 	conn *websocket.Conn, ip string) *Client {
+
+	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
 
 	client := Client{
 		session:   s,
