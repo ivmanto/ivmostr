@@ -462,7 +462,10 @@ func (c *Client) SubscriptionSuplier() error {
 	c.writeEOSE(c.Subscription_id)
 
 	rslt := time.Now().UnixMilli() - responseRate
+
 	leop.Payload = fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
+	cclnlgr.Log(leop)
+
 	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
 	return nil
 }
