@@ -133,14 +133,14 @@ func (c *Client) write() error {
 }
 
 func (c *Client) dispatcher(msg *[]interface{}) error {
-	// [ ]: implement the logic to dispatch the message to the client
+	// [x]: implement the logic to dispatch the message to the client
 	switch (*msg)[0] {
 	case "EVENT":
 		return c.handlerEventMsgs(msg)
 
 	case "REQ":
 		dt := time.Now().UnixMilli()
-		fmt.Printf("[#] client [%v] dispatch msg starts at: %v\n", c.IP, dt)
+		fmt.Printf("[#] client [%v] dispatch REQ msg starts at: %v\n", c.IP, dt)
 		return c.handlerReqMsgs(msg)
 
 	case "CLOSE":
@@ -149,9 +149,12 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 	case "AUTH":
 		return c.handlerAuthMsgs(msg)
 	default:
-		c.lgr.Printf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
 		c.writeCustomNotice("Error: invalid format of the received message")
-		return nil
+
+		dte := time.Now().UnixMilli()
+		fmt.Printf("[#] client [%v] dispatch INVALID msg at: %v\n", c.IP, dte)
+
+		return fmt.Errorf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
 	}
 }
 
