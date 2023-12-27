@@ -21,9 +21,12 @@ import (
 )
 
 var (
-	NewEvent = make(chan *gn.Event)
-	Exit     = make(chan struct{})
-	ticker   = time.NewTicker(60 * time.Minute)
+	NewEvent     = make(chan *gn.Event)
+	Exit         = make(chan struct{})
+	ticker       = time.NewTicker(60 * time.Minute)
+	relay_access string
+	pld          string
+	lep          = logging.Entry{Severity: logging.Notice, Payload: pld}
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -43,7 +46,7 @@ type Session struct {
 }
 
 // NewSession creates a new WebSocket session.
-func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo) *Session {
+func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo, cfg *config.ServiceConfig) *Session {
 	session := Session{
 		ns:   make(map[string]*Client),
 		bq:   make(map[string]gn.Event),
@@ -53,7 +56,10 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo) *Se
 		clgr: cl,
 		pool: pool,
 		repo: repo,
+		cfg:  cfg,
 	}
+
+	relay_access = cfg.Relay_access
 
 	td, err := repo.TotalDocs()
 	if err != nil {
@@ -95,16 +101,10 @@ func (s *Session) Register(
 	}
 	s.mu.Unlock()
 
-	switch s.cfg.Relay_access {
+	switch relay_access {
 	case "public":
 
-		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, len(s.ns), time.Now().Unix())
-
-		s.ilgr.Printf("%v", pld)
-		lep := logging.Entry{
-			Severity: logging.Notice,
-			Payload:  pld,
-		}
+		pld = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, len(s.ns), time.Now().Unix())
 		s.clgr.Log(lep)
 
 	case "authenticated":

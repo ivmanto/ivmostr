@@ -56,8 +56,7 @@ func NewWSHandler(
 	queue := cfg.PoolQueue
 	spawn := 1
 	pool = gopool.NewPool(workers, queue, spawn)
-	session = services.NewSession(pool, cl, repo)
-	session.SetConfig(cfg)
+	session = services.NewSession(pool, cl, repo, cfg)
 
 	return &hndlr
 }

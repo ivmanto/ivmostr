@@ -44,6 +44,9 @@ func (c *Client) ReceiveMsg() error {
 	var message []interface{}
 	errRM := make(chan error)
 
+	st := time.Now().UnixMilli()
+	fmt.Printf("[#] client [%v] read msg starts at: %v", c.IP, st)
+
 	go func() {
 		for {
 			err := c.conn.ReadJSON(&message)
@@ -91,7 +94,11 @@ func (c *Client) write() error {
 				return
 			default:
 				msg = <-msgw
-				// [ ]: implement the logic to send the message to the client
+
+				mat := time.Now().UnixMilli()
+				fmt.Printf("[#] client [%v] msg arrived to write at: %v", c.IP, mat)
+
+				// [x]: implement the logic to send the message to the client
 				if msg != nil {
 					mutex.Lock()
 					err := c.conn.WriteJSON(msg)
@@ -99,7 +106,11 @@ func (c *Client) write() error {
 					if err != nil {
 						errWM <- err
 					}
-					// [ ]: Remove the next two lines for production performance
+					// [ ]: Remove the next 4 lines for production performance
+
+					mwtt := time.Now().UnixMilli()
+					fmt.Printf("[#] client [%v] message written at: %v", c.IP, mwtt)
+
 					lb := tools.CalcLenghtInBytes(msg)
 					c.lgr.Printf(" * %d bytes sent to [%s] over ws connection", lb, c.IP)
 
@@ -129,6 +140,8 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 		return c.handlerEventMsgs(msg)
 
 	case "REQ":
+		dt := time.Now().UnixMilli()
+		fmt.Printf("[#] client [%v] dispatch msg starts at: %v", c.IP, dt)
 		return c.handlerReqMsgs(msg)
 
 	case "CLOSE":
@@ -255,10 +268,16 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 			c.Filetrs = []map[string]interface{}{}
 			c.Filetrs = append(c.Filetrs, msgfilters...)
 
+			ssust := time.Now().UnixMilli()
+			fmt.Printf("[#] client [%v] update subs supply msg starts at: %v", c.IP, ssust)
+
 			err := c.SubscriptionSuplier()
 			if err != nil {
 				return err
 			}
+
+			ssuft := time.Now().UnixMilli()
+			fmt.Printf("[#] client [%v] update subs supply msg finishes at: %v", c.IP, ssuft)
 
 			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 			c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
@@ -275,12 +294,18 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Subscription_id = subscription_id
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
+	ssnst := time.Now().UnixMilli()
+	fmt.Printf("[#] client [%v] new subs supply msg starts at: %v", c.IP, ssnst)
+
 	err := c.SubscriptionSuplier()
 	if err != nil {
 		return err
 	}
 
-	c.lgr.Printf("NEW [%s]: subscription id: %s with filter %v", c.IP, c.Subscription_id, msgfilters)
+	ssnft := time.Now().UnixMilli()
+	fmt.Printf("[#] client [%v] new subs supply msg finishes at: %v", c.IP, ssnft)
+
+	c.lgr.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
 	c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 	return nil
