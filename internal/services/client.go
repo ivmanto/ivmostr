@@ -51,9 +51,6 @@ func (c *Client) ReceiveMsg() error {
 				errRM <- fmt.Errorf("Error while reading message: %v", err)
 				continue
 			}
-			st := time.Now().UnixMilli()
-			fmt.Printf("[#] client [%v] read msg starts at: %v\n", c.IP, st)
-
 			// sending the message to the write channel
 			err = c.dispatcher(&message)
 			if err != nil {
@@ -95,21 +92,14 @@ func (c *Client) write() error {
 				msg = <-msgw
 				// [x]: implement the logic to send the message to the client
 				if msg != nil {
-
-					mat := time.Now().UnixMilli()
-					fmt.Printf("[#] client [%v] msg arrived to write at: %v\n", c.IP, mat)
-
 					mutex.Lock()
 					err := c.conn.WriteJSON(msg)
 					mutex.Unlock()
 					if err != nil {
 						errWM <- err
 					}
+
 					// [ ]: Remove the next 4 lines for production performance
-
-					mwtt := time.Now().UnixMilli()
-					fmt.Printf("[#] client [%v] message written at: %v\n", c.IP, mwtt)
-
 					lb := tools.CalcLenghtInBytes(msg)
 					c.lgr.Printf(" * %d bytes sent to [%s] over ws connection", lb, c.IP)
 
@@ -139,8 +129,6 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 		return c.handlerEventMsgs(msg)
 
 	case "REQ":
-		dt := time.Now().UnixMilli()
-		fmt.Printf("[#] client [%v] dispatch REQ msg starts at: %v\n", c.IP, dt)
 		return c.handlerReqMsgs(msg)
 
 	case "CLOSE":
@@ -150,10 +138,6 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 		return c.handlerAuthMsgs(msg)
 	default:
 		c.writeCustomNotice("Error: invalid format of the received message")
-
-		dte := time.Now().UnixMilli()
-		fmt.Printf("[#] client [%v] dispatch INVALID msg at: %v\n", c.IP, dte)
-
 		return fmt.Errorf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
 	}
 }
@@ -167,7 +151,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	if !ok {
 		lmsg := "invalid: unknown message format"
 		c.writeEventNotice("0", false, lmsg)
-		return nil
+		return fmt.Errorf("ERROR: invalid message. unknown format")
 	}
 
 	e, err := mapToEvent(se)
@@ -270,19 +254,12 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 			c.Filetrs = []map[string]interface{}{}
 			c.Filetrs = append(c.Filetrs, msgfilters...)
 
-			ssust := time.Now().UnixMilli()
-			fmt.Printf("[#] client [%v] update subs supply msg starts at: %v\n", c.IP, ssust)
-
 			err := c.SubscriptionSuplier()
 			if err != nil {
 				return err
 			}
 
-			ssuft := time.Now().UnixMilli()
-			fmt.Printf("[#] client [%v] update subs supply msg finishes at: %v\n", c.IP, ssuft)
-
 			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
-			c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
 			c.writeCustomNotice("Update: The subscription filter has been overwriten.")
 			return nil
 		} else {
@@ -296,19 +273,12 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Subscription_id = subscription_id
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
-	ssnst := time.Now().UnixMilli()
-	fmt.Printf("[#] client [%v] new subs supply msg starts at: %v\n", c.IP, ssnst)
-
 	err := c.SubscriptionSuplier()
 	if err != nil {
 		return err
 	}
 
-	ssnft := time.Now().UnixMilli()
-	fmt.Printf("[#] client [%v] new subs supply msg finishes at: %v\n", c.IP, ssnft)
-
 	c.lgr.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
-	c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 	return nil
 }

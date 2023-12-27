@@ -25,8 +25,7 @@ var (
 	Exit         = make(chan struct{})
 	ticker       = time.NewTicker(60 * time.Minute)
 	relay_access string
-	pld          string
-	lep          = logging.Entry{Severity: logging.Notice, Payload: pld}
+	lep          = logging.Entry{Severity: logging.Notice, Payload: ""}
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -104,7 +103,7 @@ func (s *Session) Register(
 	switch relay_access {
 	case "public":
 
-		pld = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, len(s.ns), time.Now().Unix())
+		lep.Payload = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, len(s.ns), time.Now().Unix())
 		s.clgr.Log(lep)
 
 	case "authenticated":
