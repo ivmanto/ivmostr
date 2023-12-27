@@ -44,9 +44,6 @@ func (c *Client) ReceiveMsg() error {
 	var message []interface{}
 	errRM := make(chan error)
 
-	st := time.Now().UnixMilli()
-	fmt.Printf("[#] client [%v] read msg starts at: %v\n", c.IP, st)
-
 	go func() {
 		for {
 			err := c.conn.ReadJSON(&message)
@@ -54,6 +51,8 @@ func (c *Client) ReceiveMsg() error {
 				errRM <- fmt.Errorf("Error while reading message: %v", err)
 				continue
 			}
+			st := time.Now().UnixMilli()
+			fmt.Printf("[#] client [%v] read msg starts at: %v\n", c.IP, st)
 
 			// sending the message to the write channel
 			err = c.dispatcher(&message)
@@ -94,12 +93,12 @@ func (c *Client) write() error {
 				return
 			default:
 				msg = <-msgw
-
-				mat := time.Now().UnixMilli()
-				fmt.Printf("[#] client [%v] msg arrived to write at: %v\n", c.IP, mat)
-
 				// [x]: implement the logic to send the message to the client
 				if msg != nil {
+
+					mat := time.Now().UnixMilli()
+					fmt.Printf("[#] client [%v] msg arrived to write at: %v\n", c.IP, mat)
+
 					mutex.Lock()
 					err := c.conn.WriteJSON(msg)
 					mutex.Unlock()
