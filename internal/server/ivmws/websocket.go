@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
@@ -29,14 +28,12 @@ var (
 
 type WSHandler struct {
 	lgr  *log.Logger
-	clgr *logging.Logger
 	repo nostr.NostrRepo
 	cfg  *config.ServiceConfig
 }
 
 func NewWSHandler(
 	l *log.Logger,
-	cl *logging.Logger,
 	_repo nostr.NostrRepo,
 	_lrepo nostr.ListRepo,
 	cfg *config.ServiceConfig,
@@ -44,9 +41,8 @@ func NewWSHandler(
 ) *WSHandler {
 
 	hndlr := WSHandler{
-		lgr:  l,
-		clgr: cl,
-		cfg:  cfg,
+		lgr: l,
+		cfg: cfg,
 	}
 	// Setting up the repositories
 	repo = _repo
@@ -56,7 +52,7 @@ func NewWSHandler(
 	queue := cfg.PoolQueue
 	spawn := 1
 	pool = gopool.NewPool(workers, queue, spawn)
-	session = services.NewSession(pool, cl, repo, cfg)
+	session = services.NewSession(pool, repo, cfg)
 
 	return &hndlr
 }

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
@@ -19,11 +20,13 @@ var (
 	nbmrevents int
 	stop       = make(chan struct{})
 	msgw       = make(chan *[]interface{})
+	leop       = logging.Entry{Severity: logging.Info, Payload: ""}
 )
 
 type Client struct {
 	conn            *websocket.Conn
 	lgr             *log.Logger
+	cclnlgr         *logging.Logger
 	id              uint
 	name            string
 	session         *Session
@@ -80,7 +83,6 @@ func (c *Client) write() error {
 	errWM := make(chan error)
 	var msg *[]interface{}
 
-	// [ ]: implement the logic to receive the message from the client
 	go func() {
 		mutex := sync.Mutex{}
 		for {
@@ -90,7 +92,7 @@ func (c *Client) write() error {
 				return
 			default:
 				msg = <-msgw
-				// [x]: implement the logic to send the message to the client
+
 				if msg != nil {
 					mutex.Lock()
 					err := c.conn.WriteJSON(msg)
@@ -99,7 +101,7 @@ func (c *Client) write() error {
 						errWM <- err
 					}
 
-					// [ ]: Remove the next 4 lines for production performance
+					// [ ]: Remove the next 2 lines for production performance
 					lb := tools.CalcLenghtInBytes(msg)
 					c.lgr.Printf(" * %d bytes sent to [%s] over ws connection", lb, c.IP)
 
@@ -460,6 +462,7 @@ func (c *Client) SubscriptionSuplier() error {
 	c.writeEOSE(c.Subscription_id)
 
 	rslt := time.Now().UnixMilli() - responseRate
+	leop.Payload = fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
 	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
 	return nil
 }
@@ -486,9 +489,6 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 
 	return func() error {
 
-		// method is used for DEBUG info review
-		//c.session.printFilter(filter, c)
-
 		events, err := c.session.repo.GetEventsByFilter(filter)
 		if err != nil {
 			c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
@@ -497,11 +497,6 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		nbmrevents += len(events)
 
 		msgw <- &[]interface{}{events}
-		// err = c.write(&[]interface{}{events})
-		// if err != nil {
-		// 	c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-		// 	return err
-		// }
 		return nil
 	}()
 }

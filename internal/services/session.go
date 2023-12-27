@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
@@ -25,6 +26,7 @@ var (
 	Exit         = make(chan struct{})
 	ticker       = time.NewTicker(60 * time.Minute)
 	relay_access string
+	cclnlgr      *logging.Logger
 	lep          = logging.Entry{Severity: logging.Notice, Payload: ""}
 )
 
@@ -45,14 +47,21 @@ type Session struct {
 }
 
 // NewSession creates a new WebSocket session.
-func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo, cfg *config.ServiceConfig) *Session {
+func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConfig) *Session {
+
+	// Initate Cloud logging
+	ctx := context.Background()
+	clientCldLgr, err := logging.NewClient(ctx, cfg.Firestore.ProjectID)
+	clgr := clientCldLgr.Logger("ivmostr-cnn")
+	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
+
 	session := Session{
 		ns:   make(map[string]*Client),
 		bq:   make(map[string]gn.Event),
 		out:  make(chan []byte, 1),
 		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
-		clgr: cl,
+		clgr: clgr,
 		pool: pool,
 		repo: repo,
 		cfg:  cfg,
@@ -83,6 +92,7 @@ func (s *Session) Register(
 		session:   s,
 		conn:      conn,
 		lgr:       log.New(os.Stderr, "[client] ", log.LstdFlags),
+		cclnlgr:   cclnlgr,
 		IP:        ip,
 		Authed:    false,
 		errorRate: make(map[string]int),

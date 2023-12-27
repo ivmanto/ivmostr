@@ -32,7 +32,7 @@ var (
 	dlv       int    = 20
 	ecn       string = "events"
 	pool             = gopool.NewPool(128, 2, 1)
-	session          = NewSession(pool, nil, nostrRepo, nil)
+	session          = NewSession(pool, nostrRepo, nil)
 	message   []interface{}
 )
 

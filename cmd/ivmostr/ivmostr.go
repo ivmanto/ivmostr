@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"cloud.google.com/go/firestore"
-	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/data/firestoredb"
 	"github.com/dasiyes/ivmostr-tdd/internal/server"
@@ -56,7 +55,6 @@ func main() {
 		l                *log.Logger = log.New(os.Stderr, "[http-srv] ", log.LstdFlags)
 		pool_max_workers int
 		pool_queue       int
-		clgr             *logging.Logger = nil
 	)
 
 	// Load the configuration file
@@ -123,20 +121,20 @@ func main() {
 	}
 
 	// Initialize the cloud Logging client
-	if cfg.CloudLoggingEnabled {
-		clientLgr, err := logging.NewClient(ctx, prj)
-		if err != nil {
-			ml.Printf("Error while initializing cloud logging. The service will be now disbled!")
-			cfg.CloudLoggingEnabled = false
-		} else {
+	// if cfg.CloudLoggingEnabled {
+	// 	clientLgr, err := logging.NewClient(ctx, prj)
+	// 	if err != nil {
+	// 		ml.Printf("Error while initializing cloud logging. The service will be now disbled!")
+	// 		cfg.CloudLoggingEnabled = false
+	// 	} else {
 
-			clgr = clientLgr.Logger("ivmostr-cnn")
-		}
-	}
+	// 		clgr = clientLgr.Logger("ivmostr-cnn")
+	// 	}
+	// }
 
 	// Init a new HTTP server instance
 	httpServer := server.NewInstance()
-	hdlr := router.NewHandler(l, clgr, nostrRepo, listRepo, cfg)
+	hdlr := router.NewHandler(l, nostrRepo, listRepo, cfg)
 	errs := make(chan error, 2)
 	go func() {
 		addr := ":" + cfg.Port
