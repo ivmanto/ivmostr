@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 
 	gn "github.com/nbd-wtf/go-nostr"
 )
@@ -199,7 +200,13 @@ func GetIP(r *http.Request) string {
 
 	ip = r.Header.Get("X-Real-IP")
 	if ip == "" {
-		ip = r.Header.Get("X-Forwarded-For")
+		xff := r.Header.Get("X-Forwarded-For")
+		if len(xff) > 15 {
+			xffs := strings.Split(xff, ",")
+			if len(xffs) > 1 {
+				ip = xffs[0]
+			}
+		}
 	}
 
 	if ip == "" {
