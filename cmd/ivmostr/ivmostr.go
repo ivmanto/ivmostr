@@ -6,12 +6,12 @@ import (
 	"log"
 	"os"
 
-	"cloud.google.com/go/firestore"
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/data/firestoredb"
 	"github.com/dasiyes/ivmostr-tdd/internal/server"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/router"
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
+	"github.com/dasiyes/ivmostr-tdd/pkg/fspool"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 )
 
@@ -53,8 +53,8 @@ func main() {
 		// db *sql.DB     = &sql.DB{}
 		ml               *log.Logger = log.New(os.Stderr, "[main] ", log.LstdFlags)
 		l                *log.Logger = log.New(os.Stderr, "[http-srv] ", log.LstdFlags)
-		pool_max_workers int
-		pool_queue       int
+		pool_max_workers int         = 128
+		pool_queue       int         = 1
 	)
 
 	// Load the configuration file
@@ -70,21 +70,17 @@ func main() {
 	if cfg.PoolMaxWorkers >= 1 {
 		pool_max_workers = cfg.PoolMaxWorkers
 	} else {
-		if *workers < 1 {
-			pool_max_workers = 128
-		} else {
+		if *workers > 0 {
 			pool_max_workers = *workers
 		}
 		// if not set in config file, setting it up for cfg object
 		cfg.PoolMaxWorkers = pool_max_workers
 	}
 
-	if cfg.PoolQueue >= 1 {
+	if cfg.PoolQueue > 0 {
 		pool_queue = cfg.PoolQueue
 	} else {
-		if *queue < 1 {
-			pool_queue = 1
-		} else {
+		if *queue > 0 {
 			pool_queue = *queue
 		}
 		// if not set in config file, setting it up for cfg object
@@ -97,40 +93,30 @@ func main() {
 		ml.Printf("Firestore project id %v is empty. Exit: unable to proceed.", prj)
 		panic(nil)
 	}
-	clientFrst, err := firestore.NewClient(ctx, prj)
-	if err != nil {
-		ml.Printf("firestore client init error %s.\n Exit: unable to proceed.", err.Error())
+
+	fsClientsPool := fspool.NewConnectionPool(prj)
+
+	if fsClientsPool == nil {
+		ml.Printf("firestore client pool initiation failed..\n Exit: unable to proceed.")
 		panic(err)
 	}
-	defer clientFrst.Close()
 
 	// Initialize the firestore repository and configuration
 	dlv := cfg.GetDLV()
 	ecn := cfg.GetEventsCollectionName()
 
-	nostrRepo, err := firestoredb.NewNostrRepository(&ctx, clientFrst, dlv, ecn)
+	nostrRepo, err := firestoredb.NewNostrRepository(&ctx, fsClientsPool, dlv, ecn)
 	if err != nil {
 		ml.Printf("firestore repository init error %s.\n Exit: unable to proceed.", err.Error())
 		panic(err)
 	}
+
 	listRepo, err := firestoredb.NewListRepository(
-		&ctx, clientFrst, cfg.GetWhiteListCollectionName(), cfg.GetBlackListCollectionName())
+		&ctx, fsClientsPool, cfg.GetWhiteListCollectionName(), cfg.GetBlackListCollectionName())
 	if err != nil {
 		ml.Printf("firestore repository init error %s.\n Exit: unable to proceed.", err.Error())
 		panic(err)
 	}
-
-	// Initialize the cloud Logging client
-	// if cfg.CloudLoggingEnabled {
-	// 	clientLgr, err := logging.NewClient(ctx, prj)
-	// 	if err != nil {
-	// 		ml.Printf("Error while initializing cloud logging. The service will be now disbled!")
-	// 		cfg.CloudLoggingEnabled = false
-	// 	} else {
-
-	// 		clgr = clientLgr.Logger("ivmostr-cnn")
-	// 	}
-	// }
 
 	// Init a new HTTP server instance
 	httpServer := server.NewInstance()

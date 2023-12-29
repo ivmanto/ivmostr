@@ -58,7 +58,7 @@ func (h *srvHandler) router() chi.Router {
 	// Handle requests to the root URL "/"
 	rtr.Route("/", func(wr chi.Router) {
 		lgr := log.New(os.Stdout, "[wsh] ", log.LstdFlags)
-		ws := ivmws.NewWSHandler(lgr, h.repo, h.lrepo, h.cfg)
+		ws := ivmws.NewWSHandler(lgr, h.cfg)
 		wr.Mount("/", ws.Router())
 	})
 

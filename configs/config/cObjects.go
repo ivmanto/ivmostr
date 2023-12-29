@@ -28,6 +28,7 @@ func (s *ServiceConfig) GetProjectID() string {
 	return f.ProjectID
 }
 
+// GetDLV - gets the default limit value set in the firstore service configuration
 func (s *ServiceConfig) GetDLV() int {
 	f := s.Firestore
 	if f.DefaultLimit < 1 {

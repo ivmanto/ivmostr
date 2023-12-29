@@ -27,15 +27,12 @@ var (
 )
 
 type WSHandler struct {
-	lgr  *log.Logger
-	repo nostr.NostrRepo
-	cfg  *config.ServiceConfig
+	lgr *log.Logger
+	cfg *config.ServiceConfig
 }
 
 func NewWSHandler(
 	l *log.Logger,
-	_repo nostr.NostrRepo,
-	_lrepo nostr.ListRepo,
 	cfg *config.ServiceConfig,
 
 ) *WSHandler {
@@ -44,9 +41,7 @@ func NewWSHandler(
 		lgr: l,
 		cfg: cfg,
 	}
-	// Setting up the repositories
-	repo = _repo
-	//lrepo = _lrepo
+
 	// Setting up the websocket session and pool
 	workers := cfg.PoolMaxWorkers
 	queue := cfg.PoolQueue

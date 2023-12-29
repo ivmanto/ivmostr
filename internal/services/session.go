@@ -44,7 +44,7 @@ type Session struct {
 	clgr    *logging.Logger
 	pool    *gopool.Pool
 	cfg     *config.ServiceConfig
-	repo    nostr.NostrRepo
+	Repo    nostr.NostrRepo
 }
 
 // NewSession creates a new WebSocket session.
@@ -63,7 +63,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
 		clgr: clgr,
 		pool: pool,
-		repo: repo,
+		Repo: repo,
 		cfg:  cfg,
 	}
 

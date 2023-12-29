@@ -180,7 +180,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// Keep it disabled until [ ]TODO: find a way to clone the execution context
 		// NewEvent <- e
 
-		err := c.session.repo.StoreEventK3(e)
+		err := c.session.Repo.StoreEventK3(e)
 		if err != nil {
 			c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 			return err
@@ -201,7 +201,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// do nothing
 	}
 
-	err = c.session.repo.StoreEvent(e)
+	err = c.session.Repo.StoreEvent(e)
 	if err != nil {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		return err
@@ -491,12 +491,87 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 	// Function to fetch data from the specified filter
 
 	return func() error {
+		// [ ]: de-compose the filter
+		// ===================================== FILTER TEMPLATE ============================================
 
-		events, err := c.session.repo.GetEventsByFilter(filter)
-		if err != nil {
-			c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-			return err
+		//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
+		//{
+		//  "ids": <a list of event ids>,
+		//  "authors": <a list of lowercase pubkeys, the pubkey of an event must be one of these>,
+		//  "kinds": <a list of a kind numbers>,
+		//  "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
+		//  "since": <an integer unix timestamp in seconds, events must be newer than this to pass>,
+		//  "until": <an integer unix timestamp in seconds, events must be older than this to pass>,
+		//  "limit": <maximum number of events relays SHOULD return in the initial query>
+		//}
+		//==================================================================================================
+		var (
+			err            error
+			events         []*gn.Event
+			max_events     int
+			_since, _until int64
+		)
+
+		lim, ok := filter["limit"].(float64)
+		if !ok {
+			max_events = c.session.cfg.GetDLV()
+		} else if lim == 0 || lim > 5000 {
+			// until the paging is implemented for paying clients OR always for public clients
+			// 5000 is the value from attribute from server_info limits
+			max_events = 5000
+		} else {
+			// set the requested by the filter value
+			max_events = int(lim)
 		}
+
+		// =================================== SINCE - UNTIL ===============================================
+		if since, ok := filter["since"].(float64); !ok {
+			_since = int64(0)
+		} else {
+			_since = int64(since)
+		}
+		if until, ok := filter["until"].(float64); !ok {
+			_until = int64(0)
+		} else {
+			_until = int64(until)
+		}
+
+		switch {
+		case filter["kinds"] != nil:
+			var (
+				kinds  []interface{}
+				kindsi []int
+			)
+
+			kinds, ok = filter["kinds"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
+			}
+
+			if len(kinds) > 30 {
+				kinds = kinds[:30]
+			}
+
+			for _, kind := range kinds {
+				_kind, ok := kind.(float64)
+				if ok {
+					kindsi = append(kindsi, int(_kind))
+				}
+			}
+
+			events, err = c.session.Repo.GetEventsByKinds(kindsi, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
+				return err
+			}
+		default:
+			events, err = c.session.Repo.GetEventsByFilter(filter)
+			if err != nil {
+				c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				return err
+			}
+		}
+
 		nbmrevents += len(events)
 
 		msgw <- &[]interface{}{events}
