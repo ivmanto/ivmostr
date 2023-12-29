@@ -225,13 +225,13 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 			r.elgr.Printf("ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
-		lcnt++
 
 		if lcnt < limit {
 			events = append(events, e)
 		} else {
 			break
 		}
+		lcnt++
 	}
 
 	rsl := fmt.Sprintf(`{"events": %d, "filter_kinds": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), kinds, limit, since, until, time.Now().UnixMilli()-ts)
@@ -521,14 +521,15 @@ func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{},
 			r.elgr.Printf("Error %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
-		lcnt++
 
-		if lcnt <= limit {
+		if lcnt < limit {
 			events = append(events, e)
 		} else {
 			break
 		}
+		lcnt++
 	}
+
 	return events, nil
 }
 
