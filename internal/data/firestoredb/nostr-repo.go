@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	gn "github.com/nbd-wtf/go-nostr"
@@ -176,6 +177,8 @@ func (r *nostrRepo) TotalDocs() (int, error) {
 // GetEventsByKinds - returns an array of events from a specific Kind observing the limit and time frames
 func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64) ([]*gn.Event, error) {
 
+	ts := time.Now().UnixMilli()
+
 	// [ ]: review ========= client per job ============
 	fsclient, errc := r.clients.GetClient()
 	if errc != nil {
@@ -186,15 +189,59 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 
 	var (
 		events []*gn.Event
-		err    error
+		query  *firestore.DocumentIterator
+		lcnt   int
 	)
 
-	if err != nil {
-		r.elgr.Printf("Error retrieving `kinds` from the database: %v", err)
-		return nil, err
+	switch {
+	case since == 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	case since > 0 && until == 0:
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).Documents(*r.ctx)
+
+	case since > 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	default:
+		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Documents(*r.ctx)
+
 	}
 
-	return events, err
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done {
+				break
+			}
+			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+		lcnt++
+
+		if lcnt < limit {
+			events = append(events, e)
+		} else {
+			break
+		}
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_kinds": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), kinds, limit, since, until, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("no events found for the provided filter")
+	}
+
+	return events, nil
 }
 
 // GetEventsByFilter - returns a list of events that match the filter provided from a client subscription
