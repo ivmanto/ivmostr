@@ -11,6 +11,7 @@ type NostrRepo interface {
 	GetEvent(id string) (*gn.Event, error)
 	GetEvents(ids []string) ([]*gn.Event, error)
 	GetEventsByKinds(kinds []int, limit int, since, until int64) ([]*gn.Event, error)
+	GetEventsByAuthors(authors []string, limit int, since, until int64) ([]*gn.Event, error)
 	GetEventsByFilter(filter map[string]interface{}) ([]*gn.Event, error)
 	DeleteEvent(id string) error
 	DeleteEvents(ids []string) error

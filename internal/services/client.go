@@ -564,6 +564,30 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
 				return err
 			}
+
+		case filter["authors"] != nil:
+			var (
+				authors  []interface{}
+				_authors []string
+			)
+
+			authors, ok = filter["kinds"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Authors are not a list")
+			}
+
+			for _, auth := range authors {
+				_auth, ok := auth.(string)
+				if ok {
+					_authors = append(_authors, _auth)
+				}
+			}
+
+			if len(_authors) > 30 {
+				_authors = _authors[:30]
+			}
+
+			events, err = c.session.Repo.GetEventsByAuthors(_authors, max_events, _since, _until)
 		default:
 			events, err = c.session.Repo.GetEventsByFilter(filter)
 			if err != nil {

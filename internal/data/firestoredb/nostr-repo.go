@@ -245,6 +245,12 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 	return events, nil
 }
 
+// GetEventsByAuthors - ...
+func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until int64) ([]*gn.Event, error) {
+	// [ ]: implement the logic to retrieve the Events by requested authors
+	return nil, nil
+}
+
 // GetEventsByFilter - returns a list of events that match the filter provided from a client subscription
 func (r *nostrRepo) GetEventsByFilter(filter map[string]interface{}) ([]*gn.Event, error) {
 
@@ -253,7 +259,7 @@ func (r *nostrRepo) GetEventsByFilter(filter map[string]interface{}) ([]*gn.Even
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
-	//defer r.clients.ReleaseClient(fsclient)
+
 	// ==================== end of client ================
 
 	var (
