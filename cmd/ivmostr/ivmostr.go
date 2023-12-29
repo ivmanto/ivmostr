@@ -111,16 +111,16 @@ func main() {
 		panic(err)
 	}
 
-	listRepo, err := firestoredb.NewListRepository(
-		&ctx, fsClientsPool, cfg.GetWhiteListCollectionName(), cfg.GetBlackListCollectionName())
-	if err != nil {
-		ml.Printf("firestore repository init error %s.\n Exit: unable to proceed.", err.Error())
-		panic(err)
-	}
+	// listRepo, err := firestoredb.NewListRepository(
+	// 	&ctx, fsClientsPool, cfg.GetWhiteListCollectionName(), cfg.GetBlackListCollectionName())
+	// if err != nil {
+	// 	ml.Printf("firestore repository init error %s.\n Exit: unable to proceed.", err.Error())
+	// 	panic(err)
+	// }
 
 	// Init a new HTTP server instance
 	httpServer := server.NewInstance()
-	hdlr := router.NewHandler(l, nostrRepo, listRepo, cfg)
+	hdlr := router.NewHandler(l, nostrRepo, cfg)
 	errs := make(chan error, 2)
 	go func() {
 		addr := ":" + cfg.Port

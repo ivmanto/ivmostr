@@ -27,19 +27,22 @@ var (
 )
 
 type WSHandler struct {
-	lgr *log.Logger
-	cfg *config.ServiceConfig
+	lgr  *log.Logger
+	repo nostr.NostrRepo
+	cfg  *config.ServiceConfig
 }
 
 func NewWSHandler(
 	l *log.Logger,
+	repo nostr.NostrRepo,
 	cfg *config.ServiceConfig,
 
 ) *WSHandler {
 
 	hndlr := WSHandler{
-		lgr: l,
-		cfg: cfg,
+		lgr:  l,
+		repo: repo,
+		cfg:  cfg,
 	}
 
 	// Setting up the websocket session and pool

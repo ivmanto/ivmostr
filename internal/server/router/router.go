@@ -38,10 +38,9 @@ import (
 
 // Constructing web application depenedencies in the format of handler
 type srvHandler struct {
-	l     *log.Logger
-	repo  nostr.NostrRepo
-	lrepo nostr.ListRepo
-	cfg   *config.ServiceConfig
+	l    *log.Logger
+	repo nostr.NostrRepo
+	cfg  *config.ServiceConfig
 	// ... add other dependencies here
 }
 
@@ -58,14 +57,14 @@ func (h *srvHandler) router() chi.Router {
 	// Handle requests to the root URL "/"
 	rtr.Route("/", func(wr chi.Router) {
 		lgr := log.New(os.Stdout, "[wsh] ", log.LstdFlags)
-		ws := ivmws.NewWSHandler(lgr, h.cfg)
+		ws := ivmws.NewWSHandler(lgr, h.repo, h.cfg)
 		wr.Mount("/", ws.Router())
 	})
 
 	// Route the API calls to/v1/api/ ...
 	rtr.Route("/v1", func(r chi.Router) {
 		lgr := log.New(os.Stdout, "[http][api] ", log.LstdFlags)
-		rh := api.ApiHandler{Lgr: lgr, Repo: h.repo}
+		rh := api.ApiHandler{Lgr: lgr}
 		r.Mount("/", rh.Router())
 	})
 
@@ -73,13 +72,12 @@ func (h *srvHandler) router() chi.Router {
 }
 
 // Handler to manage endpoints
-func NewHandler(l *log.Logger, repo nostr.NostrRepo, lrepo nostr.ListRepo, cfg *config.ServiceConfig) http.Handler {
+func NewHandler(l *log.Logger, repo nostr.NostrRepo, cfg *config.ServiceConfig) http.Handler {
 
 	e := srvHandler{
-		l:     l,
-		repo:  repo,
-		lrepo: lrepo,
-		cfg:   cfg,
+		l:    l,
+		repo: repo,
+		cfg:  cfg,
 	}
 	e.l.Printf("...initializing router (http server Handler) ...")
 
