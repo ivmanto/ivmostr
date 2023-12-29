@@ -184,7 +184,6 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (
@@ -242,6 +241,7 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 		return nil, fmt.Errorf("no events found for the provided filter")
 	}
 
+	defer r.clients.ReleaseClient(fsclient)
 	return events, nil
 }
 
