@@ -188,9 +188,9 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 	// ==================== end of client ================
 
 	var (
-		events []*gn.Event
-		query  *firestore.DocumentIterator
-		lcnt   int
+		events     []*gn.Event
+		query      *firestore.DocumentIterator
+		lcnt, ecnt int
 	)
 
 	switch {
@@ -212,10 +212,11 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[GetEventsByKinds] Error raised while reading a doc from the DB: %v", err)
+			ecnt++
 			continue
 		}
 
@@ -252,7 +253,7 @@ func (r *nostrRepo) GetEventsByFilter(filter map[string]interface{}) ([]*gn.Even
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
-	defer r.clients.ReleaseClient(fsclient)
+	//defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (
@@ -392,6 +393,7 @@ SINCE:
 		}
 	}
 
+	r.clients.ReleaseClient(fsclient)
 	return events, nil
 }
 
@@ -464,7 +466,7 @@ func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{},
 
 	var events []*gn.Event
 	var kindsI []int64
-	var lcnt int
+	var lcnt, ecnt int
 
 	for _, kind := range kinds {
 		_kind, ok := kind.(float64)
@@ -506,10 +508,11 @@ func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{},
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[retrieveKinds] Error raised while reading a doc from the DB: %v", err)
+			ecnt++
 			continue
 		}
 
@@ -533,10 +536,10 @@ func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{},
 func (r *nostrRepo) retrievIDs(ids []interface{}, since, until interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
 
 	var (
-		events []*gn.Event
-		lcnt   int
-		query  *firestore.DocumentIterator
-		_ids   []string
+		events     []*gn.Event
+		lcnt, ecnt int
+		query      *firestore.DocumentIterator
+		_ids       []string
 	)
 
 	for _, id := range ids {
@@ -577,10 +580,11 @@ func (r *nostrRepo) retrievIDs(ids []interface{}, since, until interface{}, limi
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[retrievIDs] Error raised while reading a doc from the DB: %v", err)
+			ecnt++
 			continue
 		}
 
@@ -604,9 +608,9 @@ func (r *nostrRepo) retrievIDs(ids []interface{}, since, until interface{}, limi
 func (r *nostrRepo) retrievAuthors(authors []interface{}, since, until interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
 
 	var (
-		events   []*gn.Event
-		lcnt     int
-		_authors []string
+		events     []*gn.Event
+		lcnt, ecnt int
+		_authors   []string
 	)
 
 	for _, author := range authors {
@@ -649,10 +653,11 @@ func (r *nostrRepo) retrievAuthors(authors []interface{}, since, until interface
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[retrievAuthors] Error raised while reading a doc from the DB: %v", err)
+			ecnt++
 			continue
 		}
 
@@ -675,10 +680,11 @@ func (r *nostrRepo) retrievAuthors(authors []interface{}, since, until interface
 // retrieveFromPast - query events collection from the DB by createdAt and if there are events created after the `since` timestamp, applies that filtration to the returned result.
 func (r *nostrRepo) retrieveFromPast(since interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
 
-	var events []*gn.Event
-	var lcnt int = 0
-
-	var query *firestore.DocumentIterator
+	var (
+		events     []*gn.Event
+		lcnt, ecnt int
+		query      *firestore.DocumentIterator
+	)
 
 	tsSince, err := tools.ConvertToTS(since)
 	if err != nil {
@@ -692,10 +698,11 @@ func (r *nostrRepo) retrieveFromPast(since interface{}, limit int, fsclient *fir
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[retrieveFromPast] Error raised while reading a doc from the DB: %v", err)
+			ecnt++
 			continue
 		}
 
