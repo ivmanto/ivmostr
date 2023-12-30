@@ -595,6 +595,10 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		case _since > 0 && _until == 0:
 
 			events, err = c.session.Repo.GetEventsSince(max_events, _since)
+			if err != nil {
+				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				return err
+			}
 
 		default:
 			events, err = c.session.Repo.GetEventsByFilter(filter)
