@@ -241,7 +241,7 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 		return nil, fmt.Errorf("no events found for the provided filter")
 	}
 
-	defer r.clients.ReleaseClient(fsclient)
+	r.clients.ReleaseClient(fsclient)
 	return events, nil
 }
 
@@ -312,7 +312,7 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 		return nil, fmt.Errorf("no events found for the provided filter")
 	}
 
-	defer r.clients.ReleaseClient(fsclient)
+	r.clients.ReleaseClient(fsclient)
 	return events, nil
 }
 
@@ -369,7 +369,7 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 		return nil, fmt.Errorf("no events found for the provided filter")
 	}
 
-	defer r.clients.ReleaseClient(fsclient)
+	r.clients.ReleaseClient(fsclient)
 	return events, nil
 }
 
@@ -533,13 +533,14 @@ func (r *nostrRepo) DeleteEvent(id string) error {
 	if err != nil {
 		return fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	_, err = fsclient.Collection(r.events_collection).Doc(id).Delete(*r.ctx)
 	if err != nil {
 		r.elgr.Printf("Error deleting event with id: %s from the database: %v", id, err)
 	}
+
+	r.clients.ReleaseClient(fsclient)
 	return err
 }
 
