@@ -515,7 +515,6 @@ SINCE:
 		}
 	}
 
-	r.clients.ReleaseClient(fsclient)
 	return events, nil
 }
 
