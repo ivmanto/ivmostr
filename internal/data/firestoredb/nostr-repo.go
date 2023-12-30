@@ -255,6 +255,7 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
+	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (
@@ -312,7 +313,6 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 		return nil, fmt.Errorf("[GetEventsByAuthors] no events found for the provided filter")
 	}
 
-	r.clients.ReleaseClient(fsclient)
 	return events, nil
 }
 
@@ -326,6 +326,7 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
+	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (
@@ -369,7 +370,6 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 		return nil, fmt.Errorf("[GetEventsSince] no events found for the provided filter")
 	}
 
-	r.clients.ReleaseClient(fsclient)
 	return events, nil
 }
 
