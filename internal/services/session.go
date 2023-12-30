@@ -24,7 +24,7 @@ import (
 var (
 	NewEvent     = make(chan *gn.Event)
 	Exit         = make(chan struct{})
-	ticker       = time.NewTicker(60 * time.Minute)
+	ticker       = time.NewTicker(5 * time.Minute)
 	relay_access string
 	clientCldLgr *logging.Client
 	cclnlgr      *logging.Logger
