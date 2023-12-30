@@ -34,7 +34,6 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	if err != nil {
 		return fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	// multi-level array are not supported by firestore! It must be converted into a array of objects with string elements
@@ -74,7 +73,6 @@ func (r *nostrRepo) StoreEventK3(e *gn.Event) error {
 	if err != nil {
 		return fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	events := fsclient.Collection(r.events_collection)
@@ -116,7 +114,6 @@ func (r *nostrRepo) GetEvent(id string) (*gn.Event, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var e gn.Event
@@ -156,7 +153,6 @@ func (r *nostrRepo) TotalDocs() (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	// Calculate the total number of documents available in the collection r.events_collection
@@ -185,7 +181,6 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (
@@ -256,7 +251,6 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (
@@ -327,7 +321,6 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (
