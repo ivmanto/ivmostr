@@ -71,7 +71,7 @@ func (c *Client) ReceiveMsg() error {
 	// Receive errors from the channel and handle them
 	for err := range errRM {
 		if err != nil {
-			fmt.Println("Error received:", err)
+			fmt.Println("[receiveMSG] Error received:", err)
 			// Perform error handling or logging here
 			return err
 		}

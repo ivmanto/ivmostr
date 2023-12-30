@@ -184,6 +184,7 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
+	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (
@@ -238,10 +239,9 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 	r.ilgr.Printf("%v", rsl)
 
 	if len(events) == 0 {
-		return nil, fmt.Errorf("no events found for the provided filter")
+		return nil, fmt.Errorf("[GetEventsByKinds] no events found for the provided filter")
 	}
 
-	r.clients.ReleaseClient(fsclient)
 	return events, nil
 }
 
@@ -309,7 +309,7 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 	r.ilgr.Printf("%v", rsl)
 
 	if len(events) == 0 {
-		return nil, fmt.Errorf("no events found for the provided filter")
+		return nil, fmt.Errorf("[GetEventsByAuthors] no events found for the provided filter")
 	}
 
 	r.clients.ReleaseClient(fsclient)
@@ -342,14 +342,14 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("[GetEventsByKinds] ERROR raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[GetEventsSince] ERROR raised while reading a doc from the DB: %v", err)
 			ecnt++
 			continue
 		}
 
 		e, err := r.transformTagMapIntoTAGS(doc)
 		if err != nil {
-			r.elgr.Printf("[GetEventsByKinds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			r.elgr.Printf("[GetEventsSince] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
 
@@ -366,7 +366,7 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 	r.ilgr.Printf("%v", rsl)
 
 	if len(events) == 0 {
-		return nil, fmt.Errorf("no events found for the provided filter")
+		return nil, fmt.Errorf("[GetEventsSince] no events found for the provided filter")
 	}
 
 	r.clients.ReleaseClient(fsclient)
