@@ -21,6 +21,7 @@ type nostrRepo struct {
 	ctx               *context.Context
 	events_collection string
 	clients           *fspool.ConnectionPool
+	fsclient          *firestore.Client
 	default_limit     int
 	elgr              *log.Logger
 	ilgr              *log.Logger
@@ -559,14 +560,23 @@ func (r *nostrRepo) DeleteEvents(ids []string) error {
 // NewNostrRepository - creates a new nostr relay repository
 // [x]: get the repo params from the config
 func NewNostrRepository(ctx *context.Context, clients *fspool.ConnectionPool, dlv int, ecn string) (nostr.NostrRepo, error) {
-	return &nostrRepo{
+
+	client, err := clients.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+
+	nr := &nostrRepo{
 		ctx:               ctx,
 		events_collection: ecn,
 		clients:           clients,
+		fsclient:          client,
 		default_limit:     dlv,
 		ilgr:              log.New(os.Stdout, "[nostr-repo] ", log.LstdFlags),
 		elgr:              log.New(os.Stderr, "[nostr-repo] ", log.LstdFlags),
-	}, nil
+	}
+
+	return nr, nil
 }
 
 // ================================== Supports functions =====================================

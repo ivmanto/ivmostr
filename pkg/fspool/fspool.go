@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"time"
 
 	"cloud.google.com/go/firestore"
 )
@@ -74,16 +73,7 @@ func (pool *ConnectionPool) GetClient() (*firestore.Client, error) {
 
 func (pool *ConnectionPool) ReleaseClient(client *firestore.Client) {
 
-	for {
-		err := client.Close()
-		if err != nil {
-			fmt.Printf("Failed to close Firestore client [%v]: %v\n\n", client, err)
-			time.Sleep(time.Second * 1)
-			continue
-		}
-		break
-	}
-
+	_ = client.Close()
 	// Remove from busy clients
 	for i, ma := range busy_clients {
 		if ma == client {
@@ -93,7 +83,6 @@ func (pool *ConnectionPool) ReleaseClient(client *firestore.Client) {
 			break
 		}
 	}
-
 }
 
 // ContainsMA - veryfies if an array of memmory addresses cotains a specific memmory address
