@@ -588,10 +588,18 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 			}
 
 			events, err = c.session.Repo.GetEventsByAuthors(_authors, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				return err
+			}
+		case _since > 0 && _until == 0:
+
+			events, err = c.session.Repo.GetEventsSince(max_events, _since)
+
 		default:
 			events, err = c.session.Repo.GetEventsByFilter(filter)
 			if err != nil {
-				c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 				return err
 			}
 		}
