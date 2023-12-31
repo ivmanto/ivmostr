@@ -64,9 +64,16 @@ func (h *WSHandler) Router() chi.Router {
 
 	rtr.Route("/", func(r chi.Router) {
 		r.Get("/", h.connman)
+		r.Get("/hc", h.healthcheck)
 	})
 
 	return rtr
+}
+
+// healthcheck point for polling the server health
+func (h *WSHandler) healthcheck(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
 }
 
 // connman takes care for the connection upgrade (incl handshake) and all the negotiated subprotocols
