@@ -50,6 +50,7 @@ func (h *srvHandler) router() chi.Router {
 
 	// Building middleware chain
 	rtr.Use(accessControl)
+	rtr.Use(healthcheck)
 	rtr.Use(serverinfo)
 	rtr.Use(rateLimiter)
 	rtr.Use(controlIPConn)
