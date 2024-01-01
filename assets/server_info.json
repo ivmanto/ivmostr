@@ -3,7 +3,7 @@
     "description": "nostr relay implemented by Ivmanto with the below listed features",
     "pubkey": "29480df94c3c41a416285e920cc3ba7887efe05fecb58e73a783231c426969b9",
     "contact": "office@ivmanto.com",
-    "supported_nips": [1,2,3,4,42],
+    "supported_nips": [1,2,3,4,11,42],
     "software": "TBD",
     "version": "0.0.2",
     "limitation": {

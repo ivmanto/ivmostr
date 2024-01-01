@@ -145,7 +145,6 @@ func (r *nostrRepo) GetEvents(ids []string) ([]*gn.Event, error) {
 	return events, nil
 }
 
-// [ ]: To be tested if works
 func (r *nostrRepo) TotalDocs() (int, error) {
 
 	// [ ]: review ========= client per job ============
@@ -311,7 +310,76 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 	return events, nil
 }
 
-// GetEventsSince - ...
+// GetEventsByIds - getting events listed into the ids array
+func (r *nostrRepo) GetEventsByIds(ids []string, limit int, since, until int64) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events     []*gn.Event
+		query      *firestore.DocumentIterator
+		lcnt, ecnt int
+	)
+
+	switch {
+	case since == 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	case since > 0 && until == 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).Documents(*r.ctx)
+
+	case since > 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	default:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Documents(*r.ctx)
+
+	}
+
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 3 {
+				break
+			}
+			r.elgr.Printf("[GetEventsByIds] ERROR: raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("[GetEventsByIds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+
+		if lcnt < limit {
+			events = append(events, e)
+		} else {
+			break
+		}
+		lcnt++
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_authors": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), ids, limit, since, until, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetEventsByAuthors] no events found for the provided filter")
+	}
+
+	return events, nil
+}
+
+// GetEventsSince - get only events created after `since`
 func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) {
 
 	ts := time.Now().UnixMilli()
@@ -362,6 +430,62 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 
 	if len(events) == 0 {
 		return nil, fmt.Errorf("[GetEventsSince] no events found for the provided filter")
+	}
+
+	return events, nil
+}
+
+// GetEventsSince - get only events created after `since`
+func (r *nostrRepo) GetEventsSinceUntil(limit int, since, until int64) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events     []*gn.Event
+		query      *firestore.DocumentIterator
+		lcnt, ecnt int
+	)
+
+	query = fsclient.Collection(r.events_collection).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 3 {
+				break
+			}
+			r.elgr.Printf("[GetEventsSinceUntil] ERROR raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("[GetEventsSinceUntil] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+
+		if lcnt < limit {
+			events = append(events, e)
+		} else {
+			break
+		}
+		lcnt++
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_all": "all_events", "limit": %d, "since": %d, "until": %d,"took": %d}`, len(events), limit, since, until, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetEventsSinceUntil] no events found for the provided filter")
 	}
 
 	return events, nil

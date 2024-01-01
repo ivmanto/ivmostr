@@ -571,7 +571,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				_authors []string
 			)
 
-			authors, ok = filter["kinds"].([]interface{})
+			authors, ok = filter["authors"].([]interface{})
 			if !ok {
 				return fmt.Errorf("Wrong filter format used! Authors are not a list")
 			}
@@ -592,9 +592,48 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 				return err
 			}
+
+		case filter["ids"] != nil:
+			var (
+				ids  []interface{}
+				_ids []string
+			)
+
+			ids, ok = filter["ids"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Ids are not a list")
+			}
+
+			for _, id := range ids {
+				_id, ok := id.(string)
+				if ok {
+					_ids = append(_ids, _id)
+				}
+			}
+
+			if len(_ids) > 30 {
+				_ids = _ids[:30]
+			}
+
+			events, err = c.session.Repo.GetEventsByAuthors(_ids, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				return err
+			}
+
+		// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
+		// case filter["#e"]: ...
 		case _since > 0 && _until == 0:
 
 			events, err = c.session.Repo.GetEventsSince(max_events, _since)
+			if err != nil {
+				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				return err
+			}
+
+		case _since > 0 && _until > 0:
+
+			events, err = c.session.Repo.GetEventsSinceUntil(max_events, _since, _until)
 			if err != nil {
 				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 				return err
