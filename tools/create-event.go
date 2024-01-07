@@ -21,7 +21,8 @@ var tag4 = []string{"p", "14aeb..8dad4", "wss://bobrelay.com/nostr", "bob"}
 var tag5 = []string{"p", "612ae..e610f", "ws://carolrelay.com/ws", "carol"}
 
 func PrintNewEvent() {
-	e := CreateAuthEvent()
+	//e := CreateAuthEvent()
+	e := CreateNip65Event()
 	e.ID = e.GetID()
 	err := e.Sign(pkhex)
 	if err != nil {
@@ -53,5 +54,19 @@ func CreateAuthEvent() *gn.Event {
 		Kind:      22242,
 		Tags:      []gn.Tag{tag6, tag7},
 		Content:   "My Contact List",
+	}
+}
+
+var tag8 = []string{"r", "wss://relay.ivmanto.dev", "read"}
+var tag9 = []string{"r", "wss://nostr.ivmanto.dev", "write"}
+
+func CreateNip65Event() *gn.Event {
+	return &gn.Event{
+		ID:        "0",
+		PubKey:    pubKh,
+		CreatedAt: gn.Now(),
+		Kind:      10002,
+		Tags:      []gn.Tag{tag8, tag9},
+		Content:   "Ivmanto relays List",
 	}
 }

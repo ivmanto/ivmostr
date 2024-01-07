@@ -37,7 +37,7 @@ type Session struct {
 	seq     uint
 	clients []*Client
 	ns      map[string]*Client
-	bq      map[string]gn.Event
+	bq      sync.Map
 	out     chan []byte
 	ilgr    *log.Logger
 	elgr    *log.Logger
@@ -57,7 +57,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	session := Session{
 		ns:   make(map[string]*Client),
-		bq:   make(map[string]gn.Event),
+		bq:   sync.Map{},
 		out:  make(chan []byte, 1),
 		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
@@ -229,12 +229,8 @@ func (s *Session) TuneClientConn(client *Client) {
 
 func (s *Session) BroadcasterQueue(e gn.Event) {
 	// [x]: form a queue of events to be broadcasted
-	s.mu.Lock()
-	s.bq[e.ID] = e
-	s.mu.Unlock()
-	for _, v := range s.bq {
-		NewEvent <- &v
-	}
+	s.bq.Store(e.ID, e)
+	NewEvent <- &e
 }
 
 // [x]: to re-work the event broadcaster
@@ -266,9 +262,8 @@ func (s *Session) NewEventBroadcaster() {
 					continue
 				}
 			}
-			s.mu.Lock()
-			delete(s.bq, e.ID)
-			s.mu.Unlock()
+
+			s.bq.Delete(e.ID)
 			continue
 		}
 	}

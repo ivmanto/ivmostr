@@ -640,11 +640,12 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 			}
 
 		default:
-			events, err = c.session.Repo.GetEventsByFilter(filter)
-			if err != nil {
-				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-				return err
-			}
+			//events, err = c.session.Repo.GetEventsByFilter(filter)
+			// if err != nil {
+			// 	c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+			// 	return err
+			// }
+			c.lgr.Printf("Customer [%v]. Filter is too complex:\n %v\n", c.IP, filter)
 		}
 
 		nbmrevents += len(events)
