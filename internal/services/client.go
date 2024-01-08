@@ -294,7 +294,7 @@ func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 		if c.Subscription_id == subscription_id {
 			c.Subscription_id = ""
 			c.Filetrs = []map[string]interface{}{}
-			c.writeCustomNotice("Update: The subscription has been clodsed")
+			c.writeCustomNotice("Update: The subscription has been closed")
 			return nil
 		} else {
 			c.writeCustomNotice("Error: Invalid subscription_id provided")

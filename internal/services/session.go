@@ -53,6 +53,9 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	// Initate Cloud logging
 	ctx := context.Background()
 	clientCldLgr, _ = logging.NewClient(ctx, cfg.Firestore.ProjectID)
+	clientCldLgr.OnError = func(err error) {
+		fmt.Printf("[cloud-logger] Error [%v] raised while logging to cloud logger", err)
+	}
 	clgr := clientCldLgr.Logger("ivmostr-cnn")
 
 	session := Session{
@@ -85,8 +88,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 }
 
 // Register upgraded websocket connection as client in the sessions
-func (s *Session) Register(
-	conn *websocket.Conn, ip string) *Client {
+func (s *Session) Register(conn *websocket.Conn, ip string) *Client {
 
 	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
 
@@ -288,6 +290,15 @@ func (s *Session) ConnectionHealthChecker() {
 			// avoid concurent changes to cause slice out of range error
 			nsc := s.ns
 			for _, client := range nsc {
+
+				//Count dummy (empty) connections with no subscriptions
+				if client.Subscription_id == "" && len(client.Filetrs) == 0 {
+					dmc++
+					go s.Remove(client)
+					client.conn.Close()
+					continue
+				}
+
 				s.mu.Lock()
 				err = client.conn.WriteControl(pm, []byte("ping"), time.Time.Add(time.Now(), dl))
 				s.mu.Unlock()
@@ -314,13 +325,10 @@ func (s *Session) ConnectionHealthChecker() {
 					fmt.Printf("[hc]: [%v] successful PONG!\n", client.IP)
 					_ = client.conn.SetReadDeadline(time.Time{})
 				} else {
-					s.Remove(client)
+					go s.Remove(client)
 					client.conn.Close()
 				}
-				//Count dummy (empty) connections with no subscriptions
-				if client.Subscription_id == "" && len(client.Filetrs) == 0 {
-					dmc++
-				}
+
 			}
 
 			fmt.Printf("[hc]: * %d active clients connections, %d dummy (empty)\n", len(s.ns), dmc)
