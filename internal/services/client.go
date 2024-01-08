@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -510,6 +511,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 			events         []*gn.Event
 			max_events     int
 			_since, _until int64
+			fltl           int
 		)
 
 		lim, ok := filter["limit"].(float64)
@@ -536,119 +538,141 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 			_until = int64(until)
 		}
 
-		switch {
-		case filter["kinds"] != nil:
-			var (
-				kinds  []interface{}
-				kindsi []int
-			)
+		// Parsing filter's lists
+		for key, val := range filter {
 
-			kinds, ok = filter["kinds"].([]interface{})
-			if !ok {
-				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
+			if nbmrevents > max_events {
+				break
 			}
 
-			if len(kinds) > 30 {
-				kinds = kinds[:30]
-			}
+			nbmrevents += len(events)
 
-			for _, kind := range kinds {
-				_kind, ok := kind.(float64)
-				if ok {
-					kindsi = append(kindsi, int(_kind))
+			switch {
+			case key == "kinds":
+
+				c.lgr.Printf("Filter kinds:%v", val)
+
+				var (
+					kinds  []interface{}
+					kindsi []int
+				)
+
+				kinds, ok = filter["kinds"].([]interface{})
+				if !ok {
+					return fmt.Errorf("Wrong filter format used! Kinds are not a list")
+				}
+
+				if len(kinds) > 30 {
+					kinds = kinds[:30]
+				}
+
+				for _, kind := range kinds {
+					_kind, ok := kind.(float64)
+					if ok {
+						kindsi = append(kindsi, int(_kind))
+					}
+				}
+
+				events, err = c.session.Repo.GetEventsByKinds(kindsi, max_events, _since, _until)
+				if err != nil {
+					c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
+					return err
+				}
+
+			case key == "authors":
+
+				c.lgr.Printf("Filter authors:%v", val)
+
+				var (
+					authors  []interface{}
+					_authors []string
+				)
+
+				authors, ok = filter["authors"].([]interface{})
+				if !ok {
+					return fmt.Errorf("Wrong filter format used! Authors are not a list")
+				}
+
+				for _, auth := range authors {
+					_auth, ok := auth.(string)
+					if ok {
+						_authors = append(_authors, _auth)
+					}
+				}
+
+				if len(_authors) > 30 {
+					_authors = _authors[:30]
+				}
+
+				events, err = c.session.Repo.GetEventsByAuthors(_authors, max_events, _since, _until)
+				if err != nil {
+					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+					return err
+				}
+
+			case key == "ids":
+
+				c.lgr.Printf("Filter ids:%v", val)
+
+				var (
+					ids  []interface{}
+					_ids []string
+				)
+
+				ids, ok = filter["ids"].([]interface{})
+				if !ok {
+					return fmt.Errorf("Wrong filter format used! Ids are not a list")
+				}
+
+				for _, id := range ids {
+					_id, ok := id.(string)
+					if ok {
+						_ids = append(_ids, _id)
+					}
+				}
+
+				if len(_ids) > 30 {
+					_ids = _ids[:30]
+				}
+
+				events, err = c.session.Repo.GetEventsByAuthors(_ids, max_events, _since, _until)
+				if err != nil {
+					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+					return err
+				}
+			case strings.HasPrefix(key, "#"):
+			// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
+			// case filter["#e"]: ...
+
+			default:
+				if _since > 0 && _until == 0 {
+
+					events, err = c.session.Repo.GetEventsSince(max_events, _since)
+					if err != nil {
+						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+						return err
+					}
+				} else if _since > 0 && _until > 0 {
+
+					events, err = c.session.Repo.GetEventsSinceUntil(max_events, _since, _until)
+					if err != nil {
+						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+						return err
+					}
+				} else {
+					//events, err = c.session.Repo.GetEventsByFilter(filter)
+					// if err != nil {
+					// 	c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+					// 	return err
+					// }
+					c.lgr.Printf("Customer [%v]. Filter is too complex:\n %v\n", c.IP, filter)
 				}
 			}
 
-			events, err = c.session.Repo.GetEventsByKinds(kindsi, max_events, _since, _until)
-			if err != nil {
-				c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
-				return err
-			}
-
-		case filter["authors"] != nil:
-			var (
-				authors  []interface{}
-				_authors []string
-			)
-
-			authors, ok = filter["authors"].([]interface{})
-			if !ok {
-				return fmt.Errorf("Wrong filter format used! Authors are not a list")
-			}
-
-			for _, auth := range authors {
-				_auth, ok := auth.(string)
-				if ok {
-					_authors = append(_authors, _auth)
-				}
-			}
-
-			if len(_authors) > 30 {
-				_authors = _authors[:30]
-			}
-
-			events, err = c.session.Repo.GetEventsByAuthors(_authors, max_events, _since, _until)
-			if err != nil {
-				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-				return err
-			}
-
-		case filter["ids"] != nil:
-			var (
-				ids  []interface{}
-				_ids []string
-			)
-
-			ids, ok = filter["ids"].([]interface{})
-			if !ok {
-				return fmt.Errorf("Wrong filter format used! Ids are not a list")
-			}
-
-			for _, id := range ids {
-				_id, ok := id.(string)
-				if ok {
-					_ids = append(_ids, _id)
-				}
-			}
-
-			if len(_ids) > 30 {
-				_ids = _ids[:30]
-			}
-
-			events, err = c.session.Repo.GetEventsByAuthors(_ids, max_events, _since, _until)
-			if err != nil {
-				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-				return err
-			}
-
-		// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
-		// case filter["#e"]: ...
-		case _since > 0 && _until == 0:
-
-			events, err = c.session.Repo.GetEventsSince(max_events, _since)
-			if err != nil {
-				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-				return err
-			}
-
-		case _since > 0 && _until > 0:
-
-			events, err = c.session.Repo.GetEventsSinceUntil(max_events, _since, _until)
-			if err != nil {
-				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-				return err
-			}
-
-		default:
-			//events, err = c.session.Repo.GetEventsByFilter(filter)
-			// if err != nil {
-			// 	c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-			// 	return err
-			// }
-			c.lgr.Printf("Customer [%v]. Filter is too complex:\n %v\n", c.IP, filter)
+			fltl++
 		}
 
-		nbmrevents += len(events)
+		c.lgr.Printf("Filter components: %v", fltl)
 
 		msgw <- &[]interface{}{events}
 		return nil

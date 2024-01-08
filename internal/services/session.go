@@ -288,7 +288,10 @@ func (s *Session) ConnectionHealthChecker() {
 			fmt.Printf("[hc]:   ...--- === ---...   \n")
 
 			// avoid concurent changes to cause slice out of range error
+			s.mu.Lock()
 			nsc := s.ns
+			s.mu.Unlock()
+
 			for _, client := range nsc {
 
 				//Count dummy (empty) connections with no subscriptions
