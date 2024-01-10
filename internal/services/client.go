@@ -276,14 +276,25 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Subscription_id = subscription_id
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
+	c.lgr.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
+
 	//err := c.SubscriptionSuplier()
+	responseRate := time.Now().UnixMilli()
+
 	err := c.ReadFilteredEvents()
 	if err != nil {
 		return err
 	}
 
-	c.lgr.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
+
+	rslt := time.Now().UnixMilli() - responseRate
+
+	leop.Payload = fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
+
+	cclnlgr.Log(leop)
+	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
+
 	return nil
 }
 
