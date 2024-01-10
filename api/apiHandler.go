@@ -4,14 +4,12 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 )
 
 type ApiHandler struct {
-	Lgr  *log.Logger
-	Repo nostr.NostrRepo
+	Lgr *log.Logger
 	// place any dependencies ...
 }
 

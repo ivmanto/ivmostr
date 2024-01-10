@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"cloud.google.com/go/firestore"
 	"github.com/dasiyes/ivmostr-tdd/internal/data/firestoredb"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
+	"github.com/dasiyes/ivmostr-tdd/pkg/fspool"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/gorilla/websocket"
 )
@@ -32,7 +32,7 @@ var (
 	dlv       int    = 20
 	ecn       string = "events"
 	pool             = gopool.NewPool(128, 2, 1)
-	session          = NewSession(pool, nil, nostrRepo)
+	session          = NewSession(pool, nostrRepo, nil)
 	message   []interface{}
 )
 
@@ -55,14 +55,14 @@ var client = Client{
 
 func init() {
 	// Init the repo
-	clientFrst, err := firestore.NewClient(ctx, prj)
+	fsclientPool := fspool.NewConnectionPool(prj)
 	if err != nil {
 		client.lgr.Printf("error creating firestore client: %v", err)
 		panic(err)
 	}
 	//defer clientFrst.Close()
 
-	nostrRepo, err = firestoredb.NewNostrRepository(&ctx, clientFrst, dlv, ecn)
+	nostrRepo, err = firestoredb.NewNostrRepository(&ctx, fsclientPool, dlv, ecn)
 	if err != nil {
 		client.lgr.Printf("error creating firestore repo: %v", err)
 		panic(err)
@@ -82,7 +82,7 @@ func GetConnected(t *testing.T) {
 	// set the client's connection to the echo server
 	client.conn = conn
 	client.session = session
-	client.session.repo = nostrRepo
+	client.session.Repo = nostrRepo
 }
 
 func Echo(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +151,7 @@ func TestHandlerEventMsgs(t *testing.T) {
 		t.Fatalf("error: id not found or it is in wrong format")
 	}
 
-	err = client.session.repo.DeleteEvent(doc_id)
+	err = client.session.Repo.DeleteEvent(doc_id)
 	if err != nil {
 		t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
 	}
@@ -185,7 +185,7 @@ func TestHandlerEventMsgs(t *testing.T) {
 		t.Fatalf("error: message received from echo server is not expected")
 	}
 
-	err = client.session.repo.DeleteEvent(doc_id)
+	err = client.session.Repo.DeleteEvent(doc_id)
 	if err != nil {
 		t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
 	}

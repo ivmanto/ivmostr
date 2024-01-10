@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
@@ -24,40 +23,34 @@ var (
 	repo    nostr.NostrRepo
 	//lrepo          nostr.ListRepo
 	mu             sync.Mutex
-	trustedOrigins = []string{"nostr.ivmanto.dev", "localhost", "127.0.0.1", "nostr.watch", "nostr.info", "nostr.band", "nostrcheck.me", "nostr"}
+	trustedOrigins = []string{"nostr.ivmanto.dev", "relay.ivmanto.dev", "localhost", "127.0.0.1", "nostr.watch", "nostr.info", "nostr.band", "nostrcheck.me", "nostr"}
 )
 
 type WSHandler struct {
 	lgr  *log.Logger
-	clgr *logging.Logger
 	repo nostr.NostrRepo
 	cfg  *config.ServiceConfig
 }
 
 func NewWSHandler(
 	l *log.Logger,
-	cl *logging.Logger,
-	_repo nostr.NostrRepo,
-	_lrepo nostr.ListRepo,
+	repo nostr.NostrRepo,
 	cfg *config.ServiceConfig,
 
 ) *WSHandler {
 
 	hndlr := WSHandler{
 		lgr:  l,
-		clgr: cl,
+		repo: repo,
 		cfg:  cfg,
 	}
-	// Setting up the repositories
-	repo = _repo
-	//lrepo = _lrepo
+
 	// Setting up the websocket session and pool
 	workers := cfg.PoolMaxWorkers
 	queue := cfg.PoolQueue
 	spawn := 1
 	pool = gopool.NewPool(workers, queue, spawn)
-	session = services.NewSession(pool, cl, repo)
-	session.SetConfig(cfg)
+	session = services.NewSession(pool, repo, cfg)
 
 	return &hndlr
 }
@@ -71,9 +64,16 @@ func (h *WSHandler) Router() chi.Router {
 
 	rtr.Route("/", func(r chi.Router) {
 		r.Get("/", h.connman)
+		r.Get("/hc", h.healthcheck)
 	})
 
 	return rtr
+}
+
+// healthcheck point for polling the server health
+func (h *WSHandler) healthcheck(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
 }
 
 // connman takes care for the connection upgrade (incl handshake) and all the negotiated subprotocols

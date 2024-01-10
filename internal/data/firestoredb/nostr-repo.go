@@ -2,16 +2,17 @@ package firestoredb
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	gn "github.com/nbd-wtf/go-nostr"
 	"google.golang.org/api/iterator"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
+	"github.com/dasiyes/ivmostr-tdd/pkg/fspool"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 )
 
@@ -19,13 +20,21 @@ import (
 type nostrRepo struct {
 	ctx               *context.Context
 	events_collection string
-	client            *firestore.Client
+	clients           *fspool.ConnectionPool
+	fsclient          *firestore.Client
 	default_limit     int
 	elgr              *log.Logger
 	ilgr              *log.Logger
 }
 
 func (r *nostrRepo) StoreEvent(e *gn.Event) error {
+
+	// [ ]: review ========= client per job ============
+	fsclient, err := r.clients.GetClient()
+	if err != nil {
+		return fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+	// ==================== end of client ================
 
 	// multi-level array are not supported by firestore! It must be converted into a array of objects with string elements
 	ec := *e
@@ -37,7 +46,7 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 		return fmt.Errorf("AUTH event should not be stored in the repository")
 	}
 
-	if _, err := r.client.Collection(r.events_collection).Doc(e.ID).Create(*r.ctx, ec); err != nil {
+	if _, err := fsclient.Collection(r.events_collection).Doc(e.ID).Create(*r.ctx, ec); err != nil {
 		return fmt.Errorf("unable to save in clients repository. error: %v", err)
 	}
 
@@ -46,7 +55,7 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	}
 
 	tags := tagsToTagMap(tgs)
-	docRef := r.client.Collection(r.events_collection).Doc(ec.ID)
+	docRef := fsclient.Collection(r.events_collection).Doc(ec.ID)
 
 	if _, errt := docRef.Set(*r.ctx, tags, firestore.MergeAll); errt != nil {
 		return fmt.Errorf("unable to save Tags for Event ID: %s. error: %v", ec.ID, errt)
@@ -59,7 +68,14 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 // nip-02: the event is a contact list (kind=3), it should overwrite the existing contact list for the same PubKey;
 func (r *nostrRepo) StoreEventK3(e *gn.Event) error {
 
-	events := r.client.Collection(r.events_collection)
+	// [ ]: review ========= client per job ============
+	fsclient, err := r.clients.GetClient()
+	if err != nil {
+		return fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+	// ==================== end of client ================
+
+	events := fsclient.Collection(r.events_collection)
 	q := events.Where("Kind", "==", 3).Where("PubKey", "==", e.PubKey).OrderBy("CreatedAt", firestore.Desc).Limit(1)
 
 	docs, err := q.Documents(*r.ctx).GetAll()
@@ -91,27 +107,17 @@ func (r *nostrRepo) StoreEventK3(e *gn.Event) error {
 
 }
 
-func tagsToTagMap(tgs gn.Tags) map[string]interface{} {
-
-	// convert the tags into a map of string elements - TagMap
-	tm := make(gn.TagMap)
-
-	for i, tn := range tgs {
-		tagslice := []string{}
-
-		for _, tag := range tn {
-			tagslice = append(tagslice, tag)
-		}
-		tm[fmt.Sprintf("%d", i)] = tagslice
-	}
-
-	return map[string]interface{}{"ТagsMap": tm}
-}
-
 func (r *nostrRepo) GetEvent(id string) (*gn.Event, error) {
 
+	// [ ]: review ========= client per job ============
+	fsclient, err := r.clients.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+	// ==================== end of client ================
+
 	var e gn.Event
-	doc, err := r.client.Collection(r.events_collection).Doc(id).Get(*r.ctx)
+	doc, err := fsclient.Collection(r.events_collection).Doc(id).Get(*r.ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to get event from repository. error: %v", err)
@@ -126,6 +132,7 @@ func (r *nostrRepo) GetEvent(id string) (*gn.Event, error) {
 
 func (r *nostrRepo) GetEvents(ids []string) ([]*gn.Event, error) {
 
+	// [ ]: review for refactoring. Could be better performing if NOT calling GetEvent for each event
 	var events []*gn.Event
 	for _, id := range ids {
 		e, err := r.GetEvent(id)
@@ -138,28 +145,363 @@ func (r *nostrRepo) GetEvents(ids []string) ([]*gn.Event, error) {
 	return events, nil
 }
 
-// [ ]: To be tested if works
 func (r *nostrRepo) TotalDocs() (int, error) {
-	colRef := r.client.Collection(r.events_collection)
 
-	query := colRef.Where("ID", "!=", "")
-	aggregationQuery := query.NewAggregationQuery().WithCount("all")
-	results, err := aggregationQuery.Get(*r.ctx)
+	// [ ]: review ========= client per job ============
+	fsclient, err := r.clients.GetClient()
 	if err != nil {
-		r.elgr.Printf("error: %v", err)
-		return 0, err
+		return 0, fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+	// ==================== end of client ================
+
+	// Calculate the total number of documents available in the collection r.events_collection
+	var total int
+	iter := fsclient.Collection(r.events_collection).Documents(*r.ctx)
+	for {
+		_, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return 0, fmt.Errorf("unable to get total number of documents from repository. error: %v", err)
+		}
+		total++
+	}
+	return total, nil
+}
+
+// GetEventsByKinds - returns an array of events from a specific Kind observing the limit and time frames
+func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events     []*gn.Event
+		query      *firestore.DocumentIterator
+		lcnt, ecnt int
+	)
+
+	switch {
+	case since == 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	case since > 0 && until == 0:
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).Documents(*r.ctx)
+
+	case since > 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	default:
+		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Documents(*r.ctx)
+
 	}
 
-	count, ok := results["all"].(int)
-	if !ok {
-		return 0, errors.New("firestore could get the total number of docs")
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 3 {
+				break
+			}
+			r.elgr.Printf("[GetEventsByKinds] ERROR raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("[GetEventsByKinds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+
+		if lcnt < limit {
+			events = append(events, e)
+		} else {
+			break
+		}
+		lcnt++
 	}
 
-	return count, nil
+	rsl := fmt.Sprintf(`{"events": %d, "filter_kinds": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), kinds, limit, since, until, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetEventsByKinds] no events found for the provided filter")
+	}
+
+	return events, nil
+}
+
+// GetEventsByAuthors - ...
+func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until int64) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events     []*gn.Event
+		query      *firestore.DocumentIterator
+		lcnt, ecnt int
+	)
+
+	switch {
+	case since == 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	case since > 0 && until == 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("CreatedAt", ">", since).Documents(*r.ctx)
+
+	case since > 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	default:
+		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Documents(*r.ctx)
+
+	}
+
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 3 {
+				break
+			}
+			r.elgr.Printf("[GetEventsByAuthors] ERROR: raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("[GetEventsByAuthors] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+
+		if lcnt < limit {
+			events = append(events, e)
+		} else {
+			break
+		}
+		lcnt++
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_authors": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), authors, limit, since, until, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetEventsByAuthors] no events found for the provided filter")
+	}
+
+	return events, nil
+}
+
+// GetEventsByIds - getting events listed into the ids array
+func (r *nostrRepo) GetEventsByIds(ids []string, limit int, since, until int64) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events     []*gn.Event
+		query      *firestore.DocumentIterator
+		lcnt, ecnt int
+	)
+
+	switch {
+	case since == 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	case since > 0 && until == 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).Documents(*r.ctx)
+
+	case since > 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	default:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Documents(*r.ctx)
+
+	}
+
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 3 {
+				break
+			}
+			r.elgr.Printf("[GetEventsByIds] ERROR: raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("[GetEventsByIds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+
+		if lcnt < limit {
+			events = append(events, e)
+		} else {
+			break
+		}
+		lcnt++
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_authors": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), ids, limit, since, until, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetEventsByAuthors] no events found for the provided filter")
+	}
+
+	return events, nil
+}
+
+// GetEventsSince - get only events created after `since`
+func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events     []*gn.Event
+		query      *firestore.DocumentIterator
+		lcnt, ecnt int
+	)
+
+	query = fsclient.Collection(r.events_collection).Where("CreatedAt", ">", since).Documents(*r.ctx)
+
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 3 {
+				break
+			}
+			r.elgr.Printf("[GetEventsSince] ERROR raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("[GetEventsSince] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+
+		if lcnt < limit {
+			events = append(events, e)
+		} else {
+			break
+		}
+		lcnt++
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_all": "all_events", "limit": %d, "since": %d, "took": %d}`, len(events), limit, since, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetEventsSince] no events found for the provided filter")
+	}
+
+	return events, nil
+}
+
+// GetEventsSince - get only events created after `since`
+func (r *nostrRepo) GetEventsSinceUntil(limit int, since, until int64) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events     []*gn.Event
+		query      *firestore.DocumentIterator
+		lcnt, ecnt int
+	)
+
+	query = fsclient.Collection(r.events_collection).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 3 {
+				break
+			}
+			r.elgr.Printf("[GetEventsSinceUntil] ERROR raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("[GetEventsSinceUntil] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+
+		if lcnt < limit {
+			events = append(events, e)
+		} else {
+			break
+		}
+		lcnt++
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_all": "all_events", "limit": %d, "since": %d, "until": %d,"took": %d}`, len(events), limit, since, until, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetEventsSinceUntil] no events found for the provided filter")
+	}
+
+	return events, nil
 }
 
 // GetEventsByFilter - returns a list of events that match the filter provided from a client subscription
 func (r *nostrRepo) GetEventsByFilter(filter map[string]interface{}) ([]*gn.Event, error) {
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+
+	// ==================== end of client ================
+
 	var (
 		err                                             error
 		events, kind_events, ids_events, authors_events []*gn.Event
@@ -213,14 +555,13 @@ func (r *nostrRepo) GetEventsByFilter(filter map[string]interface{}) ([]*gn.Even
 	// Dealing with filetrs `kinds`...
 	kinds, ok = filter["kinds"].([]interface{})
 	if !ok {
-		// in 99% of cases the key will be missing in the filter.
 		goto IDS
 	}
 	if len(kinds) > 30 {
 		kinds = kinds[:30]
 	}
 
-	kind_events, err = r.retrieveKinds(kinds, since, until, max_length)
+	kind_events, err = r.retrieveKinds(kinds, since, until, max_length, fsclient)
 	if err != nil {
 		r.elgr.Printf("Error retrieving `kinds` from the database: %v", err)
 	}
@@ -244,7 +585,7 @@ IDS:
 		ids = ids[:30]
 	}
 
-	ids_events, err = r.retrievIDs(ids, since, until, max_length)
+	ids_events, err = r.retrievIDs(ids, since, until, max_length, fsclient)
 	if err != nil {
 		r.elgr.Printf("Error retrieving `IDs` from the database: %v", err)
 	}
@@ -268,7 +609,7 @@ AUTHORS:
 		authors = authors[:30]
 	}
 
-	authors_events, err = r.retrievAuthors(authors, since, until, max_length)
+	authors_events, err = r.retrievAuthors(authors, since, until, max_length, fsclient)
 	if err != nil {
 		r.elgr.Printf("Error retrieving `authors` from the database: %v", err)
 	}
@@ -285,7 +626,7 @@ AUTHORS:
 	// ======================================= SINCE - UNTIL ==================================================
 SINCE:
 	if since != nil && flt_lngth == 1 {
-		fromPast, err := r.retrieveFromPast(since, max_length)
+		fromPast, err := r.retrieveFromPast(since, max_length, fsclient)
 		if err != nil {
 			r.elgr.Printf("Error retrieving `fromPast` from the database: %v", err)
 		}
@@ -303,10 +644,20 @@ SINCE:
 
 // DeleteEvent deletes an event identified by its id
 func (r *nostrRepo) DeleteEvent(id string) error {
-	_, err := r.client.Collection(r.events_collection).Doc(id).Delete(*r.ctx)
+
+	// [ ]: review ========= client per job ============
+	fsclient, err := r.clients.GetClient()
+	if err != nil {
+		return fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+	// ==================== end of client ================
+
+	_, err = fsclient.Collection(r.events_collection).Doc(id).Delete(*r.ctx)
 	if err != nil {
 		r.elgr.Printf("Error deleting event with id: %s from the database: %v", id, err)
 	}
+
+	r.clients.ReleaseClient(fsclient)
 	return err
 }
 
@@ -324,23 +675,53 @@ func (r *nostrRepo) DeleteEvents(ids []string) error {
 
 // NewNostrRepository - creates a new nostr relay repository
 // [x]: get the repo params from the config
-func NewNostrRepository(ctx *context.Context, client *firestore.Client, dlv int, ecn string) (nostr.NostrRepo, error) {
-	return &nostrRepo{
+func NewNostrRepository(ctx *context.Context, clients *fspool.ConnectionPool, dlv int, ecn string) (nostr.NostrRepo, error) {
+
+	client, err := clients.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+
+	nr := &nostrRepo{
 		ctx:               ctx,
 		events_collection: ecn,
-		client:            client,
+		clients:           clients,
+		fsclient:          client,
 		default_limit:     dlv,
 		ilgr:              log.New(os.Stdout, "[nostr-repo] ", log.LstdFlags),
 		elgr:              log.New(os.Stderr, "[nostr-repo] ", log.LstdFlags),
-	}, nil
+	}
+
+	return nr, nil
+}
+
+// ================================== Supports functions =====================================
+//
+
+// tagsToTagMap converts the event tags into gntagMap
+func tagsToTagMap(tgs gn.Tags) map[string]interface{} {
+
+	// convert the tags into a map of string elements - TagMap
+	tm := make(gn.TagMap)
+
+	for i, tn := range tgs {
+		tagslice := []string{}
+
+		for _, tag := range tn {
+			tagslice = append(tagslice, tag)
+		}
+		tm[fmt.Sprintf("%d", i)] = tagslice
+	}
+
+	return map[string]interface{}{"ТagsMap": tm}
 }
 
 // retrieveKinds - query events collection from the DB by kinds and if there is valid time slot limitation applies that filtration to the returned result.
-func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{}, limit int) ([]*gn.Event, error) {
+func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
 
 	var events []*gn.Event
 	var kindsI []int64
-	var lcnt int
+	var lcnt, ecnt int
 
 	for _, kind := range kinds {
 		_kind, ok := kind.(float64)
@@ -355,25 +736,25 @@ func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{},
 
 	switch {
 	case since == nil && until == nil:
-		query = r.client.Collection(r.events_collection).Where("Kind", "in", kindsI).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kindsI).Documents(*r.ctx)
 
 	case since != nil && until == nil:
 		tsSince, err := tools.ConvertToTS(since)
 		if err != nil {
 			return nil, err
 		}
-		query = r.client.Collection(r.events_collection).Where("Kind", "in", kindsI).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kindsI).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
 
 	case since == nil && until != nil:
 		tsUntil, err := tools.ConvertToTS(until)
 		if err != nil {
 			return nil, err
 		}
-		query = r.client.Collection(r.events_collection).Where("Kind", "in", kindsI).Where("CreatedAt", "<", tsUntil).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kindsI).Where("CreatedAt", "<", tsUntil).Documents(*r.ctx)
 
 	default:
 		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
-		query = r.client.Collection(r.events_collection).Where("Kind", "in", kindsI).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kindsI).Documents(*r.ctx)
 
 	}
 
@@ -382,10 +763,11 @@ func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{},
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[retrieveKinds] Error raised while reading a doc from the DB: %v", err)
+			ecnt++
 			continue
 		}
 
@@ -394,25 +776,26 @@ func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{},
 			r.elgr.Printf("Error %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
-		lcnt++
 
-		if lcnt <= limit {
+		if lcnt < limit {
 			events = append(events, e)
 		} else {
 			break
 		}
+		lcnt++
 	}
+
 	return events, nil
 }
 
 // retrievIDs - query events collection from the DB by IDs and if there is valid time slot limitation applies that filtration to the returned result.
-func (r *nostrRepo) retrievIDs(ids []interface{}, since, until interface{}, limit int) ([]*gn.Event, error) {
+func (r *nostrRepo) retrievIDs(ids []interface{}, since, until interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
 
 	var (
-		events []*gn.Event
-		lcnt   int
-		query  *firestore.DocumentIterator
-		_ids   []string
+		events     []*gn.Event
+		lcnt, ecnt int
+		query      *firestore.DocumentIterator
+		_ids       []string
 	)
 
 	for _, id := range ids {
@@ -426,25 +809,25 @@ func (r *nostrRepo) retrievIDs(ids []interface{}, since, until interface{}, limi
 
 	switch {
 	case since == nil && until == nil:
-		query = r.client.Collection(r.events_collection).Where("ID", "in", _ids).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("ID", "in", _ids).Documents(*r.ctx)
 
 	case since != nil && until == nil:
 		tsSince, err := tools.ConvertToTS(since)
 		if err != nil {
 			return nil, err
 		}
-		query = r.client.Collection(r.events_collection).Where("ID", "in", _ids).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("ID", "in", _ids).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
 
 	case since == nil && until != nil:
 		tsUntil, err := tools.ConvertToTS(until)
 		if err != nil {
 			return nil, err
 		}
-		query = r.client.Collection(r.events_collection).Where("ID", "in", _ids).Where("CreatedAt", "<", tsUntil).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("ID", "in", _ids).Where("CreatedAt", "<", tsUntil).Documents(*r.ctx)
 
 	default:
 		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
-		query = r.client.Collection(r.events_collection).Where("ID", "in", _ids).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("ID", "in", _ids).Documents(*r.ctx)
 
 	}
 
@@ -453,10 +836,11 @@ func (r *nostrRepo) retrievIDs(ids []interface{}, since, until interface{}, limi
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[retrievIDs] Error raised while reading a doc from the DB: %v", err)
+			ecnt++
 			continue
 		}
 
@@ -477,12 +861,12 @@ func (r *nostrRepo) retrievIDs(ids []interface{}, since, until interface{}, limi
 }
 
 // retrievAuthors - query events collection from the DB by authors and if there is valid time slot limitation applies that filtration to the returned result.
-func (r *nostrRepo) retrievAuthors(authors []interface{}, since, until interface{}, limit int) ([]*gn.Event, error) {
+func (r *nostrRepo) retrievAuthors(authors []interface{}, since, until interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
 
 	var (
-		events   []*gn.Event
-		lcnt     int
-		_authors []string
+		events     []*gn.Event
+		lcnt, ecnt int
+		_authors   []string
 	)
 
 	for _, author := range authors {
@@ -498,25 +882,25 @@ func (r *nostrRepo) retrievAuthors(authors []interface{}, since, until interface
 
 	switch {
 	case since == nil && until == nil:
-		query = r.client.Collection(r.events_collection).Where("PubKey", "in", _authors).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", _authors).Documents(*r.ctx)
 
 	case since != nil && until == nil:
 		tsSince, err := tools.ConvertToTS(since)
 		if err != nil {
 			return nil, err
 		}
-		query = r.client.Collection(r.events_collection).Where("PubKey", "in", _authors).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", _authors).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
 
 	case since == nil && until != nil:
 		tsUntil, err := tools.ConvertToTS(until)
 		if err != nil {
 			return nil, err
 		}
-		query = r.client.Collection(r.events_collection).Where("PubKey", "in", _authors).Where("CreatedAt", "<", tsUntil).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", _authors).Where("CreatedAt", "<", tsUntil).Documents(*r.ctx)
 
 	default:
 		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
-		query = r.client.Collection(r.events_collection).Where("PubKey", "in", _authors).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", _authors).Documents(*r.ctx)
 
 	}
 
@@ -525,10 +909,11 @@ func (r *nostrRepo) retrievAuthors(authors []interface{}, since, until interface
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[retrievAuthors] Error raised while reading a doc from the DB: %v", err)
+			ecnt++
 			continue
 		}
 
@@ -549,29 +934,31 @@ func (r *nostrRepo) retrievAuthors(authors []interface{}, since, until interface
 }
 
 // retrieveFromPast - query events collection from the DB by createdAt and if there are events created after the `since` timestamp, applies that filtration to the returned result.
-func (r *nostrRepo) retrieveFromPast(since interface{}, limit int) ([]*gn.Event, error) {
+func (r *nostrRepo) retrieveFromPast(since interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
 
-	var events []*gn.Event
-	var lcnt int = 0
-
-	var query *firestore.DocumentIterator
+	var (
+		events     []*gn.Event
+		lcnt, ecnt int
+		query      *firestore.DocumentIterator
+	)
 
 	tsSince, err := tools.ConvertToTS(since)
 	if err != nil {
 		return nil, err
 	}
 
-	query = r.client.Collection(r.events_collection).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
+	query = fsclient.Collection(r.events_collection).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
 
 	// Query the events collection
 	// iterate over docs collection where the PubKey matches the filter array of PubKeys
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done {
+			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("Error raised while reading a doc from the DB: %v", err)
+			r.elgr.Printf("[retrieveFromPast] Error raised while reading a doc from the DB: %v", err)
+			ecnt++
 			continue
 		}
 

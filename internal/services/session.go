@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
@@ -23,7 +24,11 @@ import (
 var (
 	NewEvent = make(chan *gn.Event)
 	Exit     = make(chan struct{})
-	ticker   = time.NewTicker(60 * time.Minute)
+	//ticker       = time.NewTicker(5 * time.Minute)
+	relay_access string
+	clientCldLgr *logging.Client
+	cclnlgr      *logging.Logger
+	lep          = logging.Entry{Severity: logging.Notice, Payload: ""}
 )
 
 // Session represents a WebSocket session that handles multiple client connections.
@@ -31,29 +36,41 @@ type Session struct {
 	mu      sync.Mutex
 	seq     uint
 	clients []*Client
-	ns      map[string]*Client
-	bq      map[string]gn.Event
+	ns      sync.Map
+	bq      sync.Map
 	out     chan []byte
 	ilgr    *log.Logger
 	elgr    *log.Logger
 	clgr    *logging.Logger
 	pool    *gopool.Pool
 	cfg     *config.ServiceConfig
-	repo    nostr.NostrRepo
+	Repo    nostr.NostrRepo
 }
 
 // NewSession creates a new WebSocket session.
-func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo) *Session {
+func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConfig) *Session {
+
+	// Initate Cloud logging
+	ctx := context.Background()
+	clientCldLgr, _ = logging.NewClient(ctx, cfg.Firestore.ProjectID)
+	clientCldLgr.OnError = func(err error) {
+		fmt.Printf("[cloud-logger] Error [%v] raised while logging to cloud logger", err)
+	}
+	clgr := clientCldLgr.Logger("ivmostr-cnn")
+
 	session := Session{
-		ns:   make(map[string]*Client),
-		bq:   make(map[string]gn.Event),
+		ns:   sync.Map{},
+		bq:   sync.Map{},
 		out:  make(chan []byte, 1),
 		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
 		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
-		clgr: cl,
+		clgr: clgr,
 		pool: pool,
-		repo: repo,
+		Repo: repo,
+		cfg:  cfg,
 	}
+
+	relay_access = cfg.Relay_access
 
 	td, err := repo.TotalDocs()
 	if err != nil {
@@ -64,20 +81,19 @@ func NewSession(pool *gopool.Pool, cl *logging.Logger, repo nostr.NostrRepo) *Se
 	// [x]: review and rework the event broadcaster
 	go session.NewEventBroadcaster()
 
-	// regular connection health checker
-	go session.ConnectionHealthChecker()
-
 	return &session
 }
 
 // Register upgraded websocket connection as client in the sessions
-func (s *Session) Register(
-	conn *websocket.Conn, ip string) *Client {
+func (s *Session) Register(conn *websocket.Conn, ip string) *Client {
+
+	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
 
 	client := Client{
 		session:   s,
 		conn:      conn,
 		lgr:       log.New(os.Stderr, "[client] ", log.LstdFlags),
+		cclnlgr:   cclnlgr,
 		IP:        ip,
 		Authed:    false,
 		errorRate: make(map[string]int),
@@ -89,22 +105,17 @@ func (s *Session) Register(
 		client.name = s.randName()
 
 		s.clients = append(s.clients, &client)
-		s.ns[client.name] = &client
 
 		s.seq++
 	}
 	s.mu.Unlock()
 
-	switch s.cfg.Relay_access {
+	s.ns.Store(client.name, &client)
+
+	switch relay_access {
 	case "public":
 
-		pld := fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, len(s.ns), time.Now().Unix())
-
-		s.ilgr.Printf("%v", pld)
-		lep := logging.Entry{
-			Severity: logging.Notice,
-			Payload:  pld,
-		}
+		lep.Payload = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, len(s.clients), time.Now().Unix())
 		s.clgr.Log(lep)
 
 	case "authenticated":
@@ -139,7 +150,7 @@ func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	tools.IPCount[client.IP]--
 	s.mu.Unlock()
-	fmt.Printf("[rmv]: - %d active clients, %d [by ns] connected\n", len(s.clients), len(s.ns))
+	fmt.Printf("[rmv]: - %d active clients, %d connected\n", len(s.clients), len(s.clients))
 }
 
 // Give code-word as name to the client connection
@@ -147,7 +158,7 @@ func (s *Session) randName() string {
 	var suffix string
 	for {
 		name := codewords[rand.Intn(len(codewords))] + suffix
-		if _, has := s.ns[name]; !has {
+		if _, has := s.ns.Load(name); !has {
 			return name
 		}
 		suffix += strconv.Itoa(rand.Intn(10))
@@ -156,11 +167,12 @@ func (s *Session) randName() string {
 
 // mutex must be held.
 func (s *Session) remove(client *Client) bool {
-	if _, ok := s.ns[client.name]; !ok {
+	if _, ok := s.ns.Load(client.name); !ok {
 		return false
 	}
 
-	delete(s.ns, client.name)
+	s.ns.Delete(client.name)
+	//delete(s.ns, client.name)
 
 	i := sort.Search(len(s.clients), func(i int) bool {
 		return s.clients[i].id >= client.id
@@ -218,12 +230,8 @@ func (s *Session) TuneClientConn(client *Client) {
 
 func (s *Session) BroadcasterQueue(e gn.Event) {
 	// [x]: form a queue of events to be broadcasted
-	s.mu.Lock()
-	s.bq[e.ID] = e
-	s.mu.Unlock()
-	for _, v := range s.bq {
-		NewEvent <- &v
-	}
+	s.bq.Store(e.ID, e)
+	NewEvent <- &e
 }
 
 // [x]: to re-work the event broadcaster
@@ -232,32 +240,34 @@ func (s *Session) NewEventBroadcaster() {
 		e := <-NewEvent
 		if e != nil && e.Kind != 22242 {
 			s.ilgr.Printf(" ...-= starting new event braodcasting =-...")
-			for _, client := range s.ns {
+
+			s.ns.Range(func(key, value interface{}) bool {
+				client := value.(*Client)
 				if client.Subscription_id == "" || client.name == e.GetExtraString("cname") {
-					continue
+					return true
 				}
 				//nip-04 requires clients authentication before sending kind:4 encrypted Dms
 				if e.Kind == 4 && !client.Authed {
-					continue
+					return true
 				} else if e.Kind == 4 && client.Authed {
 					tag := e.Tags[0]
 					recp := strings.Split(tag[1], ",")
 					if len(recp) > 1 {
 						if client.npub == recp[1] {
 							msgw <- &[]interface{}{e}
-							break
+							return false
 						}
 					}
 				}
 
 				if filterMatch(e, client.GetFilters()) {
 					msgw <- &[]interface{}{e}
-					continue
+					return true
 				}
-			}
-			s.mu.Lock()
-			delete(s.bq, e.ID)
-			s.mu.Unlock()
+				return true
+			})
+
+			s.bq.Delete(e.ID)
 			continue
 		}
 	}
@@ -265,65 +275,6 @@ func (s *Session) NewEventBroadcaster() {
 
 func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 	s.cfg = cfg
-}
-
-func (s *Session) ConnectionHealthChecker() {
-
-	var err error
-	pm := websocket.PingMessage
-	dl := time.Millisecond * 100
-	dmc := 0
-
-	for {
-		select {
-		case <-ticker.C:
-			fmt.Printf("[hc]:   ...--- === ---...   \n")
-
-			// avoid concurent changes to cause slice out of range error
-			nsc := s.ns
-			for _, client := range nsc {
-				s.mu.Lock()
-				err = client.conn.WriteControl(pm, []byte("ping"), time.Time.Add(time.Now(), dl))
-				s.mu.Unlock()
-				if err != nil {
-					fmt.Printf("[hc]: [%v] ERROR sending ping message:%v\n", client.IP, err)
-					s.Remove(client)
-					client.conn.Close()
-					continue
-				}
-				fmt.Printf("[hc]: [%v] successful PING!\n", client.IP)
-
-				// Read the pong message from the client (timeout 1 s)
-				_ = client.conn.SetReadDeadline(time.Time.Add(time.Now(), 1*time.Second))
-				mt, pongMsg, err := client.conn.ReadMessage()
-				if err != nil {
-					fmt.Printf("[hc]: [%v] ERROR reading pong message:%v\n", client.IP, err)
-					s.Remove(client)
-					client.conn.Close()
-					continue
-				}
-
-				bpong := string(pongMsg) == "pong" || string(pongMsg) == "PONG" || string(pongMsg) == "Pong"
-				if mt == websocket.PongMessage && bpong {
-					fmt.Printf("[hc]: [%v] successful PONG!\n", client.IP)
-					_ = client.conn.SetReadDeadline(time.Time{})
-				} else {
-					s.Remove(client)
-					client.conn.Close()
-				}
-				//Count dummy (empty) connections with no subscriptions
-				if client.Subscription_id == "" && len(client.Filetrs) == 0 {
-					dmc++
-				}
-			}
-
-			fmt.Printf("[hc]: * %d active clients connections, %d dummy (empty)\n", len(s.ns), dmc)
-			fmt.Printf("[hc]:   ...--- OFF ---...   \n")
-
-		case <-Exit:
-			break
-		}
-	}
 }
 
 // ================================ aux functions =================================

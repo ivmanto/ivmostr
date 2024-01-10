@@ -6,9 +6,11 @@ import (
 	"log"
 	"math/rand"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
+	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
@@ -19,11 +21,13 @@ var (
 	nbmrevents int
 	stop       = make(chan struct{})
 	msgw       = make(chan *[]interface{})
+	leop       = logging.Entry{Severity: logging.Info, Payload: ""}
 )
 
 type Client struct {
 	conn            *websocket.Conn
 	lgr             *log.Logger
+	cclnlgr         *logging.Logger
 	id              uint
 	name            string
 	session         *Session
@@ -51,7 +55,6 @@ func (c *Client) ReceiveMsg() error {
 				errRM <- fmt.Errorf("Error while reading message: %v", err)
 				continue
 			}
-
 			// sending the message to the write channel
 			err = c.dispatcher(&message)
 			if err != nil {
@@ -69,7 +72,7 @@ func (c *Client) ReceiveMsg() error {
 	// Receive errors from the channel and handle them
 	for err := range errRM {
 		if err != nil {
-			fmt.Println("Error received:", err)
+			fmt.Println("[receiveMSG] Error received:", err)
 			// Perform error handling or logging here
 			return err
 		}
@@ -81,7 +84,6 @@ func (c *Client) write() error {
 	errWM := make(chan error)
 	var msg *[]interface{}
 
-	// [ ]: implement the logic to receive the message from the client
 	go func() {
 		mutex := sync.Mutex{}
 		for {
@@ -91,7 +93,7 @@ func (c *Client) write() error {
 				return
 			default:
 				msg = <-msgw
-				// [ ]: implement the logic to send the message to the client
+
 				if msg != nil {
 					mutex.Lock()
 					err := c.conn.WriteJSON(msg)
@@ -99,7 +101,8 @@ func (c *Client) write() error {
 					if err != nil {
 						errWM <- err
 					}
-					// [ ]: Remove the next two lines for production performance
+
+					// [ ]: Remove the next 2 lines for production performance
 					lb := tools.CalcLenghtInBytes(msg)
 					c.lgr.Printf(" * %d bytes sent to [%s] over ws connection", lb, c.IP)
 
@@ -123,7 +126,7 @@ func (c *Client) write() error {
 }
 
 func (c *Client) dispatcher(msg *[]interface{}) error {
-	// [ ]: implement the logic to dispatch the message to the client
+	// [x]: implement the logic to dispatch the message to the client
 	switch (*msg)[0] {
 	case "EVENT":
 		return c.handlerEventMsgs(msg)
@@ -137,9 +140,8 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 	case "AUTH":
 		return c.handlerAuthMsgs(msg)
 	default:
-		c.lgr.Printf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
 		c.writeCustomNotice("Error: invalid format of the received message")
-		return nil
+		return fmt.Errorf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
 	}
 }
 
@@ -152,7 +154,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	if !ok {
 		lmsg := "invalid: unknown message format"
 		c.writeEventNotice("0", false, lmsg)
-		return nil
+		return fmt.Errorf("ERROR: invalid message. unknown format")
 	}
 
 	e, err := mapToEvent(se)
@@ -179,7 +181,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// Keep it disabled until [ ]TODO: find a way to clone the execution context
 		// NewEvent <- e
 
-		err := c.session.repo.StoreEventK3(e)
+		err := c.session.Repo.StoreEventK3(e)
 		if err != nil {
 			c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 			return err
@@ -200,7 +202,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// do nothing
 	}
 
-	err = c.session.repo.StoreEvent(e)
+	err = c.session.Repo.StoreEvent(e)
 	if err != nil {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		return err
@@ -261,7 +263,6 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 			}
 
 			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
-			c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
 			c.writeCustomNotice("Update: The subscription filter has been overwriten.")
 			return nil
 		} else {
@@ -275,14 +276,25 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Subscription_id = subscription_id
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
-	err := c.SubscriptionSuplier()
+	c.lgr.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
+
+	//err := c.SubscriptionSuplier()
+	responseRate := time.Now().UnixMilli()
+
+	err := c.ReadFilteredEvents()
 	if err != nil {
 		return err
 	}
 
-	c.lgr.Printf("NEW [%s]: subscription id: %s with filter %v", c.IP, c.Subscription_id, msgfilters)
-	c.lgr.Printf("DEBUG: subscription id: %s all filters: %v", c.Subscription_id, c.Filetrs)
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
+
+	rslt := time.Now().UnixMilli() - responseRate
+
+	leop.Payload = fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
+
+	cclnlgr.Log(leop)
+	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
+
 	return nil
 }
 
@@ -295,7 +307,7 @@ func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 		if c.Subscription_id == subscription_id {
 			c.Subscription_id = ""
 			c.Filetrs = []map[string]interface{}{}
-			c.writeCustomNotice("Update: The subscription has been clodsed")
+			c.writeCustomNotice("Update: The subscription has been closed")
 			return nil
 		} else {
 			c.writeCustomNotice("Error: Invalid subscription_id provided")
@@ -454,6 +466,8 @@ func (c *Client) SubscriptionSuplier() error {
 	ctx := context.Background()
 	responseRate := time.Now().UnixMilli()
 
+	fmt.Printf("\n\n## SubscriptionSuplier: %s\n", c.Subscription_id)
+
 	err := c.fetchAllFilters(ctx)
 	if err != nil {
 		return err
@@ -463,6 +477,10 @@ func (c *Client) SubscriptionSuplier() error {
 	c.writeEOSE(c.Subscription_id)
 
 	rslt := time.Now().UnixMilli() - responseRate
+
+	leop.Payload = fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
+	cclnlgr.Log(leop)
+
 	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
 	return nil
 }
@@ -488,25 +506,367 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 	// Function to fetch data from the specified filter
 
 	return func() error {
+		// [ ]: de-compose the filter
+		// ===================================== FILTER TEMPLATE ============================================
 
-		// method is used for DEBUG info review
-		//c.session.printFilter(filter, c)
+		//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
+		//{
+		//  "ids": <a list of event ids>,
+		//  "authors": <a list of lowercase pubkeys, the pubkey of an event must be one of these>,
+		//  "kinds": <a list of a kind numbers>,
+		//  "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
+		//  "since": <an integer unix timestamp in seconds, events must be newer than this to pass>,
+		//  "until": <an integer unix timestamp in seconds, events must be older than this to pass>,
+		//  "limit": <maximum number of events relays SHOULD return in the initial query>
+		//}
+		//==================================================================================================
+		var (
+			err            error
+			events         []*gn.Event
+			max_events     int
+			_since, _until int64
+			fltl           int
+		)
 
-		events, err := c.session.repo.GetEventsByFilter(filter)
-		if err != nil {
-			c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-			return err
+		lim, ok := filter["limit"].(float64)
+		if !ok {
+			max_events = c.session.cfg.GetDLV()
+		} else if lim == 0 || lim > 5000 {
+			// until the paging is implemented for paying clients OR always for public clients
+			// 5000 is the value from attribute from server_info limits
+			max_events = 5000
+		} else {
+			// set the requested by the filter value
+			max_events = int(lim)
 		}
-		nbmrevents += len(events)
+
+		// =================================== SINCE - UNTIL ===============================================
+		if since, ok := filter["since"].(float64); !ok {
+			_since = int64(0)
+		} else {
+			_since = int64(since)
+		}
+		if until, ok := filter["until"].(float64); !ok {
+			_until = int64(0)
+		} else {
+			_until = int64(until)
+		}
+
+		// Parsing filter's lists
+		for key, val := range filter {
+
+			if nbmrevents > max_events {
+				break
+			}
+
+			nbmrevents += len(events)
+
+			switch {
+			case key == "kinds":
+
+				c.lgr.Printf("Filter kinds:%v", val)
+
+				var (
+					kinds  []interface{}
+					kindsi []int
+				)
+
+				kinds, ok = filter["kinds"].([]interface{})
+				if !ok {
+					return fmt.Errorf("Wrong filter format used! Kinds are not a list")
+				}
+
+				if len(kinds) > 30 {
+					kinds = kinds[:30]
+				}
+
+				for _, kind := range kinds {
+					_kind, ok := kind.(float64)
+					if ok {
+						kindsi = append(kindsi, int(_kind))
+					}
+				}
+
+				events, err = c.session.Repo.GetEventsByKinds(kindsi, max_events, _since, _until)
+				if err != nil {
+					c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
+					return err
+				}
+
+			case key == "authors":
+
+				c.lgr.Printf("Filter authors:%v", val)
+
+				var (
+					authors  []interface{}
+					_authors []string
+				)
+
+				authors, ok = filter["authors"].([]interface{})
+				if !ok {
+					return fmt.Errorf("Wrong filter format used! Authors are not a list")
+				}
+
+				for _, auth := range authors {
+					_auth, ok := auth.(string)
+					if ok {
+						_authors = append(_authors, _auth)
+					}
+				}
+
+				if len(_authors) > 30 {
+					_authors = _authors[:30]
+				}
+
+				events, err = c.session.Repo.GetEventsByAuthors(_authors, max_events, _since, _until)
+				if err != nil {
+					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+					return err
+				}
+
+			case key == "ids":
+
+				c.lgr.Printf("Filter ids:%v", val)
+
+				var (
+					ids  []interface{}
+					_ids []string
+				)
+
+				ids, ok = filter["ids"].([]interface{})
+				if !ok {
+					return fmt.Errorf("Wrong filter format used! Ids are not a list")
+				}
+
+				for _, id := range ids {
+					_id, ok := id.(string)
+					if ok {
+						_ids = append(_ids, _id)
+					}
+				}
+
+				if len(_ids) > 30 {
+					_ids = _ids[:30]
+				}
+
+				events, err = c.session.Repo.GetEventsByAuthors(_ids, max_events, _since, _until)
+				if err != nil {
+					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+					return err
+				}
+			case strings.HasPrefix(key, "#"):
+			// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
+			// case filter["#e"]: ...
+
+			default:
+				if _since > 0 && _until == 0 {
+
+					events, err = c.session.Repo.GetEventsSince(max_events, _since)
+					if err != nil {
+						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+						return err
+					}
+				} else if _since > 0 && _until > 0 {
+
+					events, err = c.session.Repo.GetEventsSinceUntil(max_events, _since, _until)
+					if err != nil {
+						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+						return err
+					}
+				} else {
+					//events, err = c.session.Repo.GetEventsByFilter(filter)
+					// if err != nil {
+					// 	c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+					// 	return err
+					// }
+					c.lgr.Printf("Customer [%v]. Filter is too complex:\n %v\n", c.IP, filter)
+				}
+			}
+
+			fltl++
+		}
+
+		c.lgr.Printf("Filter components: %v", fltl)
 
 		msgw <- &[]interface{}{events}
-		// err = c.write(&[]interface{}{events})
-		// if err != nil {
-		// 	c.lgr.Printf(": %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-		// 	return err
-		// }
 		return nil
 	}()
 }
 
 // ################# End of Subscription Supplier ##############################
+
+func (c *Client) ReadFilteredEvents() error {
+
+	filter := c.Filetrs[0]
+	var (
+		err            error
+		events         []*gn.Event
+		max_events     int
+		_since, _until int64
+		fltl           int
+	)
+
+	lim, ok := filter["limit"].(float64)
+	if !ok {
+		max_events = c.session.cfg.GetDLV()
+	} else if lim == 0 || lim > 5000 {
+		// until the paging is implemented for paying clients OR always for public clients
+		// 5000 is the value from attribute from server_info limits
+		max_events = 5000
+	} else {
+		// set the requested by the filter value
+		max_events = int(lim)
+	}
+
+	// =================================== SINCE - UNTIL ===============================================
+	if since, ok := filter["since"].(float64); !ok {
+		_since = int64(0)
+	} else {
+		_since = int64(since)
+	}
+	if until, ok := filter["until"].(float64); !ok {
+		_until = int64(0)
+	} else {
+		_until = int64(until)
+	}
+
+	// Parsing filter's lists
+	for key, val := range filter {
+
+		if nbmrevents > max_events {
+			break
+		}
+
+		nbmrevents += len(events)
+
+		switch {
+		case key == "kinds":
+
+			c.lgr.Printf("Filter kinds:%v", val)
+
+			var (
+				kinds  []interface{}
+				kindsi []int
+			)
+
+			kinds, ok = filter["kinds"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
+			}
+
+			if len(kinds) > 30 {
+				kinds = kinds[:30]
+			}
+
+			for _, kind := range kinds {
+				_kind, ok := kind.(float64)
+				if ok {
+					kindsi = append(kindsi, int(_kind))
+				}
+			}
+
+			events, err = c.session.Repo.GetEventsByKinds(kindsi, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
+				return err
+			}
+
+		case key == "authors":
+
+			c.lgr.Printf("Filter authors:%v", val)
+
+			var (
+				authors  []interface{}
+				_authors []string
+			)
+
+			authors, ok = filter["authors"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Authors are not a list")
+			}
+
+			for _, auth := range authors {
+				_auth, ok := auth.(string)
+				if ok {
+					_authors = append(_authors, _auth)
+				}
+			}
+
+			if len(_authors) > 30 {
+				_authors = _authors[:30]
+			}
+
+			events, err = c.session.Repo.GetEventsByAuthors(_authors, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				return err
+			}
+
+		case key == "ids":
+
+			c.lgr.Printf("Filter ids:%v", val)
+
+			var (
+				ids  []interface{}
+				_ids []string
+			)
+
+			ids, ok = filter["ids"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Ids are not a list")
+			}
+
+			for _, id := range ids {
+				_id, ok := id.(string)
+				if ok {
+					_ids = append(_ids, _id)
+				}
+			}
+
+			if len(_ids) > 30 {
+				_ids = _ids[:30]
+			}
+
+			events, err = c.session.Repo.GetEventsByAuthors(_ids, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				return err
+			}
+		case strings.HasPrefix(key, "#"):
+		// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
+		// case filter["#e"]: ...
+
+		default:
+			if _since > 0 && _until == 0 {
+
+				events, err = c.session.Repo.GetEventsSince(max_events, _since)
+				if err != nil {
+					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+					return err
+				}
+			} else if _since > 0 && _until > 0 {
+
+				events, err = c.session.Repo.GetEventsSinceUntil(max_events, _since, _until)
+				if err != nil {
+					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+					return err
+				}
+			} else {
+				//events, err = c.session.Repo.GetEventsByFilter(filter)
+				// if err != nil {
+				// 	c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				// 	return err
+				// }
+				c.lgr.Printf("Customer [%v]. Filter is too complex:\n %v\n", c.IP, filter)
+			}
+		}
+
+		fltl++
+	}
+
+	c.lgr.Printf("Filter components: %v", fltl)
+
+	msgw <- &[]interface{}{events}
+
+	return nil
+}

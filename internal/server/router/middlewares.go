@@ -31,9 +31,29 @@ func accessControl(h http.Handler) http.Handler {
 	})
 }
 
+// Handles healthchecks
+func healthcheck(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/hc" {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "OK")
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 // Handles the rate Limit control
 func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		// Check if the request is a health-check request
+		if r.URL.Path == "/hc" {
+			h.ServeHTTP(w, r)
+			return
+		}
+
+		// Check if the request is a websocket request
 		uh := r.Header.Get("Upgrade")
 		ac := r.Header.Get("Accept")
 		//wsp := r.Header.Get("Sec-WebSocket-Protocol")
@@ -94,6 +114,11 @@ func rateLimiter(h http.Handler) http.Handler {
 // Handles the IP address control part
 func controlIPConn(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		if r.URL.Path == "/hc" {
+			h.ServeHTTP(w, r)
+			return
+		}
 
 		ip := tools.GetIP(r)
 
