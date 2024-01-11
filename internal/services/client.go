@@ -703,6 +703,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 
 func (c *Client) ReadFilteredEvents() error {
 
+	nbmrevents = 0
 	filter := c.Filetrs[0]
 	var (
 		err            error
