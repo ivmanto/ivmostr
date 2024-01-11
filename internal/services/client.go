@@ -224,6 +224,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	// [x] <subscription_id> is an arbitrary, non-empty string of max length 64 chars, that should be used to represent a subscription.
 	var subscription_id string
 	var filter map[string]interface{}
+	var rslt, responseRate int64
 
 	if len(*msg) >= 2 {
 		subscription_id = (*msg)[1].(string)
@@ -279,7 +280,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.lgr.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
 
 	//err := c.SubscriptionSuplier()
-	responseRate := time.Now().UnixMilli()
+	responseRate = time.Now().UnixMilli()
 
 	err := c.ReadFilteredEvents()
 	if err != nil {
@@ -288,12 +289,14 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 
-	rslt := time.Now().UnixMilli() - responseRate
+	rslt = time.Now().UnixMilli() - responseRate
 
-	leop.Payload = fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
+	payloadV := fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
 
+	leop.Payload = payloadV
 	cclnlgr.Log(leop)
-	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
+
+	c.lgr.Printf(`{"method":"ReadFilteredEvents","IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
 
 	return nil
 }
@@ -466,7 +469,7 @@ func (c *Client) SubscriptionSuplier() error {
 	ctx := context.Background()
 	responseRate := time.Now().UnixMilli()
 
-	fmt.Printf("\n\n## SubscriptionSuplier: %s\n", c.Subscription_id)
+	fmt.Printf("\n\n## [SubscriptionSuplier] SubscriptionSuplier: %s\n", c.Subscription_id)
 
 	err := c.fetchAllFilters(ctx)
 	if err != nil {
@@ -478,10 +481,13 @@ func (c *Client) SubscriptionSuplier() error {
 
 	rslt := time.Now().UnixMilli() - responseRate
 
-	leop.Payload = fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
+	payloadV := fmt.Sprintf(`{"method":"SubscriptionSuplier","IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
+
+	leop.Payload = payloadV
 	cclnlgr.Log(leop)
 
-	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
+	c.lgr.Printf(fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt))
+
 	return nil
 }
 
