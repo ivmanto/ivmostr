@@ -249,8 +249,6 @@ func CalcLenghtInBytes(i *[]interface{}) int {
 	var wstr string
 	for _, intf := range *i {
 
-		fmt.Printf("type of: %v\n", reflect.TypeOf(intf).String())
-
 		switch reflect.TypeOf(intf).String() {
 		case "bool":
 			if intf.(bool) {

@@ -97,6 +97,8 @@ func (c *Client) write() error {
 				msg = <-msgw
 
 				if msg != nil {
+					tsw := time.Now().UnixMilli()
+
 					mutex.Lock()
 					err := c.conn.WriteJSON(msg)
 					mutex.Unlock()
@@ -106,7 +108,7 @@ func (c *Client) write() error {
 
 					// [ ]: Remove the next 2 lines for production performance
 					lb := tools.CalcLenghtInBytes(msg)
-					c.lgr.Printf(" * %d bytes sent to [%s] over ws connection", lb, c.IP)
+					c.lgr.Printf(" * %d bytes sent to [%s] over websocket in %d ms", lb, c.IP, time.Now().UnixMilli()-tsw)
 
 					msg = nil
 				}
@@ -662,7 +664,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 						return err
 					}
-					fmt.Printf("Get events with GetEventsSince took: %v", time.Now().UnixMilli()-tsges)
+					c.lgr.Printf("Get events with GetEventsSince took: %v", time.Now().UnixMilli()-tsges)
 
 				} else if _since > 0 && _until > 0 {
 
