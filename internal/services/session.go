@@ -97,6 +97,7 @@ func (s *Session) Register(conn *websocket.Conn, ip string) *Client {
 		IP:        ip,
 		Authed:    false,
 		errorRate: make(map[string]int),
+		repo:      s.Repo,
 	}
 
 	s.mu.Lock()

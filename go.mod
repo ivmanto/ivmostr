@@ -5,15 +5,18 @@ go 1.21.4
 require (
 	cloud.google.com/go/firestore v1.14.0
 	cloud.google.com/go/logging v1.8.1
-	github.com/nbd-wtf/go-nostr v0.19.5
+	github.com/nbd-wtf/go-nostr v0.25.3
 )
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.3 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
+	github.com/dgraph-io/ristretto v0.1.1 // indirect
+	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/ethereum/go-ethereum v1.10.20 // indirect
 	github.com/everFinance/arseeding v1.0.3 // indirect
 	github.com/everFinance/ethrpc v1.0.4 // indirect
@@ -24,6 +27,7 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.2.0 // indirect
+	github.com/golang/glog v1.1.2 // indirect
 	github.com/hamba/avro v1.5.6 // indirect
 	github.com/inconshreveable/log15 v0.0.0-20201112154412-8562bdadbbac // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
@@ -36,7 +40,9 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/panjf2000/ants/v2 v2.6.0 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/puzpuzpuz/xsync v1.5.2 // indirect
+	github.com/puzpuzpuz/xsync/v2 v2.5.1 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
@@ -54,6 +60,7 @@ require (
 	cloud.google.com/go/compute v1.23.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	cloud.google.com/go/longrunning v0.5.4 // indirect
+	github.com/dasiyes/ivmostr v0.0.6
 	github.com/everFinance/goar v1.5.7
 	github.com/go-chi/chi v1.5.5
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect

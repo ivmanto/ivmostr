@@ -34,6 +34,7 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	if err != nil {
 		return fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
+	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	// multi-level array are not supported by firestore! It must be converted into a array of objects with string elements
@@ -373,7 +374,7 @@ func (r *nostrRepo) GetEventsByIds(ids []string, limit int, since, until int64) 
 	r.ilgr.Printf("%v", rsl)
 
 	if len(events) == 0 {
-		return nil, fmt.Errorf("[GetEventsByAuthors] no events found for the provided filter")
+		return nil, fmt.Errorf("[GetEventsByIds] no events found for the provided filter")
 	}
 
 	return events, nil
@@ -389,6 +390,7 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
+	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (

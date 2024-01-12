@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	poolSize = 10
+	poolSize = 128
 )
 
 var (
