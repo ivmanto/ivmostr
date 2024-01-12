@@ -34,7 +34,7 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	if err != nil {
 		return fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-	defer r.clients.ReleaseClient(fsclient)
+
 	// ==================== end of client ================
 
 	// multi-level array are not supported by firestore! It must be converted into a array of objects with string elements
@@ -390,7 +390,6 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 	if errc != nil {
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
 	}
-	defer r.clients.ReleaseClient(fsclient)
 	// ==================== end of client ================
 
 	var (
