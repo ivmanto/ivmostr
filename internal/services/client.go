@@ -1,9 +1,7 @@
 package services
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
 	"log"
 	"math/rand"
@@ -150,7 +148,7 @@ func (c *Client) writeT() error {
 		for message := range msgwt {
 			select {
 			case <-stop:
-				c.lgr.Printf("[write] Stopping the write channel")
+				c.lgr.Printf("[writeT] Stopping the write channel")
 				return
 			default:
 				mu.Lock()
@@ -555,8 +553,11 @@ func (c *Client) fetchAllFilters(ctx context.Context) error {
 }
 
 func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) error {
-	// Function to fetch data from the specified filter
 
+	flt, _ := tools.ConvertStructToByte(filter)
+	fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s filter: %v\n", c.IP, c.Subscription_id, string(flt))
+
+	// Function to fetch data from the specified filter
 	fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s fetchData-start: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 
 	return func() error {
@@ -765,16 +766,15 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		c.lgr.Printf("Filter components: %v", fltl)
 
 		// Convert into []byte to be easy wrriten into the websocket channel
-		buf := new(bytes.Buffer)
-		enc := gob.NewEncoder(buf)
-		errE := enc.Encode(eventsC)
-		if errE != nil {
-			fmt.Println("Error encoding struct []events:", err)
-			return errE
+		bEv, err := tools.ConvertStructToByte(eventsC)
+		if err != nil {
+			return err
 		}
+
 		// sending []Events array as bytes to the writeT channel
 		fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s before-send-to-msgwt-channel: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
-		msgwt <- buf.Bytes()
+
+		msgwt <- bEv
 
 		return nil
 	}()

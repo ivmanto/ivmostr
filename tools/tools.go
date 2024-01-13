@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -267,4 +269,15 @@ func CalcLenghtInBytes(i *[]interface{}) int {
 		}
 	}
 	return len([]byte(wstr))
+}
+
+func ConvertStructToByte(e any) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	errE := enc.Encode(e)
+	if errE != nil {
+		fmt.Println("[ConvertStructToByte] Error encoding struct []events:", errE)
+		return nil, errE
+	}
+	return buf.Bytes(), nil
 }
