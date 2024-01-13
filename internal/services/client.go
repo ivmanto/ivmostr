@@ -1,7 +1,9 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"fmt"
 	"log"
 	"math/rand"
@@ -22,6 +24,8 @@ var (
 	nbmrevents   int
 	stop         = make(chan struct{})
 	msgw         = make(chan *[]interface{})
+	msgwt        = make(chan []byte)
+	mu           sync.Mutex
 	leop         = logging.Entry{Severity: logging.Info, Payload: ""}
 	responseRate = int64(0)
 )
@@ -72,6 +76,11 @@ func (c *Client) ReceiveMsg() error {
 		errRM <- fmt.Errorf("Error while writing message: %v", err)
 	}
 
+	err = c.writeT()
+	if err != nil {
+		errRM <- fmt.Errorf("Error while writing message: %v", err)
+	}
+
 	// Receive errors from the channel and handle them
 	for err := range errRM {
 		if err != nil {
@@ -88,7 +97,7 @@ func (c *Client) write() error {
 	var msg *[]interface{}
 
 	go func() {
-		mutex := sync.Mutex{}
+		//mutex := sync.Mutex{}
 		for {
 			select {
 			case <-stop:
@@ -100,9 +109,9 @@ func (c *Client) write() error {
 				if msg != nil {
 					tsw := time.Now().UnixMilli()
 
-					mutex.Lock()
+					mu.Lock()
 					err := c.conn.WriteJSON(msg)
-					mutex.Unlock()
+					mu.Unlock()
 					if err != nil {
 						errWM <- err
 					}
@@ -123,6 +132,42 @@ func (c *Client) write() error {
 	for err := range errWM {
 		if err != nil {
 			fmt.Println("[write] Error received: ", err)
+			// Perform error handling or logging here
+			return err
+		} else {
+			return nil
+		}
+	}
+	return nil
+}
+
+func (c *Client) writeT() error {
+	var (
+		errWM = make(chan error)
+	)
+
+	go func() {
+		for message := range msgwt {
+			select {
+			case <-stop:
+				c.lgr.Printf("[write] Stopping the write channel")
+				return
+			default:
+				mu.Lock()
+				err := c.conn.WriteMessage(websocket.TextMessage, message)
+				if err != nil {
+					errWM <- err
+				}
+				mu.Unlock()
+
+				fmt.Printf("\n\n## [writeT] customer [%s] SubscriptionID: %s bytes:*  %d after-writeT-to-ws: %d ms\n", c.IP, c.Subscription_id, len(message), time.Now().UnixMilli()-responseRate)
+			}
+		}
+	}()
+
+	for err := range errWM {
+		if err != nil {
+			fmt.Println("[writeT] Error received: ", err)
 			// Perform error handling or logging here
 			return err
 		} else {
@@ -529,11 +574,11 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		//}
 		//==================================================================================================
 		var (
-			err            error
-			events         []*gn.Event
-			max_events     int
-			_since, _until int64
-			fltl           int
+			err             error
+			events, eventsC []*gn.Event
+			max_events      int
+			_since, _until  int64
+			fltl            int
 		)
 
 		lim, ok := filter["limit"].(float64)
@@ -707,13 +752,26 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 					c.lgr.Printf("Customer [%v]. Filter is too complex:\n %v\n", c.IP, filter)
 				}
 			}
-
 			fltl++
+			if len(eventsC)+len(events) < max_events {
+				eventsC = append(eventsC, events...)
+			} else {
+				break
+			}
 		}
 
 		c.lgr.Printf("Filter components: %v", fltl)
 
-		msgw <- &[]interface{}{events}
+		// Convert into []byte to be easy wrriten into the websocket channel
+		buf := new(bytes.Buffer)
+		enc := gob.NewEncoder(buf)
+		errE := enc.Encode(eventsC)
+		if errE != nil {
+			fmt.Println("Error encoding struct []events:", err)
+			return errE
+		}
+		// sending []Events array as bytes to the writeT channel
+		msgwt <- buf.Bytes()
 
 		fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s sent-to-msgw-channel: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 
