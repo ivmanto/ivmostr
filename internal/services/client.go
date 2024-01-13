@@ -109,7 +109,9 @@ func (c *Client) write() error {
 
 					// [ ]: Remove the next 2 lines for production performance
 					lb := tools.CalcLenghtInBytes(msg)
-					c.lgr.Printf(" * %d bytes sent to [%s] over websocket in %d ms", lb, c.IP, time.Now().UnixMilli()-tsw)
+					c.lgr.Printf(" ## %d bytes sent to [%s] over websocket in %d ms", lb, c.IP, time.Now().UnixMilli()-tsw)
+
+					fmt.Printf("\n\n## [write] customer [%s] SubscriptionID: %s after-write-to-ws: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 
 					msg = nil
 				}
@@ -475,7 +477,7 @@ func (c *Client) SubscriptionSuplier() error {
 
 	rslt := time.Now().UnixMilli() - responseRate
 
-	payloadV := fmt.Sprintf(`{"method":"SubscriptionSuplier","IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
+	payloadV := fmt.Sprintf(`{"method":"## SubscriptionSuplier","IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
 
 	leop.Payload = payloadV
 	cclnlgr.Log(leop)
@@ -712,6 +714,9 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		c.lgr.Printf("Filter components: %v", fltl)
 
 		msgw <- &[]interface{}{events}
+
+		fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s sent-to-msgw-channel: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+
 		return nil
 	}()
 }
