@@ -205,7 +205,9 @@ func GetIP(r *http.Request) string {
 		xff := r.Header.Get("X-Forwarded-For")
 		if len(xff) > 15 {
 			xffs := strings.Split(xff, ",")
-			if len(xffs) > 1 {
+			if len(xffs) > 2 {
+				ip = xffs[1]
+			} else {
 				ip = xffs[0]
 			}
 		}

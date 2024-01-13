@@ -165,7 +165,7 @@ func (c *Client) writeT() error {
 
 	for err := range errWM {
 		if err != nil {
-			fmt.Println("[writeT] Error received: ", err)
+			fmt.Printf("[writeT] customer [%s] Error received:%v \n", c.IP, err)
 			// Perform error handling or logging here
 			return err
 		} else {
@@ -554,8 +554,7 @@ func (c *Client) fetchAllFilters(ctx context.Context) error {
 
 func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) error {
 
-	flt, _ := tools.ConvertStructToByte(filter)
-	fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s filter: %v\n", c.IP, c.Subscription_id, string(flt))
+	fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s filter: %v\n", c.IP, c.Subscription_id, filter)
 
 	// Function to fetch data from the specified filter
 	fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s fetchData-start: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
@@ -772,9 +771,9 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		}
 
 		// sending []Events array as bytes to the writeT channel
-		fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s before-send-to-msgwt-channel: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
-
 		msgwt <- bEv
+
+		fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-send-to-msgwt-channel: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 
 		return nil
 	}()
