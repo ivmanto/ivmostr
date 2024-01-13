@@ -194,6 +194,7 @@ func (s *Session) remove(client *Client) bool {
 func (s *Session) TuneClientConn(client *Client) {
 	// Set t value to 0 to disable the read deadline
 	var t time.Time = time.Time{}
+	var twt time.Time = time.Time.Add(time.Now(), 100*time.Millisecond)
 
 	err := client.conn.SetReadDeadline(t)
 	if err != nil {
@@ -203,7 +204,7 @@ func (s *Session) TuneClientConn(client *Client) {
 	// Set read message size limit as stated in the server_info.json file
 	client.conn.SetReadLimit(int64(16384))
 
-	err = client.conn.SetWriteDeadline(t)
+	err = client.conn.SetWriteDeadline(twt)
 	if err != nil {
 		s.elgr.Printf("ERROR client-side %s (set-write-deadline): %v", client.IP, err)
 	}

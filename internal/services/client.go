@@ -451,8 +451,9 @@ func (c *Client) writeCustomNotice(notice_msg string) {
 
 // Protocol definition: ["EOSE", <subscription_id>], used to indicate that the relay has no more events to send for a subscription.
 func (c *Client) writeEOSE(subID string) {
-	var eose = []interface{}{"EOSE", subID}
-	msgw <- &eose
+	//var eose = []interface{}{"EOSE", subID}
+	var eose = []byte(fmt.Sprintf("EOSE %s", subID))
+	msgwt <- eose
 }
 
 // Generate challenge for the client to authenticate.
