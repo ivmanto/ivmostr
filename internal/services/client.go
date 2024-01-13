@@ -611,46 +611,9 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		// Parsing filter's lists
 		for key, val := range filter {
 
-			if nbmrevents > max_events {
-				break
-			}
-
-			nbmrevents += len(events)
+			events = []*gn.Event{}
 
 			switch {
-			case key == "kinds":
-
-				c.lgr.Printf("Filter kinds:%v", val)
-
-				var (
-					kinds  []interface{}
-					kindsi []int
-				)
-
-				kinds, ok = filter["kinds"].([]interface{})
-				if !ok {
-					return fmt.Errorf("Wrong filter format used! Kinds are not a list")
-				}
-
-				if len(kinds) > 30 {
-					kinds = kinds[:30]
-				}
-
-				for _, kind := range kinds {
-					_kind, ok := kind.(float64)
-					if ok {
-						kindsi = append(kindsi, int(_kind))
-					}
-				}
-
-				events, err = c.repo.GetEventsByKinds(kindsi, max_events, _since, _until)
-				if err != nil {
-					c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
-					return err
-				}
-
-				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsByKinds: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
-
 			case key == "authors":
 
 				c.lgr.Printf("Filter authors:%v", val)
@@ -676,13 +639,13 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 					_authors = _authors[:30]
 				}
 
-				events, err = c.repo.GetEventsByAuthors(_authors, max_events, _since, _until)
+				_events, err := c.repo.GetEventsByAuthors(_authors, max_events, _since, _until)
 				if err != nil {
 					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 					return err
 				}
-
-				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsByAuthors: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+				events = append(events, _events...)
+				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s events %d after-GetEventsByAuthors: %d ms\n", c.IP, c.Subscription_id, len(_events), time.Now().UnixMilli()-responseRate)
 
 			case key == "ids":
 
@@ -709,13 +672,46 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 					_ids = _ids[:30]
 				}
 
-				events, err = c.repo.GetEventsByIds(_ids, max_events, _since, _until)
+				_events, err := c.repo.GetEventsByIds(_ids, max_events, _since, _until)
 				if err != nil {
 					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 					return err
 				}
+				events = append(events, _events...)
+				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s events: %d after-GetEventsByIds: %d ms\n", c.IP, c.Subscription_id, len(_events), time.Now().UnixMilli()-responseRate)
 
-				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsByIds: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+			case key == "kinds":
+
+				c.lgr.Printf("Filter kinds:%v", val)
+
+				var (
+					kinds  []interface{}
+					kindsi []int
+				)
+
+				kinds, ok = filter["kinds"].([]interface{})
+				if !ok {
+					return fmt.Errorf("Wrong filter format used! Kinds are not a list")
+				}
+
+				if len(kinds) > 30 {
+					kinds = kinds[:30]
+				}
+
+				for _, kind := range kinds {
+					_kind, ok := kind.(float64)
+					if ok {
+						kindsi = append(kindsi, int(_kind))
+					}
+				}
+
+				_events, err := c.repo.GetEventsByKinds(kindsi, max_events, _since, _until)
+				if err != nil {
+					c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
+					return err
+				}
+				events = append(events, _events...)
+				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s events: %d after-GetEventsByKinds: %d ms\n", c.IP, c.Subscription_id, len(events), time.Now().UnixMilli()-responseRate)
 
 			case strings.HasPrefix(key, "#"):
 				// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
@@ -726,23 +722,23 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 			default:
 				if _since > 0 && _until == 0 {
 
-					events, err = c.repo.GetEventsSince(max_events, _since)
+					_events, err := c.repo.GetEventsSince(max_events, _since)
 					if err != nil {
 						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 						return err
 					}
-
-					fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsSince: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+					events = append(events, _events...)
+					fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s events: %d after-GetEventsSince: %d ms\n", c.IP, c.Subscription_id, len(_events), time.Now().UnixMilli()-responseRate)
 
 				} else if _since > 0 && _until > 0 {
 
-					events, err = c.repo.GetEventsSinceUntil(max_events, _since, _until)
+					_events, err := c.repo.GetEventsSinceUntil(max_events, _since, _until)
 					if err != nil {
 						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 						return err
 					}
-
-					fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsSinceUntil: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+					events = append(events, _events...)
+					fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s events: %d after-GetEventsSinceUntil: %d ms\n", c.IP, c.Subscription_id, len(_events), time.Now().UnixMilli()-responseRate)
 
 				} else {
 					//events, err = c.repo.GetEventsByFilter(filter)
@@ -753,7 +749,12 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 					c.lgr.Printf("Customer [%v]. Filter is too complex:\n %v\n", c.IP, filter)
 				}
 			}
+
+			// Count at the end of each filter component
 			fltl++
+			nbmrevents += len(events)
+
+			// Append to the final array of ebvents to be sent
 			if len(eventsC)+len(events) < max_events {
 				eventsC = append(eventsC, events...)
 			} else {
@@ -772,9 +773,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 			return errE
 		}
 		// sending []Events array as bytes to the writeT channel
+		fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s before-send-to-msgwt-channel: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 		msgwt <- buf.Bytes()
-
-		fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s sent-to-msgw-channel: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 
 		return nil
 	}()
