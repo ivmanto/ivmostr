@@ -19,10 +19,11 @@ import (
 )
 
 var (
-	nbmrevents int
-	stop       = make(chan struct{})
-	msgw       = make(chan *[]interface{})
-	leop       = logging.Entry{Severity: logging.Info, Payload: ""}
+	nbmrevents   int
+	stop         = make(chan struct{})
+	msgw         = make(chan *[]interface{})
+	leop         = logging.Entry{Severity: logging.Info, Payload: ""}
+	responseRate = int64(0)
 )
 
 type Client struct {
@@ -261,13 +262,14 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 			c.Filetrs = []map[string]interface{}{}
 			c.Filetrs = append(c.Filetrs, msgfilters...)
 
+			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
+			c.writeCustomNotice("Update: The subscription filter has been overwriten.")
+
 			err := c.SubscriptionSuplier()
 			if err != nil {
 				return err
 			}
 
-			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
-			c.writeCustomNotice("Update: The subscription filter has been overwriten.")
 			return nil
 		} else {
 			// [!] protocol error
@@ -280,14 +282,13 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Subscription_id = subscription_id
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
+	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 	c.lgr.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
 
 	err := c.SubscriptionSuplier()
 	if err != nil {
 		return err
 	}
-
-	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 
 	return nil
 }
@@ -458,14 +459,16 @@ func (c *Client) confirmURLDomainMatch(relayURL string) bool {
 func (c *Client) SubscriptionSuplier() error {
 	nbmrevents = 0
 	ctx := context.Background()
-	responseRate := time.Now().UnixMilli()
+	responseRate = time.Now().UnixMilli()
 
-	fmt.Printf("\n\n## [SubscriptionSuplier] SubscriptionSuplier: %s\n", c.Subscription_id)
+	fmt.Printf("\n\n## [SubscriptionSuplier] customer [%s] SubscriptionID: %s\n", c.IP, c.Subscription_id)
 
 	err := c.fetchAllFilters(ctx)
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf("\n\n## [SubscriptionSuplier] customer [%s] SubscriptionID: %s fetchAllFilters-took: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 
 	// Send EOSE
 	c.writeEOSE(c.Subscription_id)
@@ -487,6 +490,8 @@ func (c *Client) fetchAllFilters(ctx context.Context) error {
 
 	eg := errgroup.Group{}
 
+	fmt.Printf("\n\n## [fetchAllFilters] customer [%s] SubscriptionID: %s start-fetchAllFilters: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+
 	// Run all the HTTP requests in parallel
 	for _, filter := range c.Filetrs {
 		fltr := filter
@@ -495,12 +500,16 @@ func (c *Client) fetchAllFilters(ctx context.Context) error {
 		})
 	}
 
+	fmt.Printf("\n\n## [fetchAllFilters] customer [%s] SubscriptionID: %s fetchAllFilters-after-for-loop: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+
 	// Wait for completion and return the first error (if any)
 	return eg.Wait()
 }
 
 func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) error {
 	// Function to fetch data from the specified filter
+
+	fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s fetchData-start: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 
 	return func() error {
 		// [ ]: de-compose the filter
@@ -549,6 +558,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 			_until = int64(until)
 		}
 
+		fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s limit-since-until-ready: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+
 		// Parsing filter's lists
 		for key, val := range filter {
 
@@ -590,6 +601,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 					return err
 				}
 
+				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsByKinds: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+
 			case key == "authors":
 
 				c.lgr.Printf("Filter authors:%v", val)
@@ -621,6 +634,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 					return err
 				}
 
+				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsByAuthors: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+
 			case key == "ids":
 
 				c.lgr.Printf("Filter ids:%v", val)
@@ -646,25 +661,30 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 					_ids = _ids[:30]
 				}
 
-				events, err = c.repo.GetEventsByAuthors(_ids, max_events, _since, _until)
+				events, err = c.repo.GetEventsByIds(_ids, max_events, _since, _until)
 				if err != nil {
 					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 					return err
 				}
+
+				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsByIds: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+
 			case strings.HasPrefix(key, "#"):
-			// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
-			// case filter["#e"]: ...
+				// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
+				// case filter["#e"]: ...
+
+				fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-NotImplTags: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 
 			default:
 				if _since > 0 && _until == 0 {
 
-					tsges := time.Now().UnixMilli()
 					events, err = c.repo.GetEventsSince(max_events, _since)
 					if err != nil {
 						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 						return err
 					}
-					c.lgr.Printf("Get events with GetEventsSince took: %v", time.Now().UnixMilli()-tsges)
+
+					fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsSince: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
 
 				} else if _since > 0 && _until > 0 {
 
@@ -673,6 +693,9 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
 						return err
 					}
+
+					fmt.Printf("\n\n## [fetchData] customer [%s] SubscriptionID: %s after-GetEventsSinceUntil: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+
 				} else {
 					//events, err = c.repo.GetEventsByFilter(filter)
 					// if err != nil {

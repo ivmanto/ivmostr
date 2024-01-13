@@ -65,7 +65,6 @@ func (pool *ConnectionPool) GetClient() (*firestore.Client, error) {
 
 		busy_clients = append(busy_clients, &client)
 		return &client, nil
-
 	}
 
 	return nil, fmt.Errorf("No available clients in pool")
