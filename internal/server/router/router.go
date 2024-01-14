@@ -66,7 +66,7 @@ func (h *srvHandler) router() chi.Router {
 	rtr.Route("/v1", func(r chi.Router) {
 		lgr := log.New(os.Stdout, "[api] ", log.LstdFlags)
 		rh := api.ApiHandler{Lgr: lgr}
-		r.Mount("/v1", rh.Router())
+		r.Mount("/api", rh.Router())
 	})
 
 	return rtr

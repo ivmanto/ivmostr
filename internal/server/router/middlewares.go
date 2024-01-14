@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
@@ -11,7 +12,7 @@ import (
 )
 
 var (
-	ips = []string{"188.194.53.116"}
+	ips = []string{"188.193.116.7"}
 )
 
 // Handles the CORS part
@@ -48,7 +49,7 @@ func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// Check if the request is a health-check request
-		if r.URL.Path == "/hc" {
+		if r.URL.Path == "/hc" || strings.HasPrefix(r.URL.Path, "/v1/api") {
 			h.ServeHTTP(w, r)
 			return
 		}
