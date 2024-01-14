@@ -21,7 +21,7 @@ func (ah *ApiHandler) Router() chi.Router {
 	// fileServer := http.FileServer(http.FS(ui.Files))
 	// rtr.Handle("/static/*", fileServer)
 
-	rtr.Route("/api", func(r chi.Router) {
+	rtr.Route("/", func(r chi.Router) {
 		r.Get("/", ah.welcome)
 		// r.Post("/send", rh.home)
 		r.Get("/nip11", ah.serverinfo)
