@@ -32,7 +32,6 @@ func (ah *ApiHandler) Router() chi.Router {
 }
 
 func (ah *ApiHandler) welcome(w http.ResponseWriter, r *http.Request) {
-
 	_, _ = w.Write([]byte("{\"success\":\"Welcome to ivmostr api\"}"))
 }
 
