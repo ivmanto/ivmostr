@@ -283,3 +283,7 @@ func ConvertStructToByte(e any) ([]byte, error) {
 	}
 	return buf.Bytes(), nil
 }
+
+func GetIPCount() int {
+	return len(IPCount)
+}

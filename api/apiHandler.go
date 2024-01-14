@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -24,6 +25,7 @@ func (ah *ApiHandler) Router() chi.Router {
 		r.Get("/", ah.welcome)
 		// r.Post("/send", rh.home)
 		r.Get("/nip11", ah.serverinfo)
+		r.Get("/ipcount", ah.ipcount)
 	})
 
 	return rtr
@@ -36,4 +38,8 @@ func (ah *ApiHandler) welcome(w http.ResponseWriter, r *http.Request) {
 
 func (ah *ApiHandler) serverinfo(w http.ResponseWriter, r *http.Request) {
 	tools.ServerInfo(w, r)
+}
+
+func (ah *ApiHandler) ipcount(w http.ResponseWriter, r *http.Request) {
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"IPCount\":%v}", tools.GetIPCount())))
 }

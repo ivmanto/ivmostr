@@ -142,30 +142,31 @@ func (c *Client) write() error {
 func (c *Client) writeT() error {
 	var (
 		errWM = make(chan error)
+		quit  = make(chan struct{})
 	)
+	defer close(quit)
 
-	go func() {
-		for message := range msgwt {
+	for message := range msgwt {
+		go func(message []byte) {
 			select {
-			case <-stop:
-				c.lgr.Printf("[writeT] Stopping the write channel")
-				return
+			case <-quit:
+				c.lgr.Printf("[writeT] Stopping the writeT channel")
 			default:
 				mu.Lock()
 				err := c.conn.WriteMessage(websocket.TextMessage, message)
+				mu.Unlock()
 				if err != nil {
 					errWM <- err
 				}
-				mu.Unlock()
 
 				fmt.Printf("\n\n## [writeT] customer [%s] SubscriptionID: %s bytes:*  %d after-writeT-to-ws: %d ms\n", c.IP, c.Subscription_id, len(message), time.Now().UnixMilli()-responseRate)
 			}
-		}
-	}()
+		}(message)
+	}
 
 	for err := range errWM {
 		if err != nil {
-			fmt.Printf("[writeT] customer [%s] Error received:%v \n", c.IP, err)
+			fmt.Printf("[writeT] customer [%s] subscription_id %v Error received:%v \n", c.IP, c.Subscription_id, err)
 			// Perform error handling or logging here
 			return err
 		} else {
@@ -450,8 +451,10 @@ func (c *Client) writeCustomNotice(notice_msg string) {
 // Protocol definition: ["EOSE", <subscription_id>], used to indicate that the relay has no more events to send for a subscription.
 func (c *Client) writeEOSE(subID string) {
 	//var eose = []interface{}{"EOSE", subID}
-	var eose = []byte(fmt.Sprintf("EOSE %s", subID))
-	msgwt <- eose
+	if subID != "" {
+		var eose = []byte(fmt.Sprintf("EOSE %s", subID))
+		msgwt <- eose
+	}
 }
 
 // Generate challenge for the client to authenticate.
