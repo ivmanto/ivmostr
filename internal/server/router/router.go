@@ -63,7 +63,7 @@ func (h *srvHandler) router() chi.Router {
 	})
 
 	// Route the API calls to/v1/api/ ...
-	rtr.Route("/", func(r chi.Router) {
+	rtr.Route("/v1", func(r chi.Router) {
 		lgr := log.New(os.Stdout, "[api] ", log.LstdFlags)
 		rh := api.ApiHandler{Lgr: lgr}
 		r.Mount("/v1", rh.Router())
