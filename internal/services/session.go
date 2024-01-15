@@ -216,15 +216,10 @@ func (s *Session) TuneClientConn(client *Client) {
 	})
 
 	client.conn.SetPingHandler(func(appData string) error {
-		if appData == "ping" || appData == "PING" || appData == "Ping" {
-			fmt.Println("Received ping:", appData)
-			// Send a pong message in response to the ping
-			s.mu.Lock()
-			err := client.conn.WriteControl(websocket.PingMessage, []byte("pong"), time.Time.Add(time.Now(), time.Millisecond*100))
-			s.mu.Unlock()
-			if err != nil {
-				client.lgr.Printf("ERROR client-side %s (ping-handler): %v", client.IP, err)
-			}
+		// Send a pong message back to the client
+		err := client.conn.WriteMessage(websocket.PongMessage, []byte{})
+		if err != nil {
+			fmt.Println("Error sending pong message:", err)
 		}
 		return nil
 	})
