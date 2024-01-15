@@ -238,40 +238,55 @@ func (s *Session) BroadcasterQueue(e gn.Event) {
 
 // [x]: to re-work the event broadcaster
 func (s *Session) NewEventBroadcaster() {
-	for {
-		e := <-NewEvent
-		if e != nil && e.Kind != 22242 {
-			s.ilgr.Printf(" ...-= starting new event braodcasting =-...")
 
-			s.ns.Range(func(key, value interface{}) bool {
-				client := value.(*Client)
-				if client.Subscription_id == "" || client.name == e.GetExtraString("cname") {
-					return true
-				}
-				//nip-04 requires clients authentication before sending kind:4 encrypted Dms
-				if e.Kind == 4 && !client.Authed {
-					return true
-				} else if e.Kind == 4 && client.Authed {
-					tag := e.Tags[0]
-					recp := strings.Split(tag[1], ",")
-					if len(recp) > 1 {
-						if client.npub == recp[1] {
-							msgw <- &[]interface{}{e}
-							return false
-						}
-					}
-				}
+	for e := range NewEvent {
 
-				if filterMatch(e, client.GetFilters()) {
-					msgw <- &[]interface{}{e}
-					return true
-				}
-				return true
-			})
+		s.ilgr.Printf(" ...-= starting new event braodcasting =-...")
 
-			s.bq.Delete(e.ID)
+		// 22242 is auth event - not to be stored or published
+		if e.Kind != 22242 {
 			continue
 		}
+
+		be, err := tools.ConvertStructToByte(e)
+		if err != nil {
+			s.elgr.Printf("Error: [%v] while converting event to byte array!", err)
+			continue
+		}
+
+		s.mu.Lock()
+
+		s.ns.Range(func(key, value interface{}) bool {
+			client := value.(*Client)
+			if client.Subscription_id == "" || client.id == uint(e.GetExtraNumber("id")) {
+				return true
+			}
+			//nip-04 requires clients authentication before sending kind:4 encrypted Dms
+			if e.Kind == 4 && !client.Authed {
+				return true
+			} else if e.Kind == 4 && client.Authed {
+				tag := e.Tags[0]
+				recp := strings.Split(tag[1], ",")
+				if len(recp) > 1 {
+					if client.npub == recp[1] {
+						msgwt <- be
+
+						s.mu.Unlock()
+						return false
+					}
+				}
+			}
+
+			if filterMatch(e, client.GetFilters()) {
+				msgwt <- be
+				return true
+			}
+			return true
+		})
+		s.mu.Unlock()
+
+		s.bq.Delete(e.ID)
+		continue
 	}
 }
 
