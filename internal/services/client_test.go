@@ -4,7 +4,6 @@ package services
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/pkg/fspool"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/gorilla/websocket"
+	log "github.com/sirupsen/logrus"
 )
 
 var upgrader = websocket.Upgrader{
@@ -38,7 +38,7 @@ var (
 
 var client = Client{
 	conn:            nil,
-	lgr:             log.New(log.Writer(), "client: ", log.LstdFlags),
+	lgr:             log.New(),
 	id:              0,
 	name:            "",
 	session:         nil,

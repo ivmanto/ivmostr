@@ -23,9 +23,7 @@ import (
 
 var (
 	NewEvent     = make(chan *gn.Event)
-	done         = make(chan struct{})
 	Exit         = make(chan struct{})
-	ticker       = time.NewTicker(240 * time.Second)
 	relay_access string
 	clientCldLgr *logging.Client
 	cclnlgr      *logging.Logger
@@ -77,8 +75,6 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	// [x]: review and rework the event broadcaster
 	go session.NewEventBroadcaster()
-
-	go session.keepClientsPoolClean()
 
 	return &session
 }
@@ -313,33 +309,4 @@ func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
 		}
 	}
 	return false
-}
-
-func (s *Session) keepClientsPoolClean() {
-	for {
-		select {
-		case t := <-ticker.C:
-			log.Printf("...>>> cleaning the Clients Pool at %v <<< ...\n", t)
-			for _, c := range s.clients {
-
-				log.Printf("...>>>... processing client [%d: %v]\n", c.id, c.IP)
-
-				// check for dummy subscriptions
-				if c.Subscription_id == "" || len(c.Filetrs) < 1 {
-					_ = c.conn.Close()
-					s.Remove(c)
-					continue
-				}
-
-				errc := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Time.Add(time.Now(), 1000*time.Millisecond))
-				if errc != nil {
-					log.Printf("[keepClientsPoolClean] Error [%v] while ping client [%v]:\n", c.IP, errc)
-					c.conn.Close()
-				}
-
-			}
-		case <-done:
-			return
-		}
-	}
 }
