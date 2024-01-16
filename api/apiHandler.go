@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/dasiyes/ivmostr-tdd/tools"
@@ -10,7 +9,6 @@ import (
 )
 
 type ApiHandler struct {
-	Lgr *log.Logger
 	// place any dependencies ...
 }
 

@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"sort"
@@ -19,11 +18,13 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
 	NewEvent     = make(chan *gn.Event)
 	done         = make(chan struct{})
+	Exit         = make(chan struct{})
 	ticker       = time.NewTicker(240 * time.Second)
 	relay_access string
 	clientCldLgr *logging.Client
@@ -39,8 +40,6 @@ type Session struct {
 	ns      sync.Map
 	bq      sync.Map
 	out     chan []byte
-	ilgr    *log.Logger
-	elgr    *log.Logger
 	clgr    *logging.Logger
 	pool    *gopool.Pool
 	cfg     *config.ServiceConfig
@@ -54,7 +53,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	ctx := context.Background()
 	clientCldLgr, _ = logging.NewClient(ctx, cfg.Firestore.ProjectID)
 	clientCldLgr.OnError = func(err error) {
-		fmt.Printf("[cloud-logger] Error [%v] raised while logging to cloud logger", err)
+		log.Printf("[cloud-logger] Error [%v] raised while logging to cloud logger", err)
 	}
 	clgr := clientCldLgr.Logger("ivmostr-cnn")
 
@@ -62,8 +61,6 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 		ns:   sync.Map{},
 		bq:   sync.Map{},
 		out:  make(chan []byte, 1),
-		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
-		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
 		clgr: clgr,
 		pool: pool,
 		Repo: repo,
@@ -74,9 +71,9 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	td, err := repo.TotalDocs()
 	if err != nil {
-		session.elgr.Printf("error getting total number of docs: %v ", err)
+		log.Printf("error getting total number of docs: %v ", err)
 	}
-	session.ilgr.Printf("total events in the DB %d", td)
+	log.Printf("total events in the DB %d", td)
 
 	// [x]: review and rework the event broadcaster
 	go session.NewEventBroadcaster()
@@ -94,12 +91,17 @@ func (s *Session) Register(conn *websocket.Conn, ip string) *Client {
 	client := Client{
 		session:   s,
 		conn:      conn,
-		lgr:       log.New(os.Stderr, "[client] ", log.LstdFlags),
 		cclnlgr:   cclnlgr,
 		IP:        ip,
 		Authed:    false,
 		errorRate: make(map[string]int),
 		repo:      s.Repo,
+	}
+
+	client.lgr = &log.Logger{
+		Out:       os.Stdout,
+		Level:     log.DebugLevel,
+		Formatter: &log.JSONFormatter{},
 	}
 
 	s.mu.Lock()
@@ -145,7 +147,7 @@ func (s *Session) Remove(client *Client) {
 	removed := s.remove(client)
 	s.mu.Unlock()
 	if !removed {
-		fmt.Printf("[rmv]: * client with IP %v was NOT removed from session connections!\n", client.IP)
+		log.Printf("[rmv]: * client with IP %v was NOT removed from session connections!\n", client.IP)
 		return
 	}
 
@@ -153,7 +155,7 @@ func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	tools.IPCount[client.IP]--
 	s.mu.Unlock()
-	fmt.Printf("[rmv]: - %d active clients, %d connected\n", len(s.clients), len(s.clients))
+	log.Printf("[rmv]: - %d active clients, %d connected\n", len(s.clients), len(s.clients))
 }
 
 // Give code-word as name to the client connection
@@ -200,7 +202,7 @@ func (s *Session) TuneClientConn(client *Client) {
 
 	err := client.conn.SetReadDeadline(t)
 	if err != nil {
-		s.elgr.Printf("ERROR client-side %s (set-read-deadline): %v", client.IP, err)
+		log.Printf("ERROR client-side %s (set-read-deadline): %v", client.IP, err)
 	}
 
 	// Set read message size limit as stated in the server_info.json file
@@ -208,7 +210,7 @@ func (s *Session) TuneClientConn(client *Client) {
 
 	err = client.conn.SetWriteDeadline(twt)
 	if err != nil {
-		s.elgr.Printf("ERROR client-side %s (set-write-deadline): %v", client.IP, err)
+		log.Printf("ERROR client-side %s (set-write-deadline): %v", client.IP, err)
 	}
 
 	client.conn.SetCloseHandler(func(code int, text string) error {
@@ -219,18 +221,18 @@ func (s *Session) TuneClientConn(client *Client) {
 
 	client.conn.SetPingHandler(func(appData string) error {
 
-		fmt.Printf("[SetPingHandler] Ping message received as: %v", appData)
+		log.Printf("[SetPingHandler] Ping message received as: %v", appData)
 		// Send a pong message back to the client
 		err := client.conn.WriteControl(websocket.PongMessage, []byte("pong"), twt)
 		if err != nil {
-			fmt.Println("Error sending pong message:", err)
+			log.Println("Error sending pong message:", err)
 			return err
 		}
 		return nil
 	})
 
 	client.conn.SetPongHandler(func(appData string) error {
-		fmt.Printf("[SetPongHandler] Pong message received as: %v", appData)
+		log.Printf("[SetPongHandler] Pong message received as: %v", appData)
 		if strings.ToLower(appData) != "pong" {
 			return fmt.Errorf(appData)
 		}
@@ -249,7 +251,7 @@ func (s *Session) NewEventBroadcaster() {
 
 	for e := range NewEvent {
 
-		s.ilgr.Printf(" ...-= starting new event braodcasting =-...")
+		log.Printf(" ...-= starting new event braodcasting =-...")
 
 		// 22242 is auth event - not to be stored or published
 		if e.Kind != 22242 {
@@ -258,7 +260,7 @@ func (s *Session) NewEventBroadcaster() {
 
 		be, err := tools.ConvertStructToByte(e)
 		if err != nil {
-			s.elgr.Printf("Error: [%v] while converting event to byte array!", err)
+			log.Printf("Error: [%v] while converting event to byte array!", err)
 			continue
 		}
 
@@ -317,10 +319,10 @@ func (s *Session) keepClientsPoolClean() {
 	for {
 		select {
 		case t := <-ticker.C:
-			s.ilgr.Printf("...>>> cleaning the Clients Pool at %v <<< ...\n", t)
+			log.Printf("...>>> cleaning the Clients Pool at %v <<< ...\n", t)
 			for _, c := range s.clients {
 
-				s.ilgr.Printf("...>>>... processing client [%d: %v]\n", c.id, c.IP)
+				log.Printf("...>>>... processing client [%d: %v]\n", c.id, c.IP)
 
 				// check for dummy subscriptions
 				if c.Subscription_id == "" || len(c.Filetrs) < 1 {
@@ -331,7 +333,7 @@ func (s *Session) keepClientsPoolClean() {
 
 				errc := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Time.Add(time.Now(), 1000*time.Millisecond))
 				if errc != nil {
-					s.ilgr.Printf("[keepClientsPoolClean] Error [%v] while ping client [%v]:\n", c.IP, errc)
+					log.Printf("[keepClientsPoolClean] Error [%v] while ping client [%v]:\n", c.IP, errc)
 					c.conn.Close()
 				}
 

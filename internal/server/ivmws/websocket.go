@@ -1,8 +1,6 @@
 package ivmws
 
 import (
-	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,9 +13,11 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
+	l       = log.New()
 	session *services.Session
 	pool    *gopool.Pool
 	//repo    nostr.NostrRepo
@@ -27,20 +27,17 @@ var (
 )
 
 type WSHandler struct {
-	lgr  *log.Logger
 	repo nostr.NostrRepo
 	cfg  *config.ServiceConfig
 }
 
 func NewWSHandler(
-	l *log.Logger,
 	repo nostr.NostrRepo,
 	cfg *config.ServiceConfig,
 
 ) *WSHandler {
 
 	hndlr := WSHandler{
-		lgr:  l,
 		repo: repo,
 		cfg:  cfg,
 	}
@@ -84,7 +81,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	hst := tools.DiscoverHost(r)
 	ip := tools.GetIP(r)
 
-	h.lgr.Printf("WSU-REQ: ... new request arived from ip: %v, Host: %v, Origin: %v", ip, hst, org)
+	l.Printf("WSU-REQ: ... new request arived from ip: %v, Host: %v, Origin: %v", ip, hst, org)
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
@@ -103,7 +100,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		h.lgr.Printf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v", err)
+		l.Printf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v", err)
 		return
 	}
 
@@ -125,14 +122,14 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 	// Schedule Client connection handling into a goroutine from the pool
 	pool.Schedule(func() {
 
-		fmt.Printf("[handle] [+] client IP %s join the pool of  %d active connections\n", ip, len(tools.IPCount))
+		//fmt.Printf("[handle] [+] client IP %s join the pool of  %d active connections\n", ip, len(tools.IPCount))
 
 		if err := client.ReceiveMsg(); err != nil {
-			if strings.Contains(err.Error(), "websocket: close 1001") || strings.Contains(err.Error(), "websocket: close 1000") {
-				fmt.Printf("[wsh] ERROR: client %s closed the connection. %v\n", client.IP, err)
-			} else {
-				fmt.Printf("[wsh] ERROR: client-side %s (HandleWebSocket): %v\n", client.IP, err)
-			}
+			// if strings.Contains(err.Error(), "websocket: close 1001") || strings.Contains(err.Error(), "websocket: close 1000") {
+			// 	fmt.Printf("[wsh] ERROR: client %s closed the connection. %v\n", client.IP, err)
+			// } else {
+			// 	fmt.Printf("[wsh] ERROR: client-side %s (HandleWebSocket): %v\n", client.IP, err)
+			// }
 
 			session.Remove(client)
 			conn.Close()
@@ -147,6 +144,6 @@ func RemoveIPCount(ip string) {
 		mu.Lock()
 		tools.IPCount[ip]--
 		mu.Unlock()
-		fmt.Printf("[wsh] [-] Closing client IP %s decreased active connections to %d\n", ip, tools.IPCount[ip])
+		//fmt.Printf("[wsh] [-] Closing client IP %s decreased active connections to %d\n", ip, tools.IPCount[ip])
 	}
 }

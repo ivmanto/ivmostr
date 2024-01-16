@@ -25,20 +25,22 @@ SOFTWARE.
 package router
 
 import (
-	"log"
 	"net/http"
-	"os"
 
 	"github.com/dasiyes/ivmostr-tdd/api"
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 	"github.com/go-chi/chi"
+	log "github.com/sirupsen/logrus"
+)
+
+var (
+	l = log.New()
 )
 
 // Constructing web application depenedencies in the format of handler
 type srvHandler struct {
-	l    *log.Logger
 	repo nostr.NostrRepo
 	cfg  *config.ServiceConfig
 	// ... add other dependencies here
@@ -57,15 +59,13 @@ func (h *srvHandler) router() chi.Router {
 
 	// Handle requests to the root URL "/"
 	rtr.Route("/", func(wr chi.Router) {
-		lgr := log.New(os.Stdout, "[wsh] ", log.LstdFlags)
-		ws := ivmws.NewWSHandler(lgr, h.repo, h.cfg)
+		ws := ivmws.NewWSHandler(h.repo, h.cfg)
 		wr.Mount("/", ws.Router())
 	})
 
 	// Route the API calls to/v1/api/ ...
 	rtr.Route("/v1", func(r chi.Router) {
-		lgr := log.New(os.Stdout, "[api] ", log.LstdFlags)
-		rh := api.ApiHandler{Lgr: lgr}
+		rh := api.ApiHandler{}
 		r.Mount("/api", rh.Router())
 	})
 
@@ -73,14 +73,14 @@ func (h *srvHandler) router() chi.Router {
 }
 
 // Handler to manage endpoints
-func NewHandler(l *log.Logger, repo nostr.NostrRepo, cfg *config.ServiceConfig) http.Handler {
+func NewHandler(repo nostr.NostrRepo, cfg *config.ServiceConfig) http.Handler {
 
 	e := srvHandler{
-		l:    l,
 		repo: repo,
 		cfg:  cfg,
 	}
-	e.l.Printf("...initializing router (http server Handler) ...")
+
+	l.Printf("...initializing router (http server Handler) ...")
 
 	return e.router()
 }

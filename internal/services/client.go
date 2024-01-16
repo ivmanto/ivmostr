@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/url"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
+	log "github.com/sirupsen/logrus"
 	lr "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
