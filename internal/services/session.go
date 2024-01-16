@@ -22,9 +22,9 @@ import (
 )
 
 var (
-	NewEvent = make(chan *gn.Event)
-	Exit     = make(chan struct{})
-	//ticker       = time.NewTicker(5 * time.Minute)
+	NewEvent     = make(chan *gn.Event)
+	done         = make(chan struct{})
+	ticker       = time.NewTicker(10 * time.Minute)
 	relay_access string
 	clientCldLgr *logging.Client
 	cclnlgr      *logging.Logger
@@ -80,6 +80,8 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	// [x]: review and rework the event broadcaster
 	go session.NewEventBroadcaster()
+
+	go session.keepClientsPoolClean()
 
 	return &session
 }
@@ -222,6 +224,15 @@ func (s *Session) TuneClientConn(client *Client) {
 		err := client.conn.WriteControl(websocket.PongMessage, []byte("pong"), twt)
 		if err != nil {
 			fmt.Println("Error sending pong message:", err)
+			return err
+		}
+		return nil
+	})
+
+	client.conn.SetPongHandler(func(appData string) error {
+		fmt.Printf("[SetPongHandler] Pong message received as: %v", appData)
+		if strings.ToLower(appData) != "pong" {
+			return fmt.Errorf(appData)
 		}
 		return nil
 	})
@@ -300,4 +311,27 @@ func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
 		}
 	}
 	return false
+}
+
+func (s *Session) keepClientsPoolClean() {
+	for {
+		select {
+		case t := <-ticker.C:
+			fmt.Printf("...>>> cleaning the Clients Pool at %v <<< ...\n", t)
+			for _, c := range s.clients {
+				errc := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Time.Add(time.Now(), 1000*time.Millisecond))
+				if errc != nil {
+					fmt.Printf("[keepClientsPoolClean] Error [%v] while ping client [%v]:\n", c.IP, errc)
+					c.conn.Close()
+					continue
+				}
+				if c.Subscription_id == "" {
+					_ = c.conn.Close()
+					s.Remove(c)
+				}
+			}
+		case <-done:
+			return
+		}
+	}
 }

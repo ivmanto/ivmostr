@@ -88,7 +88,9 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
-		EnableCompression: true,
+		ReadBufferSize:    0,
+		WriteBufferSize:   0,
+		EnableCompression: false,
 		CheckOrigin: func(r *http.Request) bool {
 			for _, v := range trustedOrigins {
 				if strings.Contains(org, v) || strings.Contains(hst, v) {
