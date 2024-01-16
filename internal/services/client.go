@@ -15,6 +15,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
+	lr "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -158,8 +159,8 @@ func (c *Client) writeT() error {
 				if err != nil {
 					errWM <- err
 				}
-
-				fmt.Printf("\n\n## [writeT] customer [%s] SubscriptionID: %s bytes:*  %d after-writeT-to-ws: %d ms\n", c.IP, c.Subscription_id, len(message), time.Now().UnixMilli()-responseRate)
+				lr.WithFields(lr.Fields{"##_client": c.IP, "ts": time.Now().UnixNano(), "size": len(message)}).Info("writeT wrote to ws connection")
+				//fmt.Printf("\n\n## [writeT] customer [%s] SubscriptionID: %s bytes:*  %d after-writeT-to-ws: %d ms\n", c.IP, c.Subscription_id, len(message), time.Now().UnixMilli()-responseRate)
 			}
 		}(message)
 	}
