@@ -194,7 +194,7 @@ func (s *Session) remove(client *Client) bool {
 func (s *Session) TuneClientConn(client *Client) {
 	// Set t value to 0 to disable the read deadline
 	var t time.Time = time.Time{}
-	var twt time.Time = time.Time.Add(time.Now(), 100*time.Millisecond)
+	var twt time.Time = time.Time.Add(time.Now(), 2000*time.Millisecond)
 
 	err := client.conn.SetReadDeadline(t)
 	if err != nil {
@@ -217,7 +217,7 @@ func (s *Session) TuneClientConn(client *Client) {
 
 	client.conn.SetPingHandler(func(appData string) error {
 
-		fmt.Printf("[SetPingHandler] Ping message received as %v", appData)
+		fmt.Printf("[SetPingHandler] Ping message received as: %v", appData)
 		// Send a pong message back to the client
 		err := client.conn.WriteMessage(websocket.PongMessage, []byte("pong"))
 		if err != nil {
