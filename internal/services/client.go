@@ -541,7 +541,7 @@ func (c *Client) fetchAllFilters(ctx context.Context) error {
 	eg := errgroup.Group{}
 	for idx, filter := range c.Filetrs {
 		fltr := filter
-		c.lgr.WithFields(log.Fields{"method": "[fetchAllFilters]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": fltr, "idx": idx})
+		c.lgr.WithFields(log.Fields{"method": "[fetchAllFilters]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": fltr, "##idx": idx})
 
 		eg.Go(func() error {
 			return c.fetchData(fltr, &eg)
