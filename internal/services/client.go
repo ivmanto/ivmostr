@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	nbmrevents   int
-	stop         = make(chan struct{})
-	msgw         = make(chan *[]interface{})
+	nbmrevents int
+	//stop       = make(chan struct{})
+	//msgw         = make(chan *[]interface{})
 	msgwt        = make(chan []byte)
 	mu           sync.Mutex
 	leop         = logging.Entry{Severity: logging.Info, Payload: ""}
@@ -69,12 +69,12 @@ func (c *Client) ReceiveMsg() error {
 		}
 	}()
 
-	err := c.write()
-	if err != nil {
-		errRM <- fmt.Errorf("Error while writing message: %v", err)
-	}
+	// err := c.write()
+	// if err != nil {
+	// 	errRM <- fmt.Errorf("Error while writing message: %v", err)
+	// }
 
-	err = c.writeT()
+	err := c.writeT()
 	if err != nil {
 		errRM <- fmt.Errorf("Error while writing message: %v", err)
 	}
@@ -90,54 +90,54 @@ func (c *Client) ReceiveMsg() error {
 	return nil
 }
 
-func (c *Client) write() error {
-	errWM := make(chan error)
-	var msg *[]interface{}
-
-	go func() {
-		//mutex := sync.Mutex{}
-		for {
-			select {
-			case <-stop:
-				c.lgr.Printf("[write] Stopping the write channel")
-				return
-			default:
-				msg = <-msgw
-
-				if msg != nil {
-					tsw := time.Now().UnixMilli()
-
-					mu.Lock()
-					err := c.conn.WriteJSON(msg)
-					mu.Unlock()
-					if err != nil {
-						errWM <- err
-					}
-
-					// [ ]: Remove the next 2 lines for production performance
-					lb := tools.CalcLenghtInBytes(msg)
-					c.lgr.Printf(" ## %d bytes sent to [%s] over websocket in %d ms", lb, c.IP, time.Now().UnixMilli()-tsw)
-
-					fmt.Printf("\n\n## [write] customer [%s] SubscriptionID: %s after-write-to-ws: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
-
-					msg = nil
-				}
-				errWM <- nil
-			}
-		}
-	}()
-
-	for err := range errWM {
-		if err != nil {
-			fmt.Println("[write] Error received: ", err)
-			// Perform error handling or logging here
-			return err
-		} else {
-			return nil
-		}
-	}
-	return nil
-}
+// func (c *Client) write() error {
+// 	errWM := make(chan error)
+// 	var msg *[]interface{}
+//
+// 	go func() {
+// 		//mutex := sync.Mutex{}
+// 		for {
+// 			select {
+// 			case <-stop:
+// 				c.lgr.Printf("[write] Stopping the write channel")
+// 				return
+// 			default:
+// 				msg = <-msgw
+//
+// 				if msg != nil {
+// 					tsw := time.Now().UnixMilli()
+//
+// 					mu.Lock()
+// 					err := c.conn.WriteJSON(msg)
+// 					mu.Unlock()
+// 					if err != nil {
+// 						errWM <- err
+// 					}
+//
+// 					// [ ]: Remove the next 2 lines for production performance
+// 					lb := tools.CalcLenghtInBytes(msg)
+// 					c.lgr.Printf(" ## %d bytes sent to [%s] over websocket in %d ms", lb, c.IP, time.Now().UnixMilli()-tsw)
+//
+// 					fmt.Printf("\n\n## [write] customer [%s] SubscriptionID: %s after-write-to-ws: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
+//
+// 					msg = nil
+// 				}
+// 				errWM <- nil
+// 			}
+// 		}
+// 	}()
+//
+// 	for err := range errWM {
+// 		if err != nil {
+// 			fmt.Println("[write] Error received: ", err)
+// 			// Perform error handling or logging here
+// 			return err
+// 		} else {
+// 			return nil
+// 		}
+// 	}
+// 	return nil
+// }
 
 func (c *Client) writeT() error {
 	var (
@@ -191,6 +191,7 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 	case "AUTH":
 		return c.handlerAuthMsgs(msg)
 	default:
+		fmt.Printf("[dispatcher] Unknown message: %v", *msg...)
 		c.writeCustomNotice("Error: invalid format of the received message")
 		return fmt.Errorf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
 	}
@@ -439,13 +440,15 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 //		[x] `invalid`, and
 //		[x] `error` for when none of that fits.
 func (c *Client) writeEventNotice(event_id string, accepted bool, message string) {
-	var note = []interface{}{"OK", event_id, accepted, message}
-	msgw <- &note
+	//var note = []interface{}{"OK", event_id, accepted, message}
+	var note = []byte(fmt.Sprintf("{\"OK\", %s, %v, %s}", event_id, accepted, message))
+	msgwt <- note
 }
 
 func (c *Client) writeCustomNotice(notice_msg string) {
-	var note = []interface{}{"NOTICE", notice_msg}
-	msgw <- &note
+	//var note = []interface{}{"NOTICE", notice_msg}
+	var note = []byte(fmt.Sprintf("{\"NOTICE\", %s", notice_msg))
+	msgwt <- note
 }
 
 // Protocol definition: ["EOSE", <subscription_id>], used to indicate that the relay has no more events to send for a subscription.
@@ -477,8 +480,9 @@ func (c *Client) GenChallenge() {
 
 // Protocol definition: ["AUTH", <challenge>], (nip-42) used to request authentication from the client.
 func (c *Client) writeAUTHChallenge() {
-	var note = []interface{}{"AUTH", c.challenge}
-	msgw <- &note
+	//var note = []interface{}{"AUTH", c.challenge}
+	var note = []byte(fmt.Sprintf("{\"AUTH\", %s", c.challenge))
+	msgwt <- note
 }
 
 // Get Filters returns the filters of the current client's subscription

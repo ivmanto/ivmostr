@@ -117,10 +117,10 @@ func EchoServer() {
 func TestWrite(t *testing.T) {
 
 	// create a message to send to the echo server
-	message := []interface{}{"hello world"}
+	message := []byte("hello world")
 
 	// write the message to the client
-	msgw <- &message
+	msgwt <- message
 
 	// read the message from the echo server
 	err = conn.ReadJSON(&rslmsg)
