@@ -24,7 +24,7 @@ import (
 var (
 	NewEvent     = make(chan *gn.Event)
 	done         = make(chan struct{})
-	ticker       = time.NewTicker(10 * time.Minute)
+	ticker       = time.NewTicker(240 * time.Second)
 	relay_access string
 	clientCldLgr *logging.Client
 	cclnlgr      *logging.Logger
@@ -317,18 +317,24 @@ func (s *Session) keepClientsPoolClean() {
 	for {
 		select {
 		case t := <-ticker.C:
-			fmt.Printf("...>>> cleaning the Clients Pool at %v <<< ...\n", t)
+			s.ilgr.Printf("...>>> cleaning the Clients Pool at %v <<< ...\n", t)
 			for _, c := range s.clients {
-				errc := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Time.Add(time.Now(), 1000*time.Millisecond))
-				if errc != nil {
-					fmt.Printf("[keepClientsPoolClean] Error [%v] while ping client [%v]:\n", c.IP, errc)
-					c.conn.Close()
-					continue
-				}
-				if c.Subscription_id == "" {
+
+				s.ilgr.Printf("...>>>... processing client [%d: %v]\n", c.id, c.IP)
+
+				// check for dummy subscriptions
+				if c.Subscription_id == "" || len(c.Filetrs) < 1 {
 					_ = c.conn.Close()
 					s.Remove(c)
+					continue
 				}
+
+				errc := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Time.Add(time.Now(), 1000*time.Millisecond))
+				if errc != nil {
+					s.ilgr.Printf("[keepClientsPoolClean] Error [%v] while ping client [%v]:\n", c.IP, errc)
+					c.conn.Close()
+				}
+
 			}
 		case <-done:
 			return
