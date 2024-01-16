@@ -219,7 +219,7 @@ func (s *Session) TuneClientConn(client *Client) {
 
 		fmt.Printf("[SetPingHandler] Ping message received as: %v", appData)
 		// Send a pong message back to the client
-		err := client.conn.WriteMessage(websocket.PongMessage, []byte("pong"))
+		err := client.conn.WriteControl(websocket.PongMessage, []byte("pong"), twt)
 		if err != nil {
 			fmt.Println("Error sending pong message:", err)
 		}
