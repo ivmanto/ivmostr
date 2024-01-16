@@ -539,8 +539,10 @@ func (c *Client) SubscriptionSuplier() error {
 func (c *Client) fetchAllFilters(ctx context.Context) error {
 
 	eg := errgroup.Group{}
-	for _, filter := range c.Filetrs {
+	for idx, filter := range c.Filetrs {
 		fltr := filter
+		c.lgr.WithFields(log.Fields{"method": "[fetchAllFilters]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": fltr, "idx": idx})
+
 		eg.Go(func() error {
 			return c.fetchData(fltr, &eg)
 		})
