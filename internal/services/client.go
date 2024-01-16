@@ -158,7 +158,7 @@ func (c *Client) writeT() error {
 				if err != nil {
 					errWM <- err
 				}
-				log.WithFields(log.Fields{"##_client": c.IP, "ts": time.Now().UnixNano(), "size": len(message)}).Info(message)
+				log.WithFields(log.Fields{"##_client": c.IP, "ts": time.Now().UnixNano(), "size": len(message)}).Info(string(message))
 
 			}
 		}(message)
