@@ -828,7 +828,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		//}
 
 		c.lgr.Printf("Filter components: %v", len(filter))
-
+		c.lgr.Printf("events-(struct): %v", events)
 		// Convert into []byte to be easy wrriten into the websocket channel
 		bEv, err := tools.ConvertStructToByte(events)
 		if err != nil {
@@ -839,6 +839,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		// sending []Events array as bytes to the writeT channel
 		msgwt <- bEv
 		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(events), "servedIn": time.Now().UnixMilli() - c.responseRate}).Info("Sent to writeT")
+		c.lgr.Panicf("events-(string): %v", string(bEv))
 
 		return nil
 	}()
