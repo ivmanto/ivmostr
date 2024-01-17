@@ -494,7 +494,122 @@ func (r *nostrRepo) GetEventsSinceUntil(limit int, since, until int64) ([]*gn.Ev
 	return events, nil
 }
 
-// GetEventsByFilter - returns a list of events that match the filter provided from a client subscription
+func (r *nostrRepo) GetLastNEvents(limit int) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events []*gn.Event
+		query  *firestore.DocumentIterator
+		ecnt   int
+	)
+
+	// Get a reference to the "events" collection
+	query = fsclient.Collection(r.events_collection).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
+
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 3 {
+				break
+			}
+			r.elgr.Printf("[GetLastNEvents] ERROR raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("[GetLastNEvents] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+
+		events = append(events, e)
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_all": "all_events", "limit": %d, "took": %d}`, len(events), limit, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetLastNEvents] no events found for the provided filter")
+	}
+
+	return events, nil
+}
+
+func (r *nostrRepo) GetEventsBtAuthorsAndKinds(authors []string, kinds []int, limit int, since, until int64) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events []*gn.Event
+		query  *firestore.DocumentIterator
+		ecnt   int
+	)
+
+	switch {
+	case since == 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("Kind", "in", kinds).Where("CreatedAt", "<", until).Limit(limit).Documents(*r.ctx)
+
+	case since > 0 && until == 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).Limit(limit).Documents(*r.ctx)
+
+	case since > 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Limit(limit).Documents(*r.ctx)
+
+	default:
+		// when both since and until are 0s.
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("Kind", "in", kinds).Limit(limit).Documents(*r.ctx)
+
+	}
+
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 3 {
+				break
+			}
+			r.elgr.Printf("[GetEventsBtAuthorsAndKinds] ERROR raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		e, err := r.transformTagMapIntoTAGS(doc)
+		if err != nil {
+			r.elgr.Printf("[GetEventsBtAuthorsAndKinds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			continue
+		}
+
+		events = append(events, e)
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_all": "all_events", "limit": %d, "took": %d}`, len(events), limit, time.Now().UnixMilli()-ts)
+
+	r.ilgr.Printf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetEventsBtAuthorsAndKinds] no events found for the provided filter")
+	}
+
+	return events, nil
+}
+
+// DEPRICATED  GetEventsByFilter - returns a list of events that match the filter provided from a client subscription
 func (r *nostrRepo) GetEventsByFilter(filter map[string]interface{}) ([]*gn.Event, error) {
 
 	// [ ]: review ========= client per job ============

@@ -572,15 +572,15 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		//}
 		//==================================================================================================
 		var (
-			err             error
-			events, eventsC []*gn.Event
-			max_events      int
-			_since, _until  int64
-			fltl            int
+			err            error
+			events         []*gn.Event
+			max_events     int
+			_since, _until int64
 		)
 
-		lim, ok := filter["limit"].(float64)
-		if !ok {
+		// =================================== MAX_EVENTS ===============================================
+		lim, flt_limit := filter["limit"].(float64)
+		if !flt_limit {
 			max_events = c.session.cfg.GetDLV()
 		} else if lim == 0 || lim > 5000 {
 			// until the paging is implemented for paying clients OR always for public clients
@@ -592,173 +592,252 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		}
 
 		// =================================== SINCE - UNTIL ===============================================
-		if since, ok := filter["since"].(float64); !ok {
+		if since, flt_since := filter["since"].(float64); !flt_since {
 			_since = int64(0)
 		} else {
 			_since = int64(since)
 		}
-		if until, ok := filter["until"].(float64); !ok {
+		if until, flt_until := filter["until"].(float64); !flt_until {
 			_until = int64(0)
 		} else {
 			_until = int64(until)
 		}
 
-		// Parsing filter's lists
+		// =================================== Parse the filter list components ===========================
+		_, flt_authors := filter["authors"].([]interface{})
+		_, flt_ids := filter["ids"].([]interface{})
+		_, flt_kinds := filter["kinds"].([]interface{})
+		var flt_tags bool
 		for key, val := range filter {
-
-			events = []*gn.Event{}
-
-			switch {
-			case key == "authors":
-
-				c.lgr.Printf("Filter authors:%v", val)
-
-				var (
-					authors  []interface{}
-					_authors []string
-				)
-
-				authors, ok = filter["authors"].([]interface{})
-				if !ok {
-					return fmt.Errorf("Wrong filter format used! Authors are not a list")
-				}
-
-				for _, auth := range authors {
-					_auth, ok := auth.(string)
-					if ok {
-						_authors = append(_authors, _auth)
-					}
-				}
-
-				if len(_authors) > 30 {
-					_authors = _authors[:30]
-				}
-
-				_events, err := c.repo.GetEventsByAuthors(_authors, max_events, _since, _until)
-				if err != nil {
-					c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
-					return err
-				}
-				events = append(events, _events...)
-
-			case key == "ids":
-
-				c.lgr.Printf("Filter ids:%v", val)
-
-				var (
-					ids  []interface{}
-					_ids []string
-				)
-
-				ids, ok = filter["ids"].([]interface{})
-				if !ok {
-					return fmt.Errorf("Wrong filter format used! Ids are not a list")
-				}
-
-				for _, id := range ids {
-					_id, ok := id.(string)
-					if ok {
-						_ids = append(_ids, _id)
-					}
-				}
-
-				if len(_ids) > 30 {
-					_ids = _ids[:30]
-				}
-
-				_events, err := c.repo.GetEventsByIds(_ids, max_events, _since, _until)
-				if err != nil {
-					c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
-					return err
-				}
-				events = append(events, _events...)
-
-			case key == "kinds":
-
-				c.lgr.Printf("Filter kinds:%v", val)
-
-				var (
-					kinds  []interface{}
-					kindsi []int
-				)
-
-				kinds, ok = filter["kinds"].([]interface{})
-				if !ok {
-					return fmt.Errorf("Wrong filter format used! Kinds are not a list")
-				}
-
-				if len(kinds) > 30 {
-					kinds = kinds[:30]
-				}
-
-				for _, kind := range kinds {
-					_kind, ok := kind.(float64)
-					if ok {
-						kindsi = append(kindsi, int(_kind))
-					}
-				}
-
-				_events, err := c.repo.GetEventsByKinds(kindsi, max_events, _since, _until)
-				if err != nil {
-					c.lgr.Errorf("ERROR: %v from client %v subscription %v filter [kinds]: %v", err, c.IP, c.Subscription_id, filter)
-					return err
-				}
-				events = append(events, _events...)
-
-			case strings.HasPrefix(key, "#"):
-				// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
-				// case filter["#e"]: ...
-
-			default:
-				if key == "limit" {
-					c.lgr.Printf("max_events: %v, limit: %v", max_events, val)
-					continue
-				}
-				if _since > 0 && _until == 0 {
-					_events, err := c.repo.GetEventsSince(max_events, _since)
-					if err != nil {
-						c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
-						return err
-					}
-					events = append(events, _events...)
-
-				} else if _since > 0 && _until > 0 {
-
-					_events, err := c.repo.GetEventsSinceUntil(max_events, _since, _until)
-					if err != nil {
-						c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
-						return err
-					}
-					events = append(events, _events...)
-
-				} else {
-					c.lgr.Errorf("Customer [%v] Subscription [%v] Filter has unknown key: [%v]", c.IP, c.Subscription_id, filter)
-				}
-			}
-
-			// Count at the end of each filter component
-			fltl++
-			nbmrevents += len(events)
-
-			// Append to the final array of ebvents to be sent
-			if len(eventsC)+len(events) < max_events {
-				eventsC = append(eventsC, events...)
-			} else {
+			if strings.HasPrefix(key, "#") {
+				_, flt_tags = val.([]interface{})
 				break
 			}
 		}
 
-		c.lgr.Printf("Filter components: %v", fltl)
+		// =================================== FILTERS LIST ===============================================
+
+		// =================================== Select the query case for the filter =======================
+		//for key, val := range filter {
+
+		events = []*gn.Event{}
+
+		switch {
+		case flt_authors && !flt_ids && !flt_kinds && !flt_tags:
+			// ONLY "authors" list ...
+
+			var (
+				authors  []interface{}
+				_authors []string
+			)
+
+			authors, ok := filter["authors"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Authors are not a list")
+			}
+
+			if len(_authors) > 30 {
+				_authors = _authors[:30]
+			}
+
+			for _, auth := range authors {
+				_auth, ok := auth.(string)
+				if ok {
+					// nip-01: `The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.`
+					_auth = strings.ToLower(_auth)
+					if len(_auth) != 64 {
+						c.lgr.Errorf("Wrong author value! It must be 64 chars long. Skiping this value.")
+						continue
+					}
+					_authors = append(_authors, _auth)
+				}
+			}
+
+			events, err = c.repo.GetEventsByAuthors(_authors, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+		case flt_ids && !flt_authors && !flt_kinds && !flt_tags:
+			// ONLY "ids" list...
+
+			var (
+				ids  []interface{}
+				_ids []string
+			)
+
+			ids, ok := filter["ids"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Ids are not a list")
+			}
+
+			if len(_ids) > 30 {
+				_ids = _ids[:30]
+			}
+
+			for _, id := range ids {
+				_id, ok := id.(string)
+				if ok {
+					if len(_id) != 64 {
+						c.lgr.Errorf("Wrong ID value! It must be 64 chars long. Skiping this value.")
+						continue
+					}
+					_ids = append(_ids, _id)
+				}
+			}
+
+			events, err = c.repo.GetEventsByIds(_ids, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+		case flt_kinds && !flt_authors && !flt_ids && !flt_tags:
+			// ONLY "kinds" list ...
+
+			var (
+				kinds  []interface{}
+				kindsi []int
+			)
+
+			kinds, ok := filter["kinds"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
+			}
+
+			if len(kinds) > 30 {
+				kinds = kinds[:30]
+			}
+
+			for _, kind := range kinds {
+				_kind, ok := kind.(float64)
+				if ok {
+					kindsi = append(kindsi, int(_kind))
+				}
+			}
+
+			events, err = c.repo.GetEventsByKinds(kindsi, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter [kinds]: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+		case flt_tags && !flt_authors && !flt_ids && !flt_kinds:
+			// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
+			// case filter["#e"]: ...
+			// case filter["#p"]: ...
+
+		case flt_limit && !flt_tags && !flt_authors && !flt_ids && !flt_kinds:
+			// ANY EVENT from the last N (limit) events arrived
+
+			events, err = c.repo.GetLastNEvents(max_events)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+		case _since > 0 && _until == 0:
+			// ONLY Events since (newer than...) the required timestamp
+
+			events, err = c.repo.GetEventsSince(max_events, _since)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+		case _since > 0 && _until > 0:
+			// ONLYEvents between `since` and `until`
+
+			events, err = c.repo.GetEventsSinceUntil(max_events, _since, _until)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+		case flt_authors && flt_kinds && !flt_ids && !flt_tags:
+			// Combined filter about events from list of AUTHORS AND specified list of KINDS of the events
+
+			var (
+				authors  []interface{}
+				_authors []string
+				kinds    []interface{}
+				_kinds   []int
+			)
+
+			authors, ok := filter["authors"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Authors are not a list")
+			}
+
+			if len(_authors) > 30 {
+				_authors = _authors[:30]
+			}
+
+			for _, auth := range authors {
+				_auth, ok := auth.(string)
+				if ok {
+					// nip-01: `The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.`
+					_auth = strings.ToLower(_auth)
+					if len(_auth) != 64 {
+						c.lgr.Errorf("Wrong author value! It must be 64 chars long. Skiping this value.")
+						continue
+					}
+					_authors = append(_authors, _auth)
+				}
+			}
+
+			kinds, ok = filter["kinds"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
+			}
+
+			if len(kinds) > 30 {
+				kinds = kinds[:30]
+			}
+
+			for _, kind := range kinds {
+				_kind, ok := kind.(float64)
+				if ok {
+					_kinds = append(_kinds, int(_kind))
+				}
+			}
+
+			events, err = c.repo.GetEventsBtAuthorsAndKinds(_authors, _kinds, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+		default:
+			// ANT Other not implemented case of filter
+
+			c.lgr.Errorf("Customer [%v] Subscription [%v] Not implemented filter: [%v]", c.IP, c.Subscription_id, filter)
+		}
+
+		// Count at the end of each filter component
+		nbmrevents += len(events)
+
+		// // Append to the final array of ebvents to be sent
+		// if len(eventsC)+len(events) < max_events {
+		// 	eventsC = append(eventsC, events...)
+		// } else {
+		// 	break
+		// }
+		//}
+
+		c.lgr.Printf("Filter components: %v", len(filter))
 
 		// Convert into []byte to be easy wrriten into the websocket channel
-		bEv, err := tools.ConvertStructToByte(eventsC)
+		bEv, err := tools.ConvertStructToByte(events)
 		if err != nil {
+			c.lgr.Errorf("[fetchData] ERROR: while converting array of Events into slice of bytes: %v", err)
 			return err
 		}
 
 		// sending []Events array as bytes to the writeT channel
 		msgwt <- bEv
-		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(eventsC), "servedIn": time.Now().UnixMilli() - c.responseRate}).Info("Sent to writeT")
+		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(events), "servedIn": time.Now().UnixMilli() - c.responseRate}).Info("Sent to writeT")
 
 		return nil
 	}()
