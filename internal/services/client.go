@@ -153,7 +153,8 @@ func (c *Client) writeT() error {
 				c.lgr.Printf("[writeT] Stopping the writeT channel")
 			default:
 				mu.Lock()
-				err := c.conn.WriteMessage(websocket.TextMessage, message)
+				//err := c.conn.WriteMessage(websocket.TextMessage, message)
+				err := c.conn.WriteJSON(message)
 				mu.Unlock()
 				if err != nil {
 					errWM <- err
