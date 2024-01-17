@@ -22,7 +22,7 @@ import (
 )
 
 var (
-	NewEvent     = make(chan *gn.Event)
+	NewEvent     = make(chan *gn.Event, 100)
 	Exit         = make(chan struct{})
 	relay_access string
 	clientCldLgr *logging.Client
@@ -37,11 +37,11 @@ type Session struct {
 	clients []*Client
 	ns      sync.Map
 	bq      sync.Map
-	out     chan []byte
-	clgr    *logging.Logger
-	pool    *gopool.Pool
-	cfg     *config.ServiceConfig
-	Repo    nostr.NostrRepo
+	//out     chan []byte
+	clgr *logging.Logger
+	pool *gopool.Pool
+	cfg  *config.ServiceConfig
+	Repo nostr.NostrRepo
 }
 
 // NewSession creates a new WebSocket session.
@@ -56,9 +56,9 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	clgr := clientCldLgr.Logger("ivmostr-cnn")
 
 	session := Session{
-		ns:   sync.Map{},
-		bq:   sync.Map{},
-		out:  make(chan []byte, 1),
+		ns: sync.Map{},
+		bq: sync.Map{},
+		//out:  make(chan []byte, 1),
 		clgr: clgr,
 		pool: pool,
 		Repo: repo,

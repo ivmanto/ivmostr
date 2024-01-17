@@ -39,6 +39,8 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 
 	// multi-level array are not supported by firestore! It must be converted into a array of objects with string elements
 	ec := *e
+	// [ ]: Add extra field ExpireAt. The value of live should be different for public (7 days = 604800s) and paid versions(TBD???).
+	ec.SetExtra("ExpireAt", float64(ec.CreatedAt+604800))
 	var tgs gn.Tags = ec.Tags
 	ec.Tags = nil
 
