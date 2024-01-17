@@ -707,8 +707,11 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				// case filter["#e"]: ...
 
 			default:
+				if key == "limit" {
+					c.lgr.Printf("max_events: %v, limit: %v", max_events, val)
+					continue
+				}
 				if _since > 0 && _until == 0 {
-
 					_events, err := c.repo.GetEventsSince(max_events, _since)
 					if err != nil {
 						c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
@@ -726,12 +729,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 					events = append(events, _events...)
 
 				} else {
-					//events, err = c.repo.GetEventsByFilter(filter)
-					// if err != nil {
-					// 	c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-					// 	return err
-					// }
-					c.lgr.Errorf("Customer [%v] Subscription [%v] Filter is too complex: [%v]", c.IP, c.Subscription_id, filter)
+					c.lgr.Errorf("Customer [%v] Subscription [%v] Filter has unknown key: [%v]", c.IP, c.Subscription_id, filter)
 				}
 			}
 
