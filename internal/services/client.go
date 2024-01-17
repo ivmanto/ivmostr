@@ -636,8 +636,9 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Authors are not a list")
 			}
 
-			if len(_authors) > 30 {
-				_authors = _authors[:30]
+			// limit of the number of elements comes from Firestore query limit for the IN clause
+			if len(_authors) >= 30 {
+				_authors = _authors[:29]
 			}
 
 			for _, auth := range authors {
@@ -672,8 +673,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Ids are not a list")
 			}
 
-			if len(_ids) > 30 {
-				_ids = _ids[:30]
+			if len(_ids) >= 30 {
+				_ids = _ids[:29]
 			}
 
 			for _, id := range ids {
@@ -706,8 +707,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
 			}
 
-			if len(kinds) > 30 {
-				kinds = kinds[:30]
+			if len(kinds) >= 30 {
+				kinds = kinds[:29]
 			}
 
 			for _, kind := range kinds {
@@ -770,8 +771,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Authors are not a list")
 			}
 
-			if len(_authors) > 30 {
-				_authors = _authors[:30]
+			if len(_authors) >= 30 {
+				_authors = _authors[:29]
 			}
 
 			for _, auth := range authors {
@@ -792,8 +793,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
 			}
 
-			if len(kinds) > 30 {
-				kinds = kinds[:30]
+			if len(kinds) >= 30 {
+				kinds = kinds[:29]
 			}
 
 			for _, kind := range kinds {
