@@ -517,19 +517,19 @@ func (c *Client) SubscriptionSuplier() error {
 	ctx := context.Background()
 	responseRate = time.Now().UnixMilli()
 
-	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id})
+	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id}).Info("Starting SubscriptionSuplier")
 
 	err := c.fetchAllFilters(ctx)
 	if err != nil {
 		return err
 	}
 
-	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "fetchAllFilters", "took": time.Now().UnixMilli() - responseRate})
+	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "fetchAllFilters", "took": time.Now().UnixMilli() - responseRate}).Info("fetchAllFilters completed")
 
 	// Send EOSE
 	c.writeEOSE(c.Subscription_id)
 
-	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "writeEOSE", "took": time.Now().UnixMilli() - responseRate})
+	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "writeEOSE", "took": time.Now().UnixMilli() - responseRate}).Info("writeEOSE completed")
 
 	payloadV := fmt.Sprintf(`{"method":"[SubscriptionSuplier]","client":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, time.Now().UnixMilli()-responseRate)
 	leop.Payload = payloadV
@@ -544,7 +544,7 @@ func (c *Client) fetchAllFilters(ctx context.Context) error {
 	eg := errgroup.Group{}
 	for idx, filter := range c.Filetrs {
 		fltr := filter
-		c.lgr.WithFields(log.Fields{"method": "[fetchAllFilters]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": fltr, "##idx": idx})
+		c.lgr.WithFields(log.Fields{"method": "[fetchAllFilters]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": fltr, "##idx": idx}).Info("Parsing filters")
 
 		eg.Go(func() error {
 			return c.fetchData(fltr, &eg)
