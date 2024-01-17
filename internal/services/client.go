@@ -758,6 +758,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 
 		// sending []Events array as bytes to the writeT channel
 		msgwt <- bEv
+		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(eventsC), "servedIn": time.Now().UnixMilli() - responseRate}).Info("Sent to writeT")
 
 		return nil
 	}()
