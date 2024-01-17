@@ -22,7 +22,7 @@ var (
 	nbmrevents int
 	//stop       = make(chan struct{})
 	//msgw         = make(chan *[]interface{})
-	msgwt        = make(chan []byte)
+	msgwt        = make(chan []byte, 20)
 	mu           sync.Mutex
 	leop         = logging.Entry{Severity: logging.Info, Payload: ""}
 	responseRate = int64(0)
@@ -143,6 +143,7 @@ func (c *Client) writeT() error {
 	var (
 		errWM = make(chan error)
 		quit  = make(chan struct{})
+		emsg  []byte
 	)
 	defer close(quit)
 
@@ -157,9 +158,10 @@ func (c *Client) writeT() error {
 				err := c.conn.WriteJSON(message)
 				mu.Unlock()
 				if err != nil {
+					emsg = message
 					errWM <- err
 				}
-				log.WithFields(log.Fields{"##_client": c.IP, "ts": time.Now().UnixNano(), "size": len(message)}).Info(string(message))
+				log.WithFields(log.Fields{"status": "successful write", "client": c.IP, "ts": time.Now().UnixNano(), "size": len(message)}).Info(string(message))
 
 			}
 		}(message)
@@ -167,8 +169,8 @@ func (c *Client) writeT() error {
 
 	for err := range errWM {
 		if err != nil {
-			log.WithFields(log.Fields{"[writeT] customer": c.IP, "Error": err}).Info("returning error to handle func")
-			// Perform error handling or logging here
+			log.WithFields(log.Fields{"status": "error write", "client": c.IP, "Error": err}).Info(string(emsg))
+			quit <- struct{}{}
 			return err
 		} else {
 			return nil
