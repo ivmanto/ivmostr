@@ -22,10 +22,9 @@ var (
 	nbmrevents int
 	//stop       = make(chan struct{})
 	//msgw         = make(chan *[]interface{})
-	msgwt        = make(chan []byte, 20)
-	mu           sync.Mutex
-	leop         = logging.Entry{Severity: logging.Info, Payload: ""}
-	responseRate = int64(0)
+	msgwt = make(chan []byte, 20)
+	mu    sync.Mutex
+	leop  = logging.Entry{Severity: logging.Info, Payload: ""}
 )
 
 type Client struct {
@@ -43,6 +42,7 @@ type Client struct {
 	errorRate       map[string]int
 	IP              string
 	Authed          bool
+	responseRate    int64
 }
 
 func (c *Client) Name() string {
@@ -515,7 +515,7 @@ func (c *Client) confirmURLDomainMatch(relayURL string) bool {
 func (c *Client) SubscriptionSuplier() error {
 	nbmrevents = 0
 	ctx := context.Background()
-	responseRate = time.Now().UnixMilli()
+	c.responseRate = time.Now().UnixMilli()
 
 	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id}).Info("Starting SubscriptionSuplier")
 
@@ -524,14 +524,14 @@ func (c *Client) SubscriptionSuplier() error {
 		return err
 	}
 
-	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "fetchAllFilters", "took": time.Now().UnixMilli() - responseRate}).Info("fetchAllFilters completed")
+	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "fetchAllFilters", "took": time.Now().UnixMilli() - c.responseRate}).Info("fetchAllFilters completed")
 
 	// Send EOSE
 	c.writeEOSE(c.Subscription_id)
 
-	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "writeEOSE", "took": time.Now().UnixMilli() - responseRate}).Info("writeEOSE completed")
+	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "writeEOSE", "took": time.Now().UnixMilli() - c.responseRate}).Info("writeEOSE completed")
 
-	payloadV := fmt.Sprintf(`{"method":"[SubscriptionSuplier]","client":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, time.Now().UnixMilli()-responseRate)
+	payloadV := fmt.Sprintf(`{"method":"[SubscriptionSuplier]","client":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, time.Now().UnixMilli()-c.responseRate)
 	leop.Payload = payloadV
 	cclnlgr.Log(leop)
 
@@ -758,7 +758,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 
 		// sending []Events array as bytes to the writeT channel
 		msgwt <- bEv
-		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(eventsC), "servedIn": time.Now().UnixMilli() - responseRate}).Info("Sent to writeT")
+		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(eventsC), "servedIn": time.Now().UnixMilli() - c.responseRate}).Info("Sent to writeT")
 
 		return nil
 	}()
