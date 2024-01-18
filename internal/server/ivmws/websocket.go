@@ -23,7 +23,7 @@ var (
 	//repo    nostr.NostrRepo
 	//lrepo          nostr.ListRepo
 	mu             sync.Mutex
-	trustedOrigins = []string{"nostr.ivmanto.dev", "relay.ivmanto.dev", "localhost", "127.0.0.1", "nostr.watch", "nostr.info", "nostr.band", "nostrcheck.me", "nostr"}
+	trustedOrigins = []string{"nostr.ivmanto.dev", "relay.ivmanto.dev", "localhost", "127.0.0.1", "nostr.watch", "nostr.info", "nostr.band", "nostrcheck.me", "flycat.club", "nostr"}
 )
 
 type WSHandler struct {

@@ -151,7 +151,7 @@ func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	tools.IPCount[client.IP]--
 	s.mu.Unlock()
-	log.Printf("[rmv]: - %d active clients, %d connected\n", len(s.clients), len(s.clients))
+	log.Printf("[rmv]: - %d active clients (s.clients), %d connected (IPCount)\n", len(s.clients), len(s.clients))
 }
 
 // Give code-word as name to the client connection
@@ -210,7 +210,8 @@ func (s *Session) TuneClientConn(client *Client) {
 	}
 
 	client.conn.SetCloseHandler(func(code int, text string) error {
-		s.Remove(client)
+		go s.Remove(client)
+		client.conn.Close()
 		client.lgr.Printf("[close]: [-] Closing client %v, code: %v, text: %v", client.IP, code, text)
 		return nil
 	})
@@ -230,6 +231,8 @@ func (s *Session) TuneClientConn(client *Client) {
 	client.conn.SetPongHandler(func(appData string) error {
 		log.Printf("[SetPongHandler] Pong message received as: %v", appData)
 		if strings.ToLower(appData) != "pong" {
+			go s.Remove(client)
+			client.conn.Close()
 			return fmt.Errorf(appData)
 		}
 		return nil

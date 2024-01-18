@@ -819,14 +819,6 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		// Count at the end of each filter component
 		nbmrevents += len(events)
 
-		// // Append to the final array of ebvents to be sent
-		// if len(eventsC)+len(events) < max_events {
-		// 	eventsC = append(eventsC, events...)
-		// } else {
-		// 	break
-		// }
-		//}
-
 		c.lgr.Printf("Filter components: %v", len(filter))
 		c.lgr.Printf("events-(struct): %v", events)
 		c.lgr.WithFields(log.Fields{"events-(struct)": events}).Debugf("Sending events (struct) to writeT:%v", events)
