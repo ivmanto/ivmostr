@@ -2,6 +2,7 @@ package ivmws
 
 import (
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -31,11 +32,7 @@ type WSHandler struct {
 	cfg  *config.ServiceConfig
 }
 
-func NewWSHandler(
-	repo nostr.NostrRepo,
-	cfg *config.ServiceConfig,
-
-) *WSHandler {
+func NewWSHandler(repo nostr.NostrRepo, cfg *config.ServiceConfig) *WSHandler {
 
 	hndlr := WSHandler{
 		repo: repo,
@@ -45,7 +42,7 @@ func NewWSHandler(
 	// Setting up the websocket session and pool
 	workers := cfg.PoolMaxWorkers
 	queue := cfg.PoolQueue
-	spawn := 1
+	spawn := 2
 	pool = gopool.NewPool(workers, queue, spawn)
 	session = services.NewSession(pool, repo, cfg)
 
@@ -87,6 +84,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 		Subprotocols:      []string{"nostr"},
 		ReadBufferSize:    0,
 		WriteBufferSize:   0,
+		WriteBufferPool:   &sync.Pool{},
 		EnableCompression: false,
 		CheckOrigin: func(r *http.Request) bool {
 			for _, v := range trustedOrigins {
@@ -104,9 +102,14 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = pool.ScheduleTimeout(time.Millisecond, func() {
+	poolerr := pool.ScheduleTimeout(time.Millisecond, func() {
 		handle(conn, ip, org, hst)
 	})
+	if poolerr != nil {
+		l.Errorf("Error finding free go-routine for 1 ms. Error:%v", poolerr)
+		w.WriteHeader(503)
+		_, _ = w.Write([]byte("server not available"))
+	}
 }
 
 func handle(conn *websocket.Conn, ip, org, hst string) {
@@ -122,14 +125,7 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 	// Schedule Client connection handling into a goroutine from the pool
 	pool.Schedule(func() {
 
-		//fmt.Printf("[handle] [+] client IP %s join the pool of  %d active connections\n", ip, len(tools.IPCount))
-
 		if err := client.ReceiveMsg(); err != nil {
-			// if strings.Contains(err.Error(), "websocket: close 1001") || strings.Contains(err.Error(), "websocket: close 1000") {
-			// 	fmt.Printf("[wsh] ERROR: client %s closed the connection. %v\n", client.IP, err)
-			// } else {
-			// 	fmt.Printf("[wsh] ERROR: client-side %s (HandleWebSocket): %v\n", client.IP, err)
-			// }
 
 			session.Remove(client)
 			conn.Close()

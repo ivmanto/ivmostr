@@ -69,11 +69,6 @@ func (c *Client) ReceiveMsg() error {
 		}
 	}()
 
-	// err := c.write()
-	// if err != nil {
-	// 	errRM <- fmt.Errorf("Error while writing message: %v", err)
-	// }
-
 	err := c.writeT()
 	if err != nil {
 		errRM <- fmt.Errorf("Error while writing message: %v", err)
@@ -89,55 +84,6 @@ func (c *Client) ReceiveMsg() error {
 	}
 	return nil
 }
-
-// func (c *Client) write() error {
-// 	errWM := make(chan error)
-// 	var msg *[]interface{}
-//
-// 	go func() {
-// 		//mutex := sync.Mutex{}
-// 		for {
-// 			select {
-// 			case <-stop:
-// 				c.lgr.Printf("[write] Stopping the write channel")
-// 				return
-// 			default:
-// 				msg = <-msgw
-//
-// 				if msg != nil {
-// 					tsw := time.Now().UnixMilli()
-//
-// 					mu.Lock()
-// 					err := c.conn.WriteJSON(msg)
-// 					mu.Unlock()
-// 					if err != nil {
-// 						errWM <- err
-// 					}
-//
-// 					// [ ]: Remove the next 2 lines for production performance
-// 					lb := tools.CalcLenghtInBytes(msg)
-// 					c.lgr.Printf(" ## %d bytes sent to [%s] over websocket in %d ms", lb, c.IP, time.Now().UnixMilli()-tsw)
-//
-// 					log.Printf("\n\n## [write] customer [%s] SubscriptionID: %s after-write-to-ws: %d ms\n", c.IP, c.Subscription_id, time.Now().UnixMilli()-responseRate)
-//
-// 					msg = nil
-// 				}
-// 				errWM <- nil
-// 			}
-// 		}
-// 	}()
-//
-// 	for err := range errWM {
-// 		if err != nil {
-// 			log.Println("[write] Error received: ", err)
-// 			// Perform error handling or logging here
-// 			return err
-// 		} else {
-// 			return nil
-// 		}
-// 	}
-// 	return nil
-// }
 
 func (c *Client) writeT() error {
 	var (
@@ -172,8 +118,6 @@ func (c *Client) writeT() error {
 			log.WithFields(log.Fields{"status": "error write", "client": c.IP, "Error": err}).Info(string(emsg))
 			quit <- struct{}{}
 			return err
-		} else {
-			return nil
 		}
 	}
 	return nil
