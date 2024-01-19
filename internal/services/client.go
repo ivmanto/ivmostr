@@ -124,7 +124,9 @@ func (c *Client) dispatcher() error {
 	)
 
 	for msg := range inmsg {
+
 		c.lgr.Debugf("[disp] received message type:%d", msg[0].(int))
+
 		if len(msg[1].([]byte)) == 0 {
 			c.lgr.Debug("[disp] The received message has null payload!")
 			continue
@@ -144,8 +146,16 @@ func (c *Client) dispatcher() error {
 			if string(msg[1].([]byte)[:1]) == "[" {
 				go c.dispatchNostrMsgs(&nostr_msg)
 			} else {
-				c.lgr.Debugf("[disp] Text message paylod is: %s", string(msg[1].([]byte)))
-				c.writeCustomNotice("not a nostr message")
+				txtmsg := string(msg[1].([]byte))
+				if txtmsg == "ping" {
+					err := c.conn.WriteControl(websocket.PongMessage, []byte("pong"), time.Now().Add(time.Second))
+					if err != nil {
+						c.lgr.Errorf("[disp] Error sending pong message:%v", err)
+					}
+				} else {
+					c.lgr.Debugf("[disp] Text message paylod is: %s", txtmsg)
+					c.writeCustomNotice("not a nostr message")
+				}
 			}
 		case websocket.BinaryMessage:
 			c.lgr.Debug("[disp] received binary message! Processing not implemented")
