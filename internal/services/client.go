@@ -70,6 +70,7 @@ func (c *Client) ReceiveMsg() error {
 		if err != nil {
 			if err != io.EOF {
 				c.lgr.Errorf("client %v ...(ReadMessage)... returned error: %v", c.IP, err)
+				go c.session.Remove(c)
 				return err
 			}
 		}
