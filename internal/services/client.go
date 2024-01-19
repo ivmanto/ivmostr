@@ -67,6 +67,7 @@ func (c *Client) ReceiveMsg() error {
 	for {
 		mt, p, err := c.conn.ReadMessage()
 		if err != nil {
+			c.lgr.Debugf("...(ReadMessage)... returned error: %v", err)
 			if read_err_cnt++; read_err_cnt > 10 {
 				return err
 			}
