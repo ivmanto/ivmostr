@@ -3,11 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
@@ -61,12 +63,13 @@ func (c *Client) ReceiveMsg() error {
 		errRM <- c.dispatcher()
 	}()
 
+	defer c.conn.Close()
+
 	for {
 		mt, p, err := c.conn.ReadMessage()
 		if err != nil {
-			c.lgr.Debugf("...(ReadMessage)... returned error: %v; Message Type: %d", err, mt)
-			if mt == websocket.CloseMessage {
-				c.conn.Close()
+			if err != io.EOF {
+				c.lgr.Errorf("client %v ...(ReadMessage)... returned error: %v", c.IP, err)
 				return err
 			}
 		}
@@ -126,6 +129,14 @@ func (c *Client) dispatcher() error {
 
 		switch msg[0].(int) {
 		case websocket.TextMessage:
+
+			if !utf8.Valid(msg[1].([]byte)) {
+				_ = c.conn.WriteControl(websocket.CloseMessage,
+					websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, ""),
+					time.Time{})
+				c.lgr.Debugf("[disp] The received message is invalid utf8")
+			}
+
 			nostr_msg := msg[1].([]byte)
 			if string(msg[1].([]byte)[:1]) == "[" {
 				go c.dispatchNostrMsgs(&nostr_msg)
@@ -143,9 +154,9 @@ func (c *Client) dispatcher() error {
 			return fmt.Errorf("Client closing the connection with:%v", msgstr)
 
 		case websocket.PingMessage:
-			c.lgr.Debugf("[disp] Client %v sent PING message:%v", c.IP, string(msg[1].([]byte)))
+			c.lgr.Debugf("[disp] Client %v sent PING message (mt = 9):%v", c.IP, string(msg[1].([]byte)))
 		case websocket.PongMessage:
-			c.lgr.Debugf("[disp] Received (pong?) message %v from client %v", string(msg[1].([]byte)), c.IP)
+			c.lgr.Debugf("[disp] Client %v received PONG message (mt=10) %v", c.IP, string(msg[1].([]byte)))
 		default:
 			c.lgr.Debugf("[disp] Unknown message type: %v", msg[0].(int))
 		}
