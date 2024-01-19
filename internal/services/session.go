@@ -179,7 +179,7 @@ func (s *Session) remove(client *Client) bool {
 		//delete(s.ns, client.name)
 	}
 
-	i := sort.Search(len(s.clients), func(i int) bool {
+	i := sort.Search(len(s.clients)-1, func(i int) bool {
 		return s.clients[i].id >= client.id
 	})
 	if i >= len(s.clients) {

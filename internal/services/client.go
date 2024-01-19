@@ -166,29 +166,33 @@ func (c *Client) dispatcher() error {
 }
 
 func (c *Client) dispatchNostrMsgs(msg *[]byte) {
-	var err error
-	nmsg := []interface{}{*msg}
+	var (
+		err  error
+		cmsg []interface{} = []interface{}{*msg}
+	)
 
-	switch string(nmsg[0].([]byte)) {
+	switch cmsg[0].(string) {
 	case "EVENT":
-		err = c.handlerEventMsgs(&nmsg)
+		err = c.handlerEventMsgs(&cmsg)
 
 	case "REQ":
-		err = c.handlerReqMsgs(&nmsg)
+		err = c.handlerReqMsgs(&cmsg)
 
 	case "CLOSE":
-		err = c.handlerCloseSubsMsgs(&nmsg)
+		err = c.handlerCloseSubsMsgs(&cmsg)
 
 	case "AUTH":
-		err = c.handlerAuthMsgs(&nmsg)
+		err = c.handlerAuthMsgs(&cmsg)
 
 	default:
-		log.Printf("[dispatchNostrMsgs] Unknown message: %s", string(*msg))
+		log.Printf("[dispatchNostrMsgs] Unknown message: %s", cmsg[0].(string))
 		c.writeCustomNotice("Error: invalid format of the received message")
 	}
+
 	if err != nil {
-		c.lgr.Errorf("[dispatchNostrMsgs] Error: %v; received while dispatching nostr message type: %v", err, string(nmsg[0].([]byte)))
+		c.lgr.Errorf("[dispatchNostrMsgs] Error: %v; received while dispatching nostr message type: %v", err, cmsg[0].(string))
 	}
+
 }
 
 // ****************************** Messages types Handlers ***********************************************
