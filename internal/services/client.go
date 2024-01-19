@@ -56,6 +56,8 @@ func (c *Client) Name() string {
 
 func (c *Client) ReceiveMsg() error {
 
+	c.lgr.Level = log.DebugLevel
+
 	go func() {
 		errRM <- c.writeT()
 	}()
@@ -74,6 +76,7 @@ func (c *Client) ReceiveMsg() error {
 				return err
 			}
 		}
+		c.lgr.Debugf("read_status:%s, client:%s, message_type:%d, size:%d, ts:%d", "success", c.IP, mt, len(p), time.Now().UnixNano())
 		inmsg <- []interface{}{mt, p}
 	}
 }
@@ -100,15 +103,14 @@ func (c *Client) writeT() error {
 					emsg = message
 					errWM <- err
 				}
-				log.WithFields(log.Fields{"status": "successful write", "client": c.IP, "ts": time.Now().UnixNano(), "size": len(message)}).Info(string(message))
-
+				c.lgr.Debugf("write_status:%s, client:%s, ts:%d, size:%d", "success", c.IP, time.Now().UnixNano(), len(message))
 			}
 		}(message)
 	}
 
 	for err := range errWM {
 		if err != nil {
-			log.WithFields(log.Fields{"status": "error write", "client": c.IP, "Error": err}).Info(string(emsg))
+			c.lgr.Debugf("write_status:%s, client:%s, ts:%d, size: %d, error:%v", "failed", c.IP, time.Now().UnixNano(), len(emsg), err)
 			quit <- struct{}{}
 			return err
 		}
