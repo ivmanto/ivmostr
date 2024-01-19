@@ -151,10 +151,13 @@ func (s *Session) Remove(client *Client) {
 	}
 
 	// Only remove from IPCount if removed from the session
-	s.mu.Lock()
-	tools.IPCount[client.IP]--
-	s.mu.Unlock()
-	log.Printf("[rmv]: - %d active clients (s.clients), %d connected (IPCount)\n", len(s.clients), len(tools.IPCount))
+	ip := client.IP
+	if ip != "" && tools.IPCount[ip] > 0 {
+		s.mu.Lock()
+		tools.IPCount[ip]--
+		s.mu.Unlock()
+		log.Printf("[rmv]: - %d active clients (s.clients), %d connected (IPCount)\n", len(s.clients), len(tools.IPCount))
+	}
 }
 
 // Give code-word as name to the client connection

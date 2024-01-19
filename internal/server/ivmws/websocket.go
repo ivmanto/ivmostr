@@ -129,13 +129,3 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 		}
 	})
 }
-
-// Handling clients' IP addresses
-func RemoveIPCount(ip string) {
-	if ip != "" && tools.IPCount[ip] > 0 {
-		mu.Lock()
-		tools.IPCount[ip]--
-		mu.Unlock()
-		//fmt.Printf("[wsh] [-] Closing client IP %s decreased active connections to %d\n", ip, tools.IPCount[ip])
-	}
-}
