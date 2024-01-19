@@ -128,8 +128,7 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 			l.Debugf("[handle] ReceiveMsg got an error: %v", err)
 		}
 		session.Remove(client)
-		conn.Close()
-		return
+		_ = conn.Close()
 	})
 }
 

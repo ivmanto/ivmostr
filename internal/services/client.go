@@ -52,9 +52,6 @@ func (c *Client) Name() string {
 }
 
 func (c *Client) ReceiveMsg() error {
-	var (
-		read_err_cnt int
-	)
 
 	go func() {
 		errRM <- c.writeT()
@@ -67,12 +64,11 @@ func (c *Client) ReceiveMsg() error {
 	for {
 		mt, p, err := c.conn.ReadMessage()
 		if err != nil {
-			c.lgr.Debugf("...(ReadMessage)... returned error: %v", err)
-			if read_err_cnt++; read_err_cnt > 10 {
+			c.lgr.Debugf("...(ReadMessage)... returned error: %v; Message Type: %d", err, mt)
+			if mt == websocket.CloseMessage {
+				c.conn.Close()
 				return err
 			}
-			read_err_cnt = 0
-			continue
 		}
 		inmsg <- []interface{}{mt, p}
 	}
