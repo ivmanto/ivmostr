@@ -169,7 +169,7 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 	var err error
 	nmsg := []interface{}{*msg}
 
-	switch nmsg[0] {
+	switch string(nmsg[0].([]byte)) {
 	case "EVENT":
 		err = c.handlerEventMsgs(&nmsg)
 
@@ -186,9 +186,9 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 		log.Printf("[dispatchNostrMsgs] Unknown message: %s", string(*msg))
 		c.writeCustomNotice("Error: invalid format of the received message")
 	}
-
-	c.lgr.Errorf("[dispatchNostrMsgs] Error: %v; received while dispatching nostr message type: %v", err, nmsg[0])
-
+	if err != nil {
+		c.lgr.Errorf("[dispatchNostrMsgs] Error: %v; received while dispatching nostr message type: %v", err, string(nmsg[0].([]byte)))
+	}
 }
 
 // ****************************** Messages types Handlers ***********************************************
