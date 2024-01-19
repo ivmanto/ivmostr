@@ -7,7 +7,6 @@ import (
 	"io"
 	"math/rand"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -210,12 +209,7 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 func convertToJSON(payload []byte) ([]interface{}, error) {
 	var imsg []interface{}
 
-	s, err := strconv.Unquote(string(payload))
-	if err != nil {
-		return nil, err
-	}
-
-	err = json.Unmarshal([]byte(s), &imsg)
+	err := json.Unmarshal(payload, &imsg)
 	if err != nil {
 		return nil, err
 	}
