@@ -2,10 +2,12 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -167,41 +169,57 @@ func (c *Client) dispatcher() error {
 
 func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 	var (
-		err  error
-		cmsg []interface{}
+		err error
 	)
 
-	cmsg = []interface{}{*msg}
-
-	elem0, ok := cmsg[0].([]byte)
-	if !ok {
-		c.lgr.Errorf("[dispatchNostrMsgs] Client %v; Error converting the element 0 [%v] of the nostr message.", c.IP, elem0)
+	jmsg, err := convertToJSON(*msg)
+	if err != nil {
+		c.lgr.Errorf("[dispatchNostrMsgs] provided payload [%s] is not a valid JSON. Error: %v", string(*msg), err)
 		return
 	}
 
-	switch string(elem0) {
+	key, ok := jmsg[0].(string)
+	if !ok {
+		c.lgr.Errorf("[dispatchNostrMsgs] nostr message label [%v] is not a string!", jmsg[0])
+	}
+
+	switch key {
 	case "EVENT":
-		err = c.handlerEventMsgs(&cmsg)
+		err = c.handlerEventMsgs(&jmsg)
 
 	case "REQ":
-		err = c.handlerReqMsgs(&cmsg)
+		err = c.handlerReqMsgs(&jmsg)
 
 	case "CLOSE":
-		err = c.handlerCloseSubsMsgs(&cmsg)
+		err = c.handlerCloseSubsMsgs(&jmsg)
 
 	case "AUTH":
-		err = c.handlerAuthMsgs(&cmsg)
+		err = c.handlerAuthMsgs(&jmsg)
 
 	default:
-		log.Printf("[dispatchNostrMsgs] Unknown message: %s", string(elem0))
+		log.Printf("[dispatchNostrMsgs] Unknown message: %s", key)
 		c.writeCustomNotice("Error: invalid format of the received message")
 		return
 	}
 
 	if err != nil {
-		c.lgr.Errorf("[dispatchNostrMsgs] A handlers' function returned Error: %v;  message type: %v", err, string(elem0))
+		c.lgr.Errorf("[dispatchNostrMsgs] A handlers' function returned Error: %v;  message type: %v", err, key)
+	}
+}
+
+func convertToJSON(payload []byte) ([]interface{}, error) {
+	var imsg []interface{}
+
+	s, err := strconv.Unquote(string(payload))
+	if err != nil {
+		return nil, err
 	}
 
+	err = json.Unmarshal([]byte(s), &imsg)
+	if err != nil {
+		return nil, err
+	}
+	return imsg, nil
 }
 
 // ****************************** Messages types Handlers ***********************************************
