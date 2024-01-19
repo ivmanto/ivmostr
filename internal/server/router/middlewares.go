@@ -90,7 +90,7 @@ func rateLimiter(h http.Handler) http.Handler {
 
 		// Check if the IP address has made too many requests recently
 		if time.Since(rateLimit.Timestamp) < time.Second*30 {
-			if rateLimit.Requests >= 10 {
+			if rateLimit.Requests >= 2 {
 				// Block the request
 				w.WriteHeader(http.StatusTooManyRequests)
 				fmt.Fprintf(w, "Too many requests! If continue the ip will be blacklisted!")

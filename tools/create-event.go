@@ -1,30 +1,62 @@
 package tools
 
 import (
+	"encoding/hex"
+	"fmt"
 	"log"
+	"strings"
 
 	gn "github.com/nbd-wtf/go-nostr"
 )
 
+// key converter at: https://nostrcheck.me/converter/
+
 var (
-	//pk    = "nsec13353w4p7qclh5eymfzfm5j63gxl7t6n4cs5ztp8ktc0cmvxsc89sh8leuh"
-	pkhex = "8c6917543e063f7a649b4893ba4b5141bfe5ea75c4282584f65e1f8db0d0c1cb"
-	//pubK  = "npub1n7wru35n8wdrxup2hhnc8qm5tg0tekvltxjnajfgd0hww2sswt0qnwtcd7"
-	pubKh = "9f9c3e46933b9a33702abde78383745a1ebcd99f59a53ec9286beee72a1072de"
+	pk, pkhex string
+	// this is hex value of the pubKey of the ivmostr relay (the same for ivmanto nostr account) in server_info file
+
+	pubKh = "29480df94c3c41a416285e920cc3ba7887efe05fecb58e73a783231c426969b9"
 )
 
-// var tag1 = []string{"e", "", "wss://nostr.ivmanto.dev"}
-// var tag2 = []string{"a", "-", "wss://nostr.ivmanto.dev"}
+var tag1 = []string{"e", "", "wss://nostr.ivmanto.dev"}
+var tag2 = []string{"a", "-", "wss://nostr.ivmanto.dev"}
+var tag10 = []string{"a", "0:29480df94c3c41a416285e920cc3ba7887efe05fecb58e73a783231c426969b9", "wss://nostr.ivmanto.dev"}
 
 var tag3 = []string{"p", "91cf9..4e5ca", "wss://alicerelay.com/", "alice"}
 var tag4 = []string{"p", "14aeb..8dad4", "wss://bobrelay.com/nostr", "bob"}
 var tag5 = []string{"p", "612ae..e610f", "ws://carolrelay.com/ws", "carol"}
 
+var tag6 = []string{"relay", "wss://localhost"}
+var tag7 = []string{"challenge", "L0prKNsndshWxWp6"}
+
+var tag8 = []string{"r", "wss://relay.ivmanto.dev", "read"}
+var tag9 = []string{"r", "wss://nostr.ivmanto.dev", "write"}
+
 func PrintNewEvent() {
+	fmt.Println("Enter private key to sign event with:")
+
+	// Read a single line of input
+	_, err := fmt.Scan(&pk)
+	if err != nil {
+		fmt.Println("Error reading input:", err)
+		panic(err)
+	}
+	fmt.Println("You entered:", pk)
+
+	//publicKey := "npub199yqm72v83q6g93gt6fqesa60zr7lczlaj6cuua8sv33csnfdxusxlc3yg"
+	publicKeyNoSpaces := strings.Replace(pk, " ", "", -1)
+	publicKeyNoCaps := strings.ToLower(publicKeyNoSpaces)
+	publicKeyHex := hex.EncodeToString([]byte(publicKeyNoCaps))
+	fmt.Println(publicKeyHex)
+
+	//fmt.Println("hex:", pkhex)
+
+	//e := CreateEvent()
 	//e := CreateAuthEvent()
-	e := CreateNip65Event()
-	e.ID = e.GetID()
-	err := e.Sign(pkhex)
+	//e := CreateNip65Event()
+	e := CreateMetadataEvent()
+	//e.ID = e.GetID()
+	err = e.Sign(pk)
 	if err != nil {
 		log.Printf("Error signing event: %v", err)
 	}
@@ -38,13 +70,10 @@ func CreateEvent() *gn.Event {
 		PubKey:    pubKh,
 		CreatedAt: gn.Now(),
 		Kind:      3,
-		Tags:      []gn.Tag{tag3, tag4, tag5},
+		Tags:      []gn.Tag{tag1, tag3, tag4, tag5},
 		Content:   "My Contact List",
 	}
 }
-
-var tag6 = []string{"relay", "wss://localhost"}
-var tag7 = []string{"challenge", "L0prKNsndshWxWp6"}
 
 func CreateAuthEvent() *gn.Event {
 	return &gn.Event{
@@ -57,9 +86,6 @@ func CreateAuthEvent() *gn.Event {
 	}
 }
 
-var tag8 = []string{"r", "wss://relay.ivmanto.dev", "read"}
-var tag9 = []string{"r", "wss://nostr.ivmanto.dev", "write"}
-
 func CreateNip65Event() *gn.Event {
 	return &gn.Event{
 		ID:        "0",
@@ -68,5 +94,17 @@ func CreateNip65Event() *gn.Event {
 		Kind:      10002,
 		Tags:      []gn.Tag{tag8, tag9},
 		Content:   "Ivmanto relays List",
+	}
+}
+
+// This will create a metadata event for the author (pubkey) ivmanto/nostr.ivmanto.dev relay
+func CreateMetadataEvent() *gn.Event {
+	return &gn.Event{
+		ID:        "0",
+		PubKey:    "npub199yqm72v83q6g93gt6fqesa60zr7lczlaj6cuua8sv33csnfdxusxlc3yg",
+		CreatedAt: gn.Now(),
+		Kind:      0,
+		Tags:      []gn.Tag{tag2, tag10},
+		Content:   "{\"name\": \"ivmostr\", \"about\":\"wss://nostr.ivmanto.dev\", \"picture\": \"https://us-southeast-1.linodeobjects.com/dufflepud/uploads/dd7f1f98-e27a-4008-834e-e1426c060d04.jpg\"}",
 	}
 }

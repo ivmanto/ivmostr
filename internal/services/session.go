@@ -95,9 +95,12 @@ func (s *Session) Register(conn *websocket.Conn, ip string) *Client {
 	}
 
 	client.lgr = &log.Logger{
-		Out:       os.Stdout,
-		Level:     log.DebugLevel,
-		Formatter: &log.JSONFormatter{},
+		Out:   os.Stdout,
+		Level: log.DebugLevel,
+		Formatter: &log.JSONFormatter{
+			DisableTimestamp:  true,
+			DisableHTMLEscape: true,
+		},
 	}
 
 	s.mu.Lock()
@@ -151,7 +154,7 @@ func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	tools.IPCount[client.IP]--
 	s.mu.Unlock()
-	log.Printf("[rmv]: - %d active clients (s.clients), %d connected (IPCount)\n", len(s.clients), len(s.clients))
+	log.Printf("[rmv]: - %d active clients (s.clients), %d connected (IPCount)\n", len(s.clients), len(tools.IPCount))
 }
 
 // Give code-word as name to the client connection
@@ -169,11 +172,12 @@ func (s *Session) randName() string {
 // mutex must be held.
 func (s *Session) remove(client *Client) bool {
 	if _, ok := s.ns.Load(client.name); !ok {
-		return false
+		//return false
+		log.Printf("[remove] Error getting client name")
+	} else {
+		s.ns.Delete(client.name)
+		//delete(s.ns, client.name)
 	}
-
-	s.ns.Delete(client.name)
-	//delete(s.ns, client.name)
 
 	i := sort.Search(len(s.clients), func(i int) bool {
 		return s.clients[i].id >= client.id

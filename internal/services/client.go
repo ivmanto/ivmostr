@@ -23,6 +23,8 @@ var (
 	//stop       = make(chan struct{})
 	//msgw         = make(chan *[]interface{})
 	msgwt = make(chan []byte, 20)
+	inmsg = make(chan []interface{}, 5)
+	errRM = make(chan error)
 	mu    sync.Mutex
 	leop  = logging.Entry{Severity: logging.Info, Payload: ""}
 )
@@ -50,39 +52,29 @@ func (c *Client) Name() string {
 }
 
 func (c *Client) ReceiveMsg() error {
-	var message []interface{}
-	errRM := make(chan error)
+	var (
+		read_err_cnt int
+	)
 
 	go func() {
-		for {
-			err := c.conn.ReadJSON(&message)
-			if err != nil {
-				errRM <- fmt.Errorf("Error while reading message: %v", err)
-				continue
-			}
-			// sending the message to the write channel
-			err = c.dispatcher(&message)
-			if err != nil {
-				errRM <- fmt.Errorf("Error while classifing a message: %v", err)
-				continue
-			}
-		}
+		errRM <- c.writeT()
 	}()
 
-	err := c.writeT()
-	if err != nil {
-		errRM <- fmt.Errorf("Error while writing message: %v", err)
-	}
+	go func() {
+		errRM <- c.dispatcher()
+	}()
 
-	// Receive errors from the channel and handle them
-	for err := range errRM {
+	for {
+		mt, p, err := c.conn.ReadMessage()
 		if err != nil {
-			log.Println("[receiveMSG] Error received:", err)
-			// Perform error handling or logging here
-			return err
+			if read_err_cnt++; read_err_cnt > 5 {
+				errRM <- err
+			}
+			read_err_cnt = 0
+			continue
 		}
+		inmsg <- []interface{}{mt, p}
 	}
-	return nil
 }
 
 func (c *Client) writeT() error {
@@ -123,25 +115,71 @@ func (c *Client) writeT() error {
 	return nil
 }
 
-func (c *Client) dispatcher(msg *[]interface{}) error {
-	// [x]: implement the logic to dispatch the message to the client
-	switch (*msg)[0] {
+func (c *Client) dispatcher() error {
+	var (
+		err error
+	)
+
+	for msg := range inmsg {
+		c.lgr.Debugf("[disp] received message type:%d", msg[0].(int))
+		if len(msg[1].([]byte)) == 0 {
+			c.lgr.Debug("[disp] The received message has null payload!")
+			continue
+		}
+
+		switch msg[0].(int) {
+		case websocket.TextMessage:
+			nostr_msg := msg[1].([]byte)
+			if string(msg[1].([]byte)[:1]) == "[" {
+				go c.dispatchNostrMsgs(&nostr_msg)
+			} else {
+				c.lgr.Debugf("[disp] Text message paylod is: %s", string(msg[1].([]byte)))
+				c.writeCustomNotice("not a nostr message")
+			}
+		case websocket.BinaryMessage:
+			c.lgr.Debug("[disp] received binary message! Processing not implemented")
+		case websocket.CloseMessage:
+			msgstr := string(msg[1].([]byte))
+
+			c.lgr.Debugf("[disp] received a`close` message: %v from client %v", msgstr, c.IP)
+
+			return fmt.Errorf("Client closing the connection with:%v", msgstr)
+
+		case websocket.PingMessage:
+			c.lgr.Debugf("[disp] Client %v sent PING message:%v", c.IP, string(msg[1].([]byte)))
+		case websocket.PongMessage:
+			c.lgr.Debugf("[disp] Received (pong?) message %v from client %v", string(msg[1].([]byte)), c.IP)
+		default:
+			c.lgr.Debugf("[disp] Unknown message type: %v", msg[0].(int))
+		}
+	}
+	return err
+}
+
+func (c *Client) dispatchNostrMsgs(msg *[]byte) {
+	var err error
+	nmsg := []interface{}{*msg}
+
+	switch nmsg[0] {
 	case "EVENT":
-		return c.handlerEventMsgs(msg)
+		err = c.handlerEventMsgs(&nmsg)
 
 	case "REQ":
-		return c.handlerReqMsgs(msg)
+		err = c.handlerReqMsgs(&nmsg)
 
 	case "CLOSE":
-		return c.handlerCloseSubsMsgs(msg)
+		err = c.handlerCloseSubsMsgs(&nmsg)
 
 	case "AUTH":
-		return c.handlerAuthMsgs(msg)
+		err = c.handlerAuthMsgs(&nmsg)
+
 	default:
-		log.Printf("[dispatcher] Unknown message: %v", *msg...)
+		log.Printf("[dispatchNostrMsgs] Unknown message: %v", nmsg...)
 		c.writeCustomNotice("Error: invalid format of the received message")
-		return fmt.Errorf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
 	}
+
+	c.lgr.Errorf("[dispatchNostrMsgs] Error: %v; received while dispatching nostr message type: %v", err, nmsg[0])
+
 }
 
 // ****************************** Messages types Handlers ***********************************************

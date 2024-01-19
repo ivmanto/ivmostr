@@ -82,8 +82,8 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
-		ReadBufferSize:    0,
-		WriteBufferSize:   0,
+		ReadBufferSize:    1024,
+		WriteBufferSize:   1024,
 		WriteBufferPool:   &sync.Pool{},
 		EnableCompression: false,
 		CheckOrigin: func(r *http.Request) bool {
@@ -124,13 +124,12 @@ func handle(conn *websocket.Conn, ip, org, hst string) {
 
 	// Schedule Client connection handling into a goroutine from the pool
 	pool.Schedule(func() {
-
 		if err := client.ReceiveMsg(); err != nil {
-
-			session.Remove(client)
-			conn.Close()
-			return
+			l.Debugf("[handle] ReceiveMsg got an error: %v", err)
 		}
+		session.Remove(client)
+		conn.Close()
+		return
 	})
 }
 
