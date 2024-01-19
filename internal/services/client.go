@@ -168,10 +168,18 @@ func (c *Client) dispatcher() error {
 func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 	var (
 		err  error
-		cmsg []interface{} = []interface{}{*msg}
+		cmsg []interface{}
 	)
 
-	switch cmsg[0].(string) {
+	cmsg = []interface{}{*msg}
+
+	elem0, ok := cmsg[0].([]byte)
+	if !ok {
+		c.lgr.Errorf("[dispatchNostrMsgs] Client %v; Error converting the element 0 [%v] of the nostr message.", c.IP, elem0)
+		return
+	}
+
+	switch string(elem0) {
 	case "EVENT":
 		err = c.handlerEventMsgs(&cmsg)
 
@@ -185,12 +193,13 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 		err = c.handlerAuthMsgs(&cmsg)
 
 	default:
-		log.Printf("[dispatchNostrMsgs] Unknown message: %s", cmsg[0].(string))
+		log.Printf("[dispatchNostrMsgs] Unknown message: %s", string(elem0))
 		c.writeCustomNotice("Error: invalid format of the received message")
+		return
 	}
 
 	if err != nil {
-		c.lgr.Errorf("[dispatchNostrMsgs] Error: %v; received while dispatching nostr message type: %v", err, cmsg[0].(string))
+		c.lgr.Errorf("[dispatchNostrMsgs] A handlers' function returned Error: %v;  message type: %v", err, string(elem0))
 	}
 
 }
