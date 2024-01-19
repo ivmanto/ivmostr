@@ -86,6 +86,7 @@ func (c *Client) writeT() error {
 		errWM = make(chan error)
 		quit  = make(chan struct{})
 		emsg  []byte
+		err   error
 	)
 	defer close(quit)
 
@@ -95,9 +96,15 @@ func (c *Client) writeT() error {
 			case <-quit:
 				c.lgr.Printf("[writeT] Stopping the writeT channel")
 			default:
+				if string(message) == "pong" {
+					err = c.conn.WriteControl(websocket.PongMessage, message, time.Now().Add(time.Second))
+					if err != nil {
+						c.lgr.Errorf("Error [%v] while responding with pong message", err)
+						errWM <- err
+					}
+				}
 				mu.Lock()
-				//err := c.conn.WriteMessage(websocket.TextMessage, message)
-				err := c.conn.WriteJSON(message)
+				err = c.conn.WriteJSON(message)
 				mu.Unlock()
 				if err != nil {
 					emsg = message
@@ -147,11 +154,8 @@ func (c *Client) dispatcher() error {
 				go c.dispatchNostrMsgs(&nostr_msg)
 			} else {
 				txtmsg := string(msg[1].([]byte))
-				if txtmsg == "ping" {
-					err := c.conn.WriteControl(websocket.PongMessage, []byte("pong"), time.Now().Add(time.Second))
-					if err != nil {
-						c.lgr.Errorf("[disp] Error sending pong message:%v", err)
-					}
+				if strings.ToLower(txtmsg) == "ping" {
+					msgwt <- []byte(`pong`)
 				} else {
 					c.lgr.Debugf("[disp] Text message paylod is: %s", txtmsg)
 					c.writeCustomNotice("not a nostr message")
