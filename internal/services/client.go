@@ -67,8 +67,8 @@ func (c *Client) ReceiveMsg() error {
 	for {
 		mt, p, err := c.conn.ReadMessage()
 		if err != nil {
-			if read_err_cnt++; read_err_cnt > 5 {
-				errRM <- err
+			if read_err_cnt++; read_err_cnt > 10 {
+				return err
 			}
 			read_err_cnt = 0
 			continue
@@ -174,7 +174,7 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 		err = c.handlerAuthMsgs(&nmsg)
 
 	default:
-		log.Printf("[dispatchNostrMsgs] Unknown message: %v", nmsg...)
+		log.Printf("[dispatchNostrMsgs] Unknown message: %s", string(*msg))
 		c.writeCustomNotice("Error: invalid format of the received message")
 	}
 
