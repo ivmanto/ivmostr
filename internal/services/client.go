@@ -105,11 +105,13 @@ func (c *Client) writeT() error {
 
 		if err != nil {
 			c.lgr.Debugf("write_status:%s, client:%s, took:%d, size[B]: %d, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb), err)
+			c.wrchrr = 0
 			return err
 		}
 
 		sb, _ = tools.ConvertStructToByte(message)
 		c.lgr.Debugf("write_status:%s, client:%s, took:%d, size[B]:%d", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb))
+		c.wrchrr = 0
 	}
 
 	return nil
@@ -147,14 +149,17 @@ func (c *Client) dispatcher() error {
 			} else {
 				// Artificial PING/PONG handler - for cases when the control message is not supported by the client(s)
 				txtmsg := strings.ToLower(string(msg[1].([]byte)))
+				c.wrchrr = time.Now().UnixMilli()
+
 				if txtmsg == "ping" || txtmsg == `["ping"]` {
-					c.wrchrr = time.Now().UnixMilli()
 					msgwt <- []interface{}{`pong`}
+
 				} else if txtmsg == `{"op":"ping"}` {
 					c.wrchrr = time.Now().UnixMilli()
 					var pr = make(map[string]interface{}, 1)
 					pr["res"] = "pong"
 					msgwt <- []interface{}{pr}
+
 				} else {
 					c.lgr.Debugf("[disp] Text message paylod is: %s", txtmsg)
 					c.writeCustomNotice("not a nostr message")
@@ -871,7 +876,6 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		// Count at the end of each filter component
 		nbmrevents += len(events)
 		c.lgr.Debugf("[fetchData] Filter components: %v", len(filter))
-		c.wrchrr = time.Now().UnixMilli()
 
 		var wev []interface{} = []interface{}{}
 		var intf = make(map[string]interface{}, 1)
@@ -881,7 +885,9 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 			_ = json.Unmarshal(inrec, &intf)
 			wev = append(wev, intf)
 		}
+
 		// sending []Events array as bytes to the writeT channel
+		c.wrchrr = time.Now().UnixMilli()
 		msgwt <- wev
 
 		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(events), "servedIn": time.Now().UnixMilli() - c.responseRate}).Debug("Sent to writeT")
