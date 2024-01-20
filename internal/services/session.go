@@ -201,7 +201,7 @@ func (s *Session) remove(client *Client) bool {
 func (s *Session) TuneClientConn(client *Client) {
 	// Set t value to 0 to disable the read deadline
 	var t time.Time = time.Time{}
-	var twt time.Time = time.Time.Add(time.Now(), 2000*time.Millisecond)
+	var twt time.Time = time.Time.Add(time.Now(), 10*time.Second)
 
 	err := client.conn.SetReadDeadline(t)
 	if err != nil {
@@ -211,9 +211,10 @@ func (s *Session) TuneClientConn(client *Client) {
 	// Set read message size limit as stated in the server_info.json file
 	client.conn.SetReadLimit(int64(16384))
 
-	err = client.conn.SetWriteDeadline(twt)
+	// [!] IMPORTANT: DO NOT set timeout to the write!!!
+	err = client.conn.SetWriteDeadline(t)
 	if err != nil {
-		log.Printf("ERROR client-side %s (set-write-deadline): %v", client.IP, err)
+		log.Errorf("[TuneClientConn] error for client %s (set-write-deadline): %v", client.IP, err)
 	}
 
 	client.conn.SetCloseHandler(func(code int, text string) error {
@@ -264,11 +265,11 @@ func (s *Session) NewEventBroadcaster() {
 			continue
 		}
 
-		be, err := tools.ConvertStructToByte(e)
-		if err != nil {
-			log.Printf("Error: [%v] while converting event to byte array!", err)
-			continue
-		}
+		// be, err := tools.ConvertStructToByte(e)
+		// if err != nil {
+		// 	log.Printf("Error: [%v] while converting event to byte array!", err)
+		// 	continue
+		// }
 
 		s.mu.Lock()
 
@@ -285,7 +286,7 @@ func (s *Session) NewEventBroadcaster() {
 				recp := strings.Split(tag[1], ",")
 				if len(recp) > 1 {
 					if client.npub == recp[1] {
-						msgwt <- be
+						msgwt <- []interface{}{e}
 
 						s.mu.Unlock()
 						return false
@@ -294,7 +295,7 @@ func (s *Session) NewEventBroadcaster() {
 			}
 
 			if filterMatch(e, client.GetFilters()) {
-				msgwt <- be
+				msgwt <- []interface{}{e}
 				return true
 			}
 			return true

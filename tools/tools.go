@@ -275,6 +275,11 @@ func CalcLenghtInBytes(i *[]interface{}) int {
 }
 
 func ConvertStructToByte(e any) ([]byte, error) {
+
+	gob.Register(map[string]interface{}{})
+	gob.Register(gn.Event{})
+	gob.Register([]interface{}{})
+
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
 	errE := enc.Encode(e)

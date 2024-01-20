@@ -117,7 +117,7 @@ func EchoServer() {
 func TestWrite(t *testing.T) {
 
 	// create a message to send to the echo server
-	message := []byte("hello world")
+	message := []interface{}{"hello world"}
 
 	// write the message to the client
 	msgwt <- message

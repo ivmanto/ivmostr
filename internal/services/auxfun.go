@@ -1,7 +1,9 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"time"
@@ -106,4 +108,24 @@ func composeErrorMsg(err error) string {
 	}
 
 	return emsg
+}
+
+// convertToJSON converts a []byte into a JSON object []interface{}
+func convertToJSON(payload []byte) ([]interface{}, error) {
+	var imsg []interface{}
+
+	err := json.Unmarshal(payload, &imsg)
+	if err != nil {
+		return nil, err
+	}
+	return imsg, nil
+}
+
+// convertIfc - converts json interface into JSON object and sends it into the writer stream as NewLineEncoded JSON (useful for BigQuery)
+func convertIfc(w io.Writer, v interface{}) error {
+	err := json.NewEncoder(w).Encode(v)
+	if err != nil {
+		return err
+	}
+	return nil
 }
