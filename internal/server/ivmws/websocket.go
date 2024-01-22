@@ -18,33 +18,51 @@ import (
 )
 
 var (
-	l       = log.New()
 	session *services.Session
 	pool    *gopool.Pool
-	//repo    nostr.NostrRepo
-	//lrepo          nostr.ListRepo
-	mu             sync.Mutex
-	trustedOrigins = []string{"nostr.ivmanto.dev", "relay.ivmanto.dev", "localhost", "127.0.0.1", "nostr.watch", "nostr.info", "nostr.band", "nostrcheck.me", "flycat.club", "nostr"}
+	wspool  *services.ConnectionPool
+	clpool  *services.ClientsPool
 )
 
 type WSHandler struct {
-	repo nostr.NostrRepo
-	cfg  *config.ServiceConfig
+	repo           nostr.NostrRepo
+	cfg            *config.ServiceConfig
+	trustedOrigins []string
+	hlgr           *log.Logger
 }
 
 func NewWSHandler(repo nostr.NostrRepo, cfg *config.ServiceConfig) *WSHandler {
 
+	trustedOrigins := cfg.TrustedOrigins
+	if len(trustedOrigins) == 0 {
+		// set default values only
+		trustedOrigins = []string{"127.0.0.1", "localhost", "nostr.ivmanto.dev", "ivmanto.dev", "nostr"}
+	}
+	lgr := log.New()
+
 	hndlr := WSHandler{
-		repo: repo,
-		cfg:  cfg,
+		repo:           repo,
+		cfg:            cfg,
+		trustedOrigins: trustedOrigins,
+		hlgr:           lgr,
 	}
 
-	// Setting up the websocket session and pool
+	// Setting up the websocket session and pools
 	workers := cfg.PoolMaxWorkers
 	queue := cfg.PoolQueue
 	spawn := 2
+	// pool is a pool of go-routines avaialble
+	// to handle Clients with their websocket conns
 	pool = gopool.NewPool(workers, queue, spawn)
-	session = services.NewSession(pool, repo, cfg)
+
+	// clpool - the clients pool should be same size as the go
+	// routines pool, while each client connection will be running
+	// in its own go-routine.
+	clpool = services.NewClientsPool(cfg.PoolMaxWorkers)
+
+	// The same as above is valid for websocket connections pool.
+	wspool = services.NewConnectionPool(cfg.PoolMaxWorkers)
+	session = services.NewSession(pool, repo, cfg, clpool, wspool)
 
 	return &hndlr
 }
@@ -78,7 +96,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	hst := tools.DiscoverHost(r)
 	ip := tools.GetIP(r)
 
-	l.Printf("WSU-REQ: ... new request arived from ip: %v, Host: %v, Origin: %v", ip, hst, org)
+	h.hlgr.Infof("WSU-REQ: ... new request arived from ip: %v, Host: %v, Origin: %v", ip, hst, org)
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
@@ -87,7 +105,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 		WriteBufferPool:   &sync.Pool{},
 		EnableCompression: false,
 		CheckOrigin: func(r *http.Request) bool {
-			for _, v := range trustedOrigins {
+			for _, v := range h.trustedOrigins {
 				if strings.Contains(org, v) || strings.Contains(hst, v) {
 					return true
 				}
@@ -96,36 +114,26 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	uc, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		l.Printf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v", err)
+		h.hlgr.Warnf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v", err)
 		return
 	}
 
-	poolerr := pool.ScheduleTimeout(time.Millisecond, func() {
-		handle(conn, ip, org, hst)
-	})
-	if poolerr != nil {
-		l.Errorf("Error finding free go-routine for 1 ms. Error:%v", poolerr)
-		w.WriteHeader(503)
-		_, _ = w.Write([]byte("server not available"))
-	}
-}
+	// Get a connection from the pool
+	conn := wspool.Get()
+	conn.WS = uc
 
-func handle(conn *websocket.Conn, ip, org, hst string) {
-
-	client := session.Register(conn, ip)
-
-	mu.Lock()
-	tools.IPCount[ip]++
-	mu.Unlock()
-
-	session.TuneClientConn(client)
-
-	// Schedule Client connection handling into a goroutine from the pool
-	pool.Schedule(func() {
-		if err := client.ReceiveMsg(); err != nil {
-			l.Debugf("[handle] ReceiveMsg got an error: %v", err)
+	var mf = 1
+	for cnt := 1; cnt < 6; cnt++ {
+		poolerr := pool.ScheduleTimeout(time.Duration(mf)*time.Millisecond, func() {
+			session.Register(conn, ip)
+		})
+		if poolerr != nil && poolerr == gopool.ErrScheduleTimeout {
+			mf = mf * 10 * cnt
+		} else if poolerr != nil {
+			h.hlgr.Errorf("Error finding free go-routine for 1 ms. Error:%v", poolerr)
+			break
 		}
-	})
+	}
 }

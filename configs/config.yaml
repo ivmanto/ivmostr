@@ -14,7 +14,18 @@ pool_queue: ${POOL_QUEUE}
 max_conns_per_ip: 3
 # Max number of errors per connection allowed (this is not all errors, but only protocol definition errors)
 max_errs_per_conn: 5
-cloud_logging_enabled: true 
+trusted_origins:
+  - "nostr.ivmanto.dev"
+  - "relay.ivmanto.dev"
+  - "localhost"
+  - "127.0.0.1"
+  - "nostr.watch"
+  - "nostr.info"
+  - "nostr.band"
+  - "nostrcheck.me"
+  - "flycat.club"
+  - "nostr"
+cloud_logging_enabled: true
 firestore:
   project_id: ${FIRESTORE_PROJECT_ID}
   # set the default value for missing limit value - the max number of events 

@@ -32,6 +32,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 	"github.com/go-chi/chi"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -61,6 +62,7 @@ func (h *srvHandler) router() chi.Router {
 	rtr.Route("/", func(wr chi.Router) {
 		ws := ivmws.NewWSHandler(h.repo, h.cfg)
 		wr.Mount("/", ws.Router())
+		wr.Mount("/metrics", promhttp.Handler())
 	})
 
 	// Route the API calls to/v1/api/ ...

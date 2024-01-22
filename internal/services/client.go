@@ -22,34 +22,34 @@ import (
 )
 
 var (
-	nbmrevents int
-	//stop       = make(chan struct{})
-	//msgw         = make(chan *[]interface{})
-	msgwt = make(chan []interface{}, 20)
-	inmsg = make(chan []interface{}, 5)
-	errRM = make(chan error)
-	leop  = logging.Entry{Severity: logging.Info, Payload: ""}
+	leop = logging.Entry{Severity: logging.Info, Payload: ""}
 )
 
 type Client struct {
-	conn            *websocket.Conn
-	mu              sync.Mutex
-	lgr             *log.Logger
-	cclnlgr         *logging.Logger
-	repo            nostr.NostrRepo
-	id              uint
-	name            string
-	session         *Session
-	challenge       string
-	npub            string
-	Subscription_id string
-	Filetrs         []map[string]interface{}
-	errorRate       map[string]int
-	IP              string
-	Authed          bool
-	responseRate    int64
-	//wrchrr = write channel response rate
-	wrchrr int64
+	Conn                *Connection
+	wsc                 *websocket.Conn
+	mu                  sync.Mutex
+	lgr                 *log.Logger
+	cclnlgr             *logging.Logger
+	repo                nostr.NostrRepo
+	id                  uint
+	name                string
+	challenge           string
+	npub                string
+	Subscription_id     string
+	Filetrs             []map[string]interface{}
+	Relay_Host          string
+	errorRate           map[string]int
+	default_limit_value int
+	read_events         int
+	IP                  string
+	Authed              bool
+	responseRate        int64 // subscription suply response rate
+	wrchrr              int64 // wrchrr = write channel response rate
+	msgwt               chan []interface{}
+	inmsg               chan []interface{}
+	errRM               chan error
+	errCH               chan error
 }
 
 func (c *Client) Name() string {
@@ -58,55 +58,61 @@ func (c *Client) Name() string {
 
 func (c *Client) ReceiveMsg() error {
 
+	// [ ]: to be tested if it is filtering logs corectly
 	c.lgr.Level = log.DebugLevel
 
 	go func() {
-		var err error
-		for {
-			err = c.writeT()
-			if err != nil {
-				break
-			}
-		}
-		errRM <- err
+		c.errCH <- c.writeT()
 	}()
 
 	go func() {
-		errRM <- c.dispatcher()
+		c.errCH <- c.dispatcher()
 	}()
 
-	defer c.conn.Close()
-
-	for {
-		mt, p, err := c.conn.ReadMessage()
-		if err != nil {
-			if err != io.EOF {
-				c.lgr.Errorf("client %v ...(ReadMessage)... returned error: %v", c.IP, err)
-				return err
+	go func() {
+		for errm := range c.errCH {
+			if errm != nil {
+				c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errm)
 			}
 		}
+	}()
+
+	for {
+		mt, p, err := c.wsc.ReadMessage()
+		if err != nil && err != io.EOF {
+			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
+			return err
+		}
+
 		c.lgr.Debugf("read_status:%s, client:%s, message_type:%d, size:%d, ts:%d", "success", c.IP, mt, len(p), time.Now().UnixNano())
-		inmsg <- []interface{}{mt, p}
+		c.inmsg <- []interface{}{mt, p}
 	}
 }
 
 func (c *Client) writeT() error {
 	var (
-		sb  []byte
-		err error
+		sb             []byte
+		err            error
+		write_attempts int
 	)
 
-	for message := range msgwt {
+	for message := range c.msgwt {
 		c.lgr.Infof("[range msgwt] received message in %d ms", time.Now().UnixMilli()-c.wrchrr)
 
 		c.mu.Lock()
-		err = c.conn.WriteJSON(message)
+		err = c.wsc.WriteJSON(message)
 		c.mu.Unlock()
 
 		if err != nil {
 			c.lgr.Debugf("write_status:%s, client:%s, took:%d, size[B]: %d, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb), err)
 			c.wrchrr = 0
-			return err
+			write_attempts++
+			if write_attempts > 5 {
+				time.Sleep(time.Second * 1)
+				break
+			}
+			err = nil
+			continue
 		}
 
 		sb, _ = tools.ConvertStructToByte(message)
@@ -114,7 +120,7 @@ func (c *Client) writeT() error {
 		c.wrchrr = 0
 	}
 
-	return nil
+	return err
 }
 
 func (c *Client) dispatcher() error {
@@ -122,7 +128,7 @@ func (c *Client) dispatcher() error {
 		err error
 	)
 
-	for msg := range inmsg {
+	for msg := range c.inmsg {
 
 		c.lgr.Debugf("[disp] received message type:%d", msg[0].(int))
 
@@ -136,7 +142,7 @@ func (c *Client) dispatcher() error {
 		case websocket.TextMessage:
 
 			if !utf8.Valid(msg[1].([]byte)) {
-				_ = c.conn.WriteControl(websocket.CloseMessage,
+				_ = c.wsc.WriteControl(websocket.CloseMessage,
 					websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, ""),
 					time.Time{})
 				c.lgr.Debugf("[disp] The received message is invalid utf8")
@@ -152,13 +158,13 @@ func (c *Client) dispatcher() error {
 				c.wrchrr = time.Now().UnixMilli()
 
 				if txtmsg == "ping" || txtmsg == `["ping"]` {
-					msgwt <- []interface{}{`pong`}
+					c.msgwt <- []interface{}{`pong`}
 
 				} else if txtmsg == `{"op":"ping"}` {
 					c.wrchrr = time.Now().UnixMilli()
 					var pr = make(map[string]interface{}, 1)
 					pr["res"] = "pong"
-					msgwt <- []interface{}{pr}
+					c.msgwt <- []interface{}{pr}
 
 				} else {
 					c.lgr.Debugf("[disp] Text message paylod is: %s", txtmsg)
@@ -170,7 +176,7 @@ func (c *Client) dispatcher() error {
 		case websocket.CloseMessage:
 			msgstr := string(msg[1].([]byte))
 
-			c.lgr.Debugf("[disp] received a`close` message: %v from client %v", msgstr, c.IP)
+			c.lgr.Debugf("[disp] received a `close` message: %v from client %v", msgstr, c.IP)
 
 			return fmt.Errorf("Client closing the connection with:%v", msgstr)
 
@@ -291,8 +297,8 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	// The customer name is required in NewEventBroadcaster method in order to skip the broadcast process for the customer that brought the event on the relay.
 	e.SetExtra("id", float64(c.id))
 
-	// [x]: fire-up a new go routine to handle the NEW event broadcating for all the clients having subscriptions with at least one filter matching the event paramateres.
-	go c.session.BroadcasterQueue(*e)
+	// Send the new event to the broadcaster
+	NewEvent <- e
 
 	c.writeEventNotice(e.ID, true, "")
 	return nil
@@ -470,14 +476,14 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 
 func (c *Client) writeEventNotice(event_id string, accepted bool, message string) {
 	c.wrchrr = time.Now().UnixMilli()
-	msgwt <- []interface{}{"OK", event_id, accepted, message}
+	c.msgwt <- []interface{}{"OK", event_id, accepted, message}
 	c.lgr.Debugf("client [%v]: note sent to write in %d ms", c.IP, time.Now().UnixMilli()-c.wrchrr)
 }
 
 func (c *Client) writeCustomNotice(notice_msg string) {
 	c.wrchrr = time.Now().UnixMilli()
 	var note = []interface{}{"NOTICE", notice_msg}
-	msgwt <- note
+	c.msgwt <- note
 	c.lgr.Debugf("client [%v]: notice sent to write in %d ms", c.IP, time.Now().UnixMilli()-c.wrchrr)
 }
 
@@ -485,7 +491,7 @@ func (c *Client) writeCustomNotice(notice_msg string) {
 func (c *Client) writeEOSE(subID string) {
 	c.wrchrr = time.Now().UnixMilli()
 	var eose = []interface{}{"EOSE", subID}
-	msgwt <- eose
+	c.msgwt <- eose
 	c.lgr.Debugf("client [%v]: EOSE sent to write in %d ms", c.IP, time.Now().UnixMilli()-c.wrchrr)
 }
 
@@ -493,7 +499,7 @@ func (c *Client) writeEOSE(subID string) {
 func (c *Client) writeAUTHChallenge() {
 	c.wrchrr = time.Now().UnixMilli()
 	var note = []interface{}{"AUTH", c.challenge}
-	msgwt <- note
+	c.msgwt <- note
 	c.lgr.Debugf("client [%v]: challenge sent to write in %d ms", c.IP, time.Now().UnixMilli()-c.wrchrr)
 }
 
@@ -529,10 +535,7 @@ func (c *Client) confirmURLDomainMatch(relayURL string) bool {
 		return false
 	}
 
-	// get the relay HOST name from the configuration
-	cfg_relayHost := c.session.cfg.Relay_Host
-
-	return relURL.Hostname() == cfg_relayHost
+	return relURL.Hostname() == c.Relay_Host
 }
 
 // *****************************************************************************
@@ -540,9 +543,10 @@ func (c *Client) confirmURLDomainMatch(relayURL string) bool {
 // *****************************************************************************
 
 func (c *Client) SubscriptionSuplier() error {
-	nbmrevents = 0
+
 	ctx := context.Background()
 	c.responseRate = time.Now().UnixMilli()
+	c.read_events = 0
 
 	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id}).Info("Starting SubscriptionSuplier")
 
@@ -558,7 +562,7 @@ func (c *Client) SubscriptionSuplier() error {
 
 	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "writeEOSE", "took": time.Now().UnixMilli() - c.responseRate}).Info("writeEOSE completed")
 
-	payloadV := fmt.Sprintf(`{"method":"[SubscriptionSuplier]","client":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, time.Now().UnixMilli()-c.responseRate)
+	payloadV := fmt.Sprintf(`{"method":"[SubscriptionSuplier]","client":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, c.read_events, time.Now().UnixMilli()-c.responseRate)
 	leop.Payload = payloadV
 	cclnlgr.Log(leop)
 
@@ -610,7 +614,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		// =================================== MAX_EVENTS ===============================================
 		lim, flt_limit := filter["limit"].(float64)
 		if !flt_limit {
-			max_events = c.session.cfg.GetDLV()
+			max_events = c.default_limit_value
 		} else if lim == 0 || lim > 5000 {
 			// until the paging is implemented for paying clients OR always for public clients
 			// 5000 is the value from attribute from server_info limits
@@ -874,7 +878,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		}
 
 		// Count at the end of each filter component
-		nbmrevents += len(events)
+		c.read_events += len(events)
 		c.lgr.Debugf("[fetchData] Filter components: %v", len(filter))
 
 		var wev []interface{} = []interface{}{}
@@ -888,7 +892,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 
 		// sending []Events array as bytes to the writeT channel
 		c.wrchrr = time.Now().UnixMilli()
-		msgwt <- wev
+		c.msgwt <- wev
 
 		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(events), "servedIn": time.Now().UnixMilli() - c.responseRate}).Debug("Sent to writeT")
 

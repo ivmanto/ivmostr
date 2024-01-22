@@ -32,16 +32,15 @@ var (
 	dlv       int    = 20
 	ecn       string = "events"
 	pool             = gopool.NewPool(128, 2, 1)
-	session          = NewSession(pool, nostrRepo, nil)
+	session          = NewSession(pool, nostrRepo, nil, nil, nil)
 	message   []interface{}
 )
 
 var client = Client{
-	conn:            nil,
+	Conn:            nil,
 	lgr:             log.New(),
 	id:              0,
 	name:            "",
-	session:         nil,
 	challenge:       "",
 	npub:            "",
 	Subscription_id: "",
@@ -80,9 +79,8 @@ func GetConnected(t *testing.T) {
 	}
 
 	// set the client's connection to the echo server
-	client.conn = conn
-	client.session = session
-	client.session.Repo = nostrRepo
+	client.wsc = conn
+
 }
 
 func Echo(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +118,7 @@ func TestWrite(t *testing.T) {
 	message := []interface{}{"hello world"}
 
 	// write the message to the client
-	msgwt <- message
+	client.msgwt <- message
 
 	// read the message from the echo server
 	err = conn.ReadJSON(&rslmsg)
@@ -151,10 +149,10 @@ func TestHandlerEventMsgs(t *testing.T) {
 		t.Fatalf("error: id not found or it is in wrong format")
 	}
 
-	err = client.session.Repo.DeleteEvent(doc_id)
-	if err != nil {
-		t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
-	}
+	// err = client.session.repo.DeleteEvent(doc_id)
+	// if err != nil {
+	// 	t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
+	// }
 
 	// test TestHandlerEventMsgs -supposed to store the event in the DB
 	err = client.handlerEventMsgs(&message)
@@ -185,10 +183,10 @@ func TestHandlerEventMsgs(t *testing.T) {
 		t.Fatalf("error: message received from echo server is not expected")
 	}
 
-	err = client.session.Repo.DeleteEvent(doc_id)
-	if err != nil {
-		t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
-	}
+	// err = client.session.repo.DeleteEvent(doc_id)
+	// if err != nil {
+	// 	t.Fatalf("error deleting event id %s, from firestore repo: %v", doc_id, err)
+	// }
 }
 
 func TestHandlerReqMsgs(t *testing.T) {

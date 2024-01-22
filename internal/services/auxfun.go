@@ -1,14 +1,16 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/logging"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	gn "github.com/nbd-wtf/go-nostr"
+	log "github.com/sirupsen/logrus"
 )
 
 // mapToEvent converts a map[string]interface{} to a gn.Event
@@ -122,10 +124,31 @@ func convertToJSON(payload []byte) ([]interface{}, error) {
 }
 
 // convertIfc - converts json interface into JSON object and sends it into the writer stream as NewLineEncoded JSON (useful for BigQuery)
-func convertIfc(w io.Writer, v interface{}) error {
-	err := json.NewEncoder(w).Encode(v)
-	if err != nil {
-		return err
+// func convertIfc(w io.Writer, v interface{}) error {
+// 	err := json.NewEncoder(w).Encode(v)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return nil
+// }
+
+// Initiate GCP Cloud logger
+func initCloudLogger(project_id, log_name string) *logging.Logger {
+	// Initate Cloud logging
+	ctx := context.Background()
+	clientCldLgr, _ = logging.NewClient(ctx, project_id)
+	clientCldLgr.OnError = func(err error) {
+		log.Errorf("[cloud-logger] Error [%v] raised while logging to cloud logger", err)
 	}
-	return nil
+	return clientCldLgr.Logger(log_name)
+}
+
+// Checking if the specific event `e` matches atleast one of the filters of customers subscription;
+func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
+	for _, filter := range filters {
+		if tools.FilterMatchSingle(e, filter) {
+			return true
+		}
+	}
+	return false
 }

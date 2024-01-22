@@ -13,14 +13,54 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 
 	gn "github.com/nbd-wtf/go-nostr"
 	log "github.com/sirupsen/logrus"
 )
 
 var (
-	IPCount = make(map[string]int)
+	IPCount *ipCount
 )
+
+func init() {
+	IPCount = NewIPCount()
+}
+
+type ipCount struct {
+	ipcount map[string]int
+	mutex   *sync.Mutex
+}
+
+func (i *ipCount) Add(ip string) {
+	i.mutex.Lock()
+	i.ipcount[ip]++
+	i.mutex.Unlock()
+}
+
+func (i *ipCount) Remove(ip string) {
+	i.mutex.Lock()
+	i.ipcount[ip]--
+	if i.ipcount[ip] < 1 {
+		delete(i.ipcount, ip)
+	}
+	i.mutex.Unlock()
+}
+
+func (i *ipCount) Len() int {
+	return len(i.ipcount)
+}
+
+func (i *ipCount) IPConns(ip string) int {
+	return i.ipcount[ip]
+}
+
+func NewIPCount() *ipCount {
+	return &ipCount{
+		ipcount: make(map[string]int),
+		mutex:   &sync.Mutex{},
+	}
+}
 
 // Filter attributes containing lists (ids, authors, kinds and tag filters like #e) are JSON arrays with one or more values.
 // [x] At least one of the arrays' values must match the relevant field in an event for the condition to be considered a match.
@@ -291,5 +331,5 @@ func ConvertStructToByte(e any) ([]byte, error) {
 }
 
 func GetIPCount() int {
-	return len(IPCount)
+	return IPCount.Len()
 }
