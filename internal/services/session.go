@@ -22,8 +22,6 @@ import (
 var (
 	NewEvent     = make(chan *gn.Event, 100)
 	Exit         = make(chan struct{})
-	RTicker      = time.NewTicker(3 * time.Minute)
-	stop         chan struct{}
 	relay_access string
 	clientCldLgr *logging.Client
 	cclnlgr      *logging.Logger
@@ -70,18 +68,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	// receives new nostr events messages to broadcast among the subscribers
 	go session.NewEventBroadcaster()
 
-	go session.ReportClients()
-
 	return &session
-}
-
-func (s *Session) ReportClients() {
-	select {
-	case <-stop:
-		return
-	case <-RTicker.C:
-		s.slgr.WithFields(log.Fields{"dt": time.Now(), "active_clients": s.Clients.cnt}).Infof("## active clients")
-	}
 }
 
 // Register upgraded websocket connection as client in the sessions
@@ -347,7 +334,6 @@ func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 }
 
 func (s *Session) Close() bool {
-	stop <- struct{}{}
 	<-Exit
 	//[ ]TODO: release resources and gracefully close the session
 	return true
