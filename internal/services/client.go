@@ -91,9 +91,8 @@ func (c *Client) ReceiveMsg() error {
 
 func (c *Client) writeT() error {
 	var (
-		sb             []byte
-		err            error
-		write_attempts int
+		sb  []byte
+		err error
 	)
 
 	for message := range c.msgwt {
@@ -105,12 +104,9 @@ func (c *Client) writeT() error {
 
 		if err != nil {
 			c.lgr.Debugf("write_status:%s, client:%s, took:%d, size[B]: %d, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb), err)
+			c.errCH <- err
+
 			c.wrchrr = 0
-			write_attempts++
-			if write_attempts > 5 {
-				time.Sleep(time.Second * 1)
-				break
-			}
 			err = nil
 			continue
 		}
