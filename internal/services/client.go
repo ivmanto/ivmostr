@@ -293,7 +293,9 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// do nothing
 	}
 
+	c.mu.Lock()
 	err = c.repo.StoreEvent(e)
+	c.mu.Unlock()
 	if err != nil {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		return err
