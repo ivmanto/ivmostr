@@ -57,6 +57,7 @@ func (c *Client) Name() string {
 }
 
 func (c *Client) ReceiveMsg() error {
+	var errch error
 
 	// [ ]: to be tested if it is filtering logs corectly
 	c.lgr.Level = log.DebugLevel
@@ -70,9 +71,10 @@ func (c *Client) ReceiveMsg() error {
 	}()
 
 	go func() {
-		for errm := range c.errCH {
-			if errm != nil {
-				c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errm)
+		for errch = range c.errCH {
+			if errch != nil {
+				c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errch)
+				break
 			}
 		}
 	}()
@@ -81,12 +83,15 @@ func (c *Client) ReceiveMsg() error {
 		mt, p, err := c.wsc.ReadMessage()
 		if err != nil && err != io.EOF {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
-			return err
+			errch = err
+			break
 		}
 
 		c.lgr.Debugf("read_status:%s, client:%s, message_type:%d, size:%d, ts:%d", "success", c.IP, mt, len(p), time.Now().UnixNano())
 		c.inmsg <- []interface{}{mt, p}
 	}
+
+	return errch
 }
 
 func (c *Client) writeT() error {
@@ -104,11 +109,7 @@ func (c *Client) writeT() error {
 
 		if err != nil {
 			c.lgr.Debugf("write_status:%s, client:%s, took:%d, size[B]: %d, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb), err)
-			c.errCH <- err
-
-			c.wrchrr = 0
-			err = nil
-			continue
+			break
 		}
 
 		sb, _ = tools.ConvertStructToByte(message)
@@ -138,16 +139,17 @@ func (c *Client) dispatcher() error {
 		case websocket.TextMessage:
 
 			if !utf8.Valid(msg[1].([]byte)) {
+				text := "The received message is invalid utf8"
 				_ = c.wsc.WriteControl(websocket.CloseMessage,
-					websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, ""),
+					websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, text),
 					time.Time{})
-				c.lgr.Debugf("[disp] The received message is invalid utf8")
+				return fmt.Errorf("[disp] %v", text)
 			}
 
 			nostr_msg := msg[1].([]byte)
 			if string(msg[1].([]byte)[:1]) == "[" {
 				go c.dispatchNostrMsgs(&nostr_msg)
-
+				continue
 			} else {
 				// Artificial PING/PONG handler - for cases when the control message is not supported by the client(s)
 				txtmsg := strings.ToLower(string(msg[1].([]byte)))
@@ -167,21 +169,28 @@ func (c *Client) dispatcher() error {
 					c.writeCustomNotice("not a nostr message")
 				}
 			}
+			continue
+
 		case websocket.BinaryMessage:
 			c.lgr.Debug("[disp] received binary message! Processing not implemented")
+			continue
 		case websocket.CloseMessage:
 			msgstr := string(msg[1].([]byte))
-
 			c.lgr.Debugf("[disp] received a `close` message: %v from client %v", msgstr, c.IP)
-
-			return fmt.Errorf("Client closing the connection with:%v", msgstr)
+			return fmt.Errorf("[disp] Client closing the connection with: [%v]", msgstr)
 
 		case websocket.PingMessage:
 			c.lgr.Debugf("[disp] Client %v sent PING message (mt = 9):%v", c.IP, string(msg[1].([]byte)))
+			continue
+
 		case websocket.PongMessage:
-			c.lgr.Debugf("[disp] Client %v received PONG message (mt=10) %v", c.IP, string(msg[1].([]byte)))
+			c.lgr.Debugf("[disp] From client %v received PONG message (mt=10) %v", c.IP, string(msg[1].([]byte)))
+			continue
+
 		default:
 			c.lgr.Debugf("[disp] Unknown message type: %v", msg[0].(int))
+			continue
+
 		}
 	}
 	return err
