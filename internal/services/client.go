@@ -548,7 +548,7 @@ func (c *Client) SubscriptionSuplier() error {
 	c.responseRate = time.Now().UnixMilli()
 	c.read_events = 0
 
-	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id}).Info("Starting SubscriptionSuplier")
+	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "Filters": c.Filetrs}).Debug("Starting SubscriptionSuplier")
 
 	err := c.fetchAllFilters(ctx)
 	if err != nil {
