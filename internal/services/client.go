@@ -293,9 +293,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// do nothing
 	}
 
-	c.mu.Lock()
 	err = c.repo.StoreEvent(e)
-	c.mu.Unlock()
 	if err != nil {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		return err
@@ -555,19 +553,19 @@ func (c *Client) SubscriptionSuplier() error {
 	c.responseRate = time.Now().UnixMilli()
 	c.read_events = 0
 
-	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "Filters": c.Filetrs}).Debug("Starting SubscriptionSuplier")
+	c.lgr.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "Filters": c.Filetrs}).Debug("Starting SubscriptionSuplier")
 
 	err := c.fetchAllFilters(ctx)
 	if err != nil {
 		return err
 	}
 
-	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "fetchAllFilters", "took": time.Now().UnixMilli() - c.responseRate}).Info("fetchAllFilters completed")
+	c.lgr.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "fetchAllFilters", "took": time.Now().UnixMilli() - c.responseRate}).Debug("fetchAllFilters completed")
 
 	// Send EOSE
 	c.writeEOSE(c.Subscription_id)
 
-	log.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "writeEOSE", "took": time.Now().UnixMilli() - c.responseRate}).Info("writeEOSE completed")
+	c.lgr.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "writeEOSE", "took": time.Now().UnixMilli() - c.responseRate}).Debug("writeEOSE completed")
 
 	payloadV := fmt.Sprintf(`{"method":"[SubscriptionSuplier]","client":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, c.read_events, time.Now().UnixMilli()-c.responseRate)
 	leop.Payload = payloadV

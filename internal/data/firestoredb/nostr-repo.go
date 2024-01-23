@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -19,6 +20,7 @@ import (
 // Holds the required objects by `nostr` relay according to the protocol
 type nostrRepo struct {
 	ctx               *context.Context
+	mtx               *sync.Mutex
 	events_collection string
 	clients           *fspool.ConnectionPool
 	fsclient          *firestore.Client
@@ -34,7 +36,8 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	if err != nil {
 		return fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 	// ==================== end of client ================
 
 	// multi-level array are not supported by firestore! It must be converted into a array of objects with string elements
@@ -802,6 +805,7 @@ func NewNostrRepository(ctx *context.Context, clients *fspool.ConnectionPool, dl
 
 	nr := &nostrRepo{
 		ctx:               ctx,
+		mtx:               &sync.Mutex{},
 		events_collection: ecn,
 		clients:           clients,
 		fsclient:          client,
