@@ -93,8 +93,8 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	//defer s.Clients.Put(client)
 
 	client.Conn = conn
-	client.wsc = conn.WS
 	client.IP = ip
+	client.ccc = false
 	client.repo = s.repo
 	client.cclnlgr = cclnlgr
 	client.Authed = false
@@ -189,22 +189,23 @@ func (s *Session) Remove(client *Client) {
 
 	// [ ]: Review what exactly more resources (than websocket connection) need to be released
 
-	s.mu.Lock()
 	// Close the websocket connection properly
-	err := client.wsc.Close()
+	err := client.Conn.WS.Close()
 	if err != nil {
 		s.slgr.Errorln("[Remove] Error closing client's ws connection:", err)
 	}
 
 	// Put the connection shell back in the pool
-	s.wspool.Put(client.Conn)
+	if client.Conn != nil {
+		s.slgr.Infof("[remove] need to dispose the client's connection")
+		s.wspool.Put(client.Conn)
+	}
 
 	// Put the Client back in the client's pool
 	s.Clients.Put(client)
 
 	// Remove the client from the session's internal register
 	s.ns.Delete(client.IP)
-	s.mu.Unlock()
 
 	// Remove the client from IP counter
 	tools.IPCount.Remove(client.IP)
@@ -237,23 +238,23 @@ func (s *Session) TuneClientConn(client *Client) {
 	// Set t value to 0 to disable the read deadline
 	var t time.Time = time.Time{}
 
-	err := client.wsc.SetReadDeadline(t)
+	err := client.Conn.WS.SetReadDeadline(t)
 	if err != nil {
 		log.Printf("ERROR client-side %s (set-read-deadline): %v", client.IP, err)
 	}
 
 	// Set read message size limit as stated in the server_info.json file
-	client.wsc.SetReadLimit(int64(16384))
+	client.Conn.WS.SetReadLimit(int64(16384))
 
 	// [!] IMPORTANT: DO NOT set timeout to the write!!!
-	err = client.wsc.SetWriteDeadline(t)
+	err = client.Conn.WS.SetWriteDeadline(t)
 	if err != nil {
 		log.Errorf("[TuneClientConn] error for client %s (set-write-deadline): %v", client.IP, err)
 	}
 
 	// SetCloseHandler will be called by the reading methods when the client announced connection close event.
 	// Full list of WebSocket Status Codes at: https://kapeli.com/cheat_sheets/WebSocket_Status_Codes.docset/Contents/Resources/Documents/index
-	client.wsc.SetCloseHandler(func(code int, text string) error {
+	client.Conn.WS.SetCloseHandler(func(code int, text string) error {
 		var err error
 		switch code {
 		case 1000:
@@ -273,10 +274,10 @@ func (s *Session) TuneClientConn(client *Client) {
 		return err
 	})
 
-	client.wsc.SetPingHandler(func(appData string) error {
+	client.Conn.WS.SetPingHandler(func(appData string) error {
 		client.lgr.Debugf("[SetPingHandler] Ping message received as: %v", appData)
 		// Send a pong message back to the client
-		err := client.wsc.WriteControl(websocket.PongMessage, []byte(`"pong"`), time.Now().Add(time.Second*2))
+		err := client.Conn.WS.WriteControl(websocket.PongMessage, []byte(`"pong"`), time.Now().Add(time.Second*2))
 		if err != nil {
 			client.lgr.Errorf("[SetPingHandler] Error sending pong message: %v", err)
 			return err
@@ -284,7 +285,7 @@ func (s *Session) TuneClientConn(client *Client) {
 		return nil
 	})
 
-	client.wsc.SetPongHandler(func(appData string) error {
+	client.Conn.WS.SetPongHandler(func(appData string) error {
 		client.lgr.Debugf("[SetPongHandler] Pong message received as: %v", appData)
 		ad := strings.ToLower(appData)
 		if ad != "pong" && ad != `["pong"]` {

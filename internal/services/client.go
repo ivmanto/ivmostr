@@ -27,7 +27,7 @@ var (
 
 type Client struct {
 	Conn                *Connection
-	wsc                 *websocket.Conn
+	ccc                 bool
 	mu                  sync.Mutex
 	lgr                 *log.Logger
 	cclnlgr             *logging.Logger
@@ -80,7 +80,7 @@ func (c *Client) ReceiveMsg() error {
 	}()
 
 	for {
-		mt, p, err := c.wsc.ReadMessage()
+		mt, p, err := c.Conn.WS.ReadMessage()
 		if err != nil && err != io.EOF {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
 			errch = err
@@ -104,7 +104,7 @@ func (c *Client) writeT() error {
 		c.lgr.Infof("[range msgwt] received message in %d ms", time.Now().UnixMilli()-c.wrchrr)
 
 		c.mu.Lock()
-		err = c.wsc.WriteJSON(message)
+		err = c.Conn.WS.WriteJSON(message)
 		c.mu.Unlock()
 
 		if err != nil {
@@ -140,7 +140,7 @@ func (c *Client) dispatcher() error {
 
 			if !utf8.Valid(msg[1].([]byte)) {
 				text := "The received message is invalid utf8"
-				_ = c.wsc.WriteControl(websocket.CloseMessage,
+				_ = c.Conn.WS.WriteControl(websocket.CloseMessage,
 					websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, text),
 					time.Time{})
 				return fmt.Errorf("[disp] %v", text)
