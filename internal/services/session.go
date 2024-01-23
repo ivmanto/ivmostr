@@ -22,7 +22,7 @@ import (
 var (
 	NewEvent      = make(chan *gn.Event, 100)
 	Exit          = make(chan struct{})
-	monitorTicker = time.NewTicker(time.Second * 60)
+	monitorTicker = time.NewTicker(time.Minute * 60)
 	monitorClose  = make(chan struct{})
 	relay_access  string
 	clientCldLgr  *logging.Client
@@ -81,7 +81,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 }
 
 // Register upgraded websocket connection as client in the sessions
-func (s *Session) Register(conn *Connection, ip string) {
+func (s *Session) Register(conn *Connection, ip string) *Client {
 
 	// register the clients IP in the ip-counter
 	tools.IPCount.Add(ip)
@@ -122,9 +122,8 @@ func (s *Session) Register(conn *Connection, ip string) {
 		av, loaded := s.ns.LoadOrStore(client.IP, client)
 		if loaded {
 			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, av)
-			return
+			return nil
 		}
-
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
 		s.seq++
 	}
@@ -154,6 +153,11 @@ func (s *Session) Register(conn *Connection, ip string) {
 		// Unknown relay access type - by default it is publi
 		client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
 	}
+
+	return client
+}
+
+func (s *Session) HandleClient(client *Client) {
 
 	// Schedule Client connection handling into a goroutine from the pool
 	s.pool.Schedule(func() {
@@ -349,6 +353,8 @@ func (s *Session) Monitor() {
 		select {
 		case <-monitorTicker.C:
 			s.slgr.Println("... ================ ...")
+			s.mu.Lock()
+			defer s.mu.Unlock()
 			s.sessionState()
 			s.slgr.Println("... ================ ...")
 		case <-monitorClose:

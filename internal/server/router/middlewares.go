@@ -54,16 +54,23 @@ func rateLimiter(h http.Handler) http.Handler {
 			return
 		}
 
+		ac := r.Header.Get("Accept")
+		if strings.Contains(ac, "application/nostr+json") {
+			h.ServeHTTP(w, r)
+			return
+		}
+
 		// Check if the request is a websocket request
 		uh := r.Header.Get("Upgrade")
-		ac := r.Header.Get("Accept")
+		ch := r.Header.Get("Connection")
 		//wsp := r.Header.Get("Sec-WebSocket-Protocol")
 
-		if uh != "websocket" && ac != "application/nostr+json" {
+		if strings.ToLower(uh) != "websocket" && strings.ToLower(ch) != "upgrade" {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "Bad request")
 			return
 		}
+
 		// [ ]: To review later but as of now (20231223) no-one is setting this Header properlly
 		// if !strings.Contains(wsp, "nostr") {
 		// 	w.WriteHeader(http.StatusFailedDependency)

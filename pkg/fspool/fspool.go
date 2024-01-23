@@ -1,6 +1,8 @@
 // fspool creates and manage a Firestore database conections pool.
 package fspool
 
+// [ ]: Review and refactor it to use sync.Pool
+
 import (
 	"context"
 	"fmt"

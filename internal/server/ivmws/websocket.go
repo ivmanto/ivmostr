@@ -124,15 +124,17 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	conn := wspool.Get()
 	conn.WS = uc
 
+	client := session.Register(conn, ip)
+
 	var mf = 1
 	for cnt := 1; cnt < 6; cnt++ {
 		poolerr := pool.ScheduleTimeout(time.Duration(mf)*time.Millisecond, func() {
-			session.Register(conn, ip)
+			session.HandleClient(client)
 		})
 		if poolerr != nil && poolerr == gopool.ErrScheduleTimeout {
 			mf = mf * 10 * cnt
 		} else if poolerr != nil {
-			h.hlgr.Errorf("Error finding free go-routine for 1 ms. Error:%v", poolerr)
+			h.hlgr.Errorf("Error finding free go-routine for the timeout. Error:%v", poolerr)
 			break
 		}
 	}
