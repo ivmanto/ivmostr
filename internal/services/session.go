@@ -259,12 +259,13 @@ func (s *Session) TuneClientConn(client *Client) {
 	client.Conn.WS.SetCloseHandler(func(code int, text string) error {
 
 		client.lgr.Errorf("[SetCloseHandler] Client sent closing websocket connection control message. Code:%d, Msg:%s.", code, text)
+		err := fmt.Errorf("[SetCloseHandler] Client closed the ws connection. [%v]", client.IP)
 
-		if err := client.Conn.WS.NetConn().Close(); err != nil {
+		if errnc := client.Conn.WS.NetConn().Close(); errnc != nil {
 			log.Printf("[SetCloseHandler] Error closing underlying network connection: %v", err)
 		}
-
-		return fmt.Errorf("[SetCloseHandler] Client closed the ws connection. [%v]", client.IP)
+		client.errCH <- err
+		return err
 	})
 
 	client.Conn.WS.SetPingHandler(func(appData string) error {
