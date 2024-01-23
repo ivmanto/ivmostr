@@ -103,7 +103,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	client.mu = sync.Mutex{}
 	client.msgwt = make(chan []interface{}, 20)
 	client.inmsg = make(chan []interface{}, 10)
-	client.errRM = make(chan error)
+	client.errFM = make(chan error)
 	client.errCH = make(chan error)
 	client.read_events = 0
 	client.lgr = &log.Logger{
@@ -199,6 +199,7 @@ func (s *Session) Remove(client *Client) {
 			}
 		}
 	}
+	client.Conn.WS = nil
 
 	// Put the connection shell back in the pool
 	s.wspool.Put(client.Conn)
@@ -218,7 +219,7 @@ func (s *Session) Remove(client *Client) {
 	client.errorRate = nil
 	client.msgwt = nil
 	client.inmsg = nil
-	client.errRM = nil
+	client.errFM = nil
 	client.errCH = nil
 	client = nil
 }
@@ -262,8 +263,9 @@ func (s *Session) TuneClientConn(client *Client) {
 		err := fmt.Errorf("[SetCloseHandler] Client closed the ws connection. [%v]", client.IP)
 
 		if errnc := client.Conn.WS.NetConn().Close(); errnc != nil {
-			log.Printf("[SetCloseHandler] Error closing underlying network connection: %v", err)
+			log.Printf("[SetCloseHandler] Error closing underlying network connection: %v", errnc)
 		}
+
 		client.errCH <- err
 		return err
 	})

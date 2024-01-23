@@ -47,7 +47,7 @@ type Client struct {
 	wrchrr              int64 // wrchrr = write channel response rate
 	msgwt               chan []interface{}
 	inmsg               chan []interface{}
-	errRM               chan error
+	errFM               chan error
 	errCH               chan error
 }
 
@@ -62,17 +62,32 @@ func (c *Client) ReceiveMsg() error {
 	c.lgr.Level = log.DebugLevel
 
 	go func() {
-		c.errCH <- c.writeT()
+		for {
+			select {
+			case c.errCH <- c.writeT():
+			case <-c.errFM:
+				c.Conn.WS.Close()
+				break
+			}
+		}
 	}()
 
 	go func() {
-		c.errCH <- c.dispatcher()
+		for {
+			select {
+			case c.errCH <- c.dispatcher():
+			case <-c.errFM:
+				c.Conn.WS.Close()
+				break
+			}
+		}
 	}()
 
 	go func() {
 		for errch = range c.errCH {
 			if errch != nil {
 				c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errch)
+				c.Conn.WS.Close()
 				break
 			}
 		}
@@ -80,6 +95,12 @@ func (c *Client) ReceiveMsg() error {
 
 	for {
 		mt, p, err := c.Conn.WS.ReadMessage()
+		if mt == -1 {
+			c.errFM <- fmt.Errorf("Critical error: %v", err)
+			c.Conn.WS.Close()
+			errch = err
+			break
+		}
 		if err != nil && err != io.EOF {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
 			errch = err
