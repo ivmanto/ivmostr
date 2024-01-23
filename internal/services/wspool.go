@@ -17,9 +17,7 @@ type ConnectionPool struct {
 func NewConnectionPool(size int) *ConnectionPool {
 	pool := &sync.Pool{
 		New: func() interface{} {
-			return &Connection{
-				WS: nil,
-			}
+			return &Connection{}
 		},
 	}
 
@@ -31,6 +29,6 @@ func (p *ConnectionPool) Get() *Connection {
 }
 
 func (p *ConnectionPool) Put(conn *Connection) {
-	conn = nil
+	conn.WS = &websocket.Conn{}
 	p.pool.Put(conn)
 }
