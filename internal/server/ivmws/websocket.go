@@ -126,7 +126,6 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	client := session.Register(conn, ip)
 	if client == nil {
-		wspool.Put(conn)
 		return
 	}
 

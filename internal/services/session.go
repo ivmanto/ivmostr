@@ -83,6 +83,10 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 // Register upgraded websocket connection as client in the sessions
 func (s *Session) Register(conn *Connection, ip string) *Client {
 
+	if _, ok := s.ns.Load(ip); ok {
+		return nil
+	}
+
 	// register the clients IP in the ip-counter
 	tools.IPCount.Add(ip)
 
