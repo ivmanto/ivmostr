@@ -348,11 +348,28 @@ func (s *Session) Monitor() {
 	for {
 		select {
 		case <-monitorTicker.C:
-			s.slgr.Info("... monitor triggered ...")
+			s.slgr.Println("... ================ ...")
+			s.sessionState()
+			s.slgr.Println("... ================ ...")
 		case <-monitorClose:
 			break
 		}
 	}
+}
+
+// sessionState will get the list of registred clients with their attributes
+func (s *Session) sessionState() {
+
+	s.mu.Lock()
+
+	s.ns.Range(func(key, value interface{}) bool {
+		client := value.(*Client)
+
+		s.slgr.WithFields(log.Fields{"clientID": client.id, "clientName": client.name, "SubID": client.Subscription_id, "Filters": client.Filetrs}).Info(key)
+
+		return true
+	})
+	s.mu.Unlock()
 }
 
 // Close should ensure proper session closure and
