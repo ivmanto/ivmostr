@@ -20,12 +20,14 @@ import (
 )
 
 var (
-	NewEvent     = make(chan *gn.Event, 100)
-	Exit         = make(chan struct{})
-	relay_access string
-	clientCldLgr *logging.Client
-	cclnlgr      *logging.Logger
-	lep          = logging.Entry{Severity: logging.Notice, Payload: ""}
+	NewEvent      = make(chan *gn.Event, 100)
+	Exit          = make(chan struct{})
+	monitorTicker = time.NewTicker(time.Second * 30)
+	monitorClose  = make(chan struct{})
+	relay_access  string
+	clientCldLgr  *logging.Client
+	cclnlgr       *logging.Logger
+	lep           = logging.Entry{Severity: logging.Notice, Payload: ""}
 )
 
 // Session is global object in nostr relay. It's living over
@@ -67,6 +69,13 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	// receives new nostr events messages to broadcast among the subscribers
 	go session.NewEventBroadcaster()
+
+	// [ ]: Session monitor:
+	// On regular base (10min - 1 hour) to display:
+	// *  the list of IP addresses ofregistered clients in session.ns
+	// * SubscriptionID per each registred client
+	// * Filters per SubscriptionID
+	go session.Monitor()
 
 	return &session
 }
@@ -333,7 +342,23 @@ func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 	s.cfg = cfg
 }
 
+// Monitor is to run in yet another go-routine and show
+// the session state in terms of clients and their activities.
+func (s *Session) Monitor() {
+	for {
+		select {
+		case <-monitorTicker.C:
+			s.slgr.Info("... monitor triggered ...")
+		case <-monitorClose:
+			break
+		}
+	}
+}
+
+// Close should ensure proper session closure and
+// make sure the resources are released - graceful shoutdown
 func (s *Session) Close() bool {
+	monitorClose <- struct{}{}
 	<-Exit
 	//[ ]TODO: release resources and gracefully close the session
 	return true
