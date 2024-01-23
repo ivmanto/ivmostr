@@ -22,7 +22,7 @@ import (
 var (
 	NewEvent      = make(chan *gn.Event, 100)
 	Exit          = make(chan struct{})
-	monitorTicker = time.NewTicker(time.Second * 30)
+	monitorTicker = time.NewTicker(time.Second * 60)
 	monitorClose  = make(chan struct{})
 	relay_access  string
 	clientCldLgr  *logging.Client
@@ -360,16 +360,16 @@ func (s *Session) Monitor() {
 // sessionState will get the list of registred clients with their attributes
 func (s *Session) sessionState() {
 
-	s.mu.Lock()
-
 	s.ns.Range(func(key, value interface{}) bool {
-		client := value.(*Client)
-
+		client, ok := value.(*Client)
+		if !ok {
+			s.slgr.Errorln("in key the value is not a client: ", key)
+			return true
+		}
 		s.slgr.WithFields(log.Fields{"clientID": client.id, "clientName": client.name, "SubID": client.Subscription_id, "Filters": client.Filetrs}).Info(key)
-
 		return true
 	})
-	s.mu.Unlock()
+
 }
 
 // Close should ensure proper session closure and
