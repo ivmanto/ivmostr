@@ -190,22 +190,22 @@ func (s *Session) Remove(client *Client) {
 	// [ ]: Review what exactly more resources (than websocket connection) need to be released
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// Close the websocket connection properly
 	err := client.wsc.Close()
 	if err != nil {
 		s.slgr.Errorln("[Remove] Error closing client's ws connection:", err)
 	}
 
-	// Remove the client from the session's internal register
-	s.ns.Delete(client.IP)
-
 	// Put the connection shell back in the pool
 	s.wspool.Put(client.Conn)
 
 	// Put the Client back in the client's pool
 	s.Clients.Put(client)
+
+	// Remove the client from the session's internal register
+	s.ns.Delete(client.IP)
+
+	s.mu.Unlock()
 
 	// Remove the client from IP counter
 	tools.IPCount.Remove(client.IP)
