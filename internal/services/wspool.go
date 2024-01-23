@@ -29,6 +29,6 @@ func (p *ConnectionPool) Get() *Connection {
 }
 
 func (p *ConnectionPool) Put(conn *Connection) {
-	conn.WS = &websocket.Conn{}
+	conn = nil
 	p.pool.Put(conn)
 }

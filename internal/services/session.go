@@ -188,6 +188,11 @@ func (s *Session) Remove(client *Client) {
 
 	// [ ]: Review what exactly more resources (than websocket connection) need to be released
 
+	e := client.Conn.WS.Close()
+	if e != nil {
+		s.slgr.Errorf("[Remove] error closing websocket connection: %v", e)
+	}
+
 	s.wspool.Put(client.Conn)
 
 	// Put the Client back in the client's pool
