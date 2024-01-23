@@ -12,7 +12,6 @@ type Connection struct {
 
 type ConnectionPool struct {
 	pool *sync.Pool
-	mtx  sync.Mutex
 }
 
 func NewConnectionPool(size int) *ConnectionPool {
@@ -22,7 +21,7 @@ func NewConnectionPool(size int) *ConnectionPool {
 		},
 	}
 
-	return &ConnectionPool{pool, sync.Mutex{}}
+	return &ConnectionPool{pool}
 }
 
 func (p *ConnectionPool) Get() *Connection {
@@ -30,8 +29,6 @@ func (p *ConnectionPool) Get() *Connection {
 }
 
 func (p *ConnectionPool) Put(conn *Connection) {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	conn.WS = nil
+	conn.WS.Close()
 	p.pool.Put(conn)
 }
