@@ -1,6 +1,7 @@
 package services
 
 import (
+	"log"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -17,7 +18,7 @@ type ConnectionPool struct {
 func NewConnectionPool(size int) *ConnectionPool {
 	pool := &sync.Pool{
 		New: func() interface{} {
-			return &Connection{}
+			return make([]*Connection, size)
 		},
 	}
 
@@ -29,6 +30,9 @@ func (p *ConnectionPool) Get() *Connection {
 }
 
 func (p *ConnectionPool) Put(conn *Connection) {
-	conn.WS.Close()
+	e := conn.WS.Close()
+	if e != nil {
+		log.Println("Error closing connection.Ws:", e)
+	}
 	p.pool.Put(conn)
 }

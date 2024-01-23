@@ -27,7 +27,6 @@ var (
 
 type Client struct {
 	Conn                *Connection
-	ccc                 bool
 	mu                  sync.Mutex
 	lgr                 *log.Logger
 	cclnlgr             *logging.Logger

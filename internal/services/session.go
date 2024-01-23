@@ -94,7 +94,6 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 
 	client.Conn = conn
 	client.IP = ip
-	client.ccc = false
 	client.repo = s.repo
 	client.cclnlgr = cclnlgr
 	client.Authed = false
@@ -190,16 +189,13 @@ func (s *Session) Remove(client *Client) {
 	// [ ]: Review what exactly more resources (than websocket connection) need to be released
 
 	// Close the websocket connection properly
-	err := client.Conn.WS.Close()
-	if err != nil {
-		s.slgr.Errorln("[Remove] Error closing client's ws connection:", err)
-	}
+	// err := client.Conn.WS.Close()
+	// if err != nil {
+	// 	s.slgr.Errorln("[Remove] Error closing client's ws connection:", err)
+	// }
 
 	// Put the connection shell back in the pool
-	if client.Conn != nil {
-		s.slgr.Infof("[remove] need to dispose the client's connection")
-		s.wspool.Put(client.Conn)
-	}
+	s.wspool.Put(client.Conn)
 
 	// Put the Client back in the client's pool
 	s.Clients.Put(client)
@@ -255,23 +251,14 @@ func (s *Session) TuneClientConn(client *Client) {
 	// SetCloseHandler will be called by the reading methods when the client announced connection close event.
 	// Full list of WebSocket Status Codes at: https://kapeli.com/cheat_sheets/WebSocket_Status_Codes.docset/Contents/Resources/Documents/index
 	client.Conn.WS.SetCloseHandler(func(code int, text string) error {
-		var err error
-		switch code {
-		case 1000:
-			err = fmt.Errorf("Client's normal close. Message:[%s]", text)
-		case 1001:
-			err = fmt.Errorf("Client's going away. Message:[%s]", text)
-		case 1002:
-			err = fmt.Errorf("Client's closing due to protocol error. Message:[%s]", text)
-		case 1003:
-			err = fmt.Errorf("Client's closing as unsupported. Data not accepted. Message:[%s]", text)
-		case 1007:
-			err = fmt.Errorf("Client's closing as unsupported payload. Message:[%s]", text)
-		default:
-			err = fmt.Errorf("Client's closing as other mean of close. Code:[%d]. Message:[%s]", code, text)
-		}
+
 		client.lgr.Errorf("[SetCloseHandler] Client sent closing websocket connection control message. Code:%d, Msg:%s.", code, text)
-		return err
+
+		if err := client.Conn.WS.UnderlyingConn().Close(); err != nil {
+			log.Printf("[SetCloseHandler] Error closing underlying network connection: %v", err)
+		}
+
+		return fmt.Errorf("[SetCloseHandler] Client closed the ws connection. [%v]", client.IP)
 	})
 
 	client.Conn.WS.SetPingHandler(func(appData string) error {
