@@ -114,6 +114,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 			DisableHTMLEscape: true,
 		},
 	}
+
 	s.mu.Lock()
 	{
 		client.id = s.seq
