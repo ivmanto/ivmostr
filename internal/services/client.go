@@ -103,6 +103,8 @@ func (c *Client) ReceiveMsg() error {
 		}
 		if err != nil && err != io.EOF {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
+			c.Conn.WS.Close()
+			c.errFM <- err
 			errch = err
 			break
 		}
