@@ -36,8 +36,7 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	if err != nil {
 		return fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+
 	// ==================== end of client ================
 
 	// multi-level array are not supported by firestore! It must be converted into a array of objects with string elements
@@ -51,7 +50,8 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	if ec.Kind == 22242 {
 		return fmt.Errorf("AUTH event should not be stored in the repository")
 	}
-
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 	if _, err := fsclient.Collection(r.events_collection).Doc(e.ID).Create(*r.ctx, ec); err != nil {
 		return fmt.Errorf("unable to save in clients repository. error: %v", err)
 	}
@@ -63,6 +63,8 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	tags := tagsToTagMap(tgs)
 	docRef := fsclient.Collection(r.events_collection).Doc(ec.ID)
 
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 	if _, errt := docRef.Set(*r.ctx, tags, firestore.MergeAll); errt != nil {
 		return fmt.Errorf("unable to save Tags for Event ID: %s. error: %v", ec.ID, errt)
 	}

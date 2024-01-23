@@ -89,7 +89,7 @@ func rateLimiter(h http.Handler) http.Handler {
 		rateLimit := ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext).RateLimit
 
 		// Check if the IP address has made too many requests recently
-		if time.Since(rateLimit.Timestamp) < time.Second*30 {
+		if time.Since(rateLimit.Timestamp) < time.Second*3 {
 			if rateLimit.Requests >= 2 {
 				// Block the request
 				w.WriteHeader(http.StatusTooManyRequests)
