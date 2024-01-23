@@ -100,8 +100,8 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
-		ReadBufferSize:    2048,
-		WriteBufferSize:   2048,
+		ReadBufferSize:    16384,
+		WriteBufferSize:   4096,
 		WriteBufferPool:   &sync.Pool{},
 		EnableCompression: false,
 		CheckOrigin: func(r *http.Request) bool {
