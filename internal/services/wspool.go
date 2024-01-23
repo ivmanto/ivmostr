@@ -18,7 +18,9 @@ type ConnectionPool struct {
 func NewConnectionPool(size int) *ConnectionPool {
 	pool := &sync.Pool{
 		New: func() interface{} {
-			return make([]*Connection, size)
+			return &Connection{
+				WS: nil,
+			}
 		},
 	}
 
