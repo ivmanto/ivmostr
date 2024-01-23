@@ -159,6 +159,12 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 
 func (s *Session) HandleClient(client *Client) {
 
+	if client == nil {
+		s.slgr.Errorln("[HandleClient] client is nil")
+		return
+	}
+
+	// Handle client
 	// Schedule Client connection handling into a goroutine from the pool
 	s.pool.Schedule(func() {
 
@@ -182,6 +188,9 @@ func (s *Session) Remove(client *Client) {
 	}
 
 	// [ ]: Review what exactly more resources (than websocket connection) need to be released
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Close the websocket connection properly
 	err := client.wsc.Close()
