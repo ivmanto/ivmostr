@@ -87,7 +87,6 @@ func (c *Client) ReceiveMsg() error {
 		for errch = range c.errCH {
 			if errch != nil {
 				c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errch)
-				c.Conn.WS.Close()
 				break
 			}
 		}
