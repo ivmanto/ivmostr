@@ -189,10 +189,14 @@ func (s *Session) Remove(client *Client) {
 	// [ ]: Review what exactly more resources (than websocket connection) need to be released
 
 	// Close the websocket connection properly
-	// err := client.Conn.WS.Close()
-	// if err != nil {
-	// 	s.slgr.Errorln("[Remove] Error closing client's ws connection:", err)
-	// }
+	err := client.Conn.WS.Close()
+	if err != nil {
+		s.slgr.Errorln("[Remove] Error closing client's ws connection:", err)
+		errnc := client.Conn.WS.NetConn().Close()
+		if errnc != nil {
+			s.slgr.Errorln("[Remove] Error closing client's underlying net connection:", errnc)
+		}
+	}
 
 	// Put the connection shell back in the pool
 	s.wspool.Put(client.Conn)

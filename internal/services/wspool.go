@@ -1,7 +1,6 @@
 package services
 
 import (
-	"log"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -32,9 +31,6 @@ func (p *ConnectionPool) Get() *Connection {
 }
 
 func (p *ConnectionPool) Put(conn *Connection) {
-	e := conn.WS.Close()
-	if e != nil {
-		log.Println("Error closing connection.Ws:", e)
-	}
+	conn = nil
 	p.pool.Put(conn)
 }
