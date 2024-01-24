@@ -11,7 +11,6 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/data/firestoredb"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/fspool"
-	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 )
@@ -31,9 +30,9 @@ var (
 	prj              = "ivm-ostr-srv"
 	dlv       int    = 20
 	ecn       string = "events"
-	pool             = gopool.NewPool(128, 2, 1)
-	session          = NewSession(pool, nostrRepo, nil, nil, nil)
-	message   []interface{}
+	//pool             = gopool.NewPool(128, 2, 1)
+	//session          = NewSession(pool, nostrRepo, nil, nil, nil)
+	message []interface{}
 )
 
 var client = Client{
@@ -79,7 +78,7 @@ func GetConnected(t *testing.T) {
 	}
 
 	// set the client's connection to the echo server
-	client.wsc = conn
+	client.Conn.WS = conn
 
 }
 

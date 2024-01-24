@@ -56,55 +56,82 @@ func (c *Client) Name() string {
 }
 
 func (c *Client) ReceiveMsg() error {
-	var errch error
+	var errch, errfm error
+	// Create a sync.WaitGroup to track the number of goroutines waiting to finish
+	var wg sync.WaitGroup
+	// Create a context to cancel the goroutines if needed
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// [ ]: to be tested if it is filtering logs corectly
 	c.lgr.Level = log.DebugLevel
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
 			select {
 			case c.errCH <- c.writeT():
-			case <-c.errFM:
+			default:
+				errfm = <-c.errFM
 				c.Conn.WS.Close()
-				break
+				// Check if the context has been canceled
+				if ctx.Err() != nil {
+					c.lgr.Errorf("Goroutine `writeT` canceled: %v", ctx.Err())
+				} else {
+					fmt.Printf("Goroutine `writeT` forced:%v", errfm)
+				}
 			}
 		}
 	}()
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
 			select {
 			case c.errCH <- c.dispatcher():
-			case <-c.errFM:
+			default:
+				errfm = <-c.errFM
 				c.Conn.WS.Close()
-				break
+				// Check if the context has been canceled
+				if ctx.Err() != nil {
+					c.lgr.Errorf("Goroutine `dispatcher` canceled: %v", ctx.Err())
+				} else {
+					fmt.Printf("Goroutine `dispatcher` forced:%v", errfm)
+				}
 			}
 		}
 	}()
 
+	wg.Add(1)
 	go func() {
-		for errch = range c.errCH {
-			if errch != nil {
-				c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errch)
-				break
+		defer wg.Done()
+		select {
+		case <-c.errCH:
+			for errch = range c.errCH {
+				if errch != nil {
+					c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errch)
+				}
+			}
+		default:
+			errfm := <-c.errFM
+			c.Conn.WS.Close()
+			// Check if the context has been canceled
+			if ctx.Err() != nil {
+				c.lgr.Errorf("Goroutine `errCH` canceled: %v", ctx.Err())
+			} else {
+				fmt.Printf("Goroutine `errCH` forced:%v", errfm)
 			}
 		}
 	}()
 
 	for {
 		mt, p, err := c.Conn.WS.ReadMessage()
-		if mt == -1 {
-			c.errFM <- fmt.Errorf("Critical error: %v", err)
-			c.Conn.WS.Close()
-			errch = err
-			break
-		}
-		if err != nil && err != io.EOF {
+		if (err != nil && err != io.EOF) || (mt == -1) {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
 			c.Conn.WS.Close()
 			c.errFM <- err
-			errch = err
 			break
 		}
 
@@ -112,7 +139,9 @@ func (c *Client) ReceiveMsg() error {
 		c.inmsg <- []interface{}{mt, p}
 	}
 
-	return errch
+	wg.Wait()
+	c.lgr.Infof("[ReceiveMsg] for client [%v] completed!", c.IP)
+	return errfm
 }
 
 func (c *Client) writeT() error {

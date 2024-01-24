@@ -402,7 +402,6 @@ func (s *Session) sessionState() {
 
 	s.slgr.Println("[session state] total active clients:", clnt_count)
 	s.slgr.Println("... session state complete ...")
-	return
 }
 
 // Close should ensure proper session closure and
