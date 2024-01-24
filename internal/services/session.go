@@ -22,7 +22,7 @@ import (
 var (
 	NewEvent      = make(chan *gn.Event, 100)
 	Exit          = make(chan struct{})
-	monitorTicker = time.NewTicker(time.Minute * 1)
+	monitorTicker = time.NewTicker(time.Minute * 10)
 	monitorClose  = make(chan struct{})
 	relay_access  string
 	clientCldLgr  *logging.Client
@@ -71,9 +71,9 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	// receives new nostr events messages to broadcast among the subscribers
 	go session.NewEventBroadcaster()
 
-	// [ ]: Session monitor:
+	// [x]: Session monitor:
 	// On regular base (10min - 1 hour) to display:
-	// *  the list of IP addresses ofregistered clients in session.ns
+	// * the list of IP addresses of registered clients in session.ldg
 	// * SubscriptionID per each registred client
 	// * Filters per SubscriptionID
 	go session.Monitor()
@@ -394,7 +394,7 @@ func (s *Session) sessionState() {
 		}
 
 		if client.Subscription_id == "" && len(client.Filetrs) == 0 {
-			s.slgr.Warningf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
+			s.slgr.Debugf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
 			if time.Now().Unix()-client.CreatedAt > 300 {
 				s.ldg.Remove(client.IP)
 			}
@@ -406,7 +406,7 @@ func (s *Session) sessionState() {
 			"clientName": client.name,
 			"SubID":      client.Subscription_id,
 			"Filters":    client.Filetrs,
-		}).Infof("[session state] %v", key)
+		}).Debugf("[session state] %v", key)
 
 		clnt_count++
 		continue
