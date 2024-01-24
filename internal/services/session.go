@@ -400,7 +400,7 @@ func (s *Session) sessionState() {
 	})
 	s.mu.Unlock()
 
-	s.slgr.Panicln("[session state] total active clients:", clnt_count)
+	s.slgr.Println("[session state] total active clients:", clnt_count)
 	s.slgr.Println("... session state complete ...")
 	return
 }
