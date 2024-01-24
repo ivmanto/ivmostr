@@ -222,7 +222,9 @@ func (s *Session) Remove(client *Client) {
 	s.Clients.Put(client)
 
 	// Remove the client from the session's internal register
+	s.mu.Lock()
 	s.ns.Delete(client.IP)
+	s.mu.Unlock()
 
 	// Remove the client from IP counter
 	tools.IPCount.Remove(client.IP)
