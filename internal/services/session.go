@@ -37,7 +37,7 @@ type Session struct {
 	Clients *ClientsPool
 	mu      sync.Mutex
 	seq     uint
-	ns      sync.Map
+	ldg     *ledger
 	clgr    *logging.Logger
 	slgr    *log.Logger
 	pool    *gopool.Pool
@@ -57,6 +57,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 		wspool:  wspool,
 		repo:    repo,
 		cfg:     cfg,
+		ldg:     NewLedger(),
 	}
 
 	relay_access = cfg.Relay_access
@@ -82,21 +83,16 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 func (s *Session) IsRegistered(ip string) bool {
 
-	v, ok := s.ns.Load(ip)
-	if ok {
-		if v != nil {
-			clnt := v.(*Client)
-			e := clnt.Conn.WS.WriteControl(websocket.PingMessage, []byte(`ping`), time.Time.Add(time.Now(), time.Second*1))
-			if e != nil {
-				s.slgr.Errorf("[IsRegistered] Error [%v] while pinging connection to [%v]", e, ip)
-				return false
-			}
-			return true
+	clnt := s.ldg.Get(ip)
+
+	if clnt != nil {
+		e := clnt.Conn.WS.WriteControl(websocket.PingMessage, []byte(`ping`), time.Time.Add(time.Now(), time.Second*1))
+		if e != nil {
+			s.slgr.Errorf("[IsRegistered] Error [%v] while pinging connection to [%v]", e, ip)
 		}
-		return false
-	} else {
-		return false
+		return true
 	}
+	return false
 }
 
 // Register upgraded websocket connection as client in the sessions
@@ -140,9 +136,9 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		s.seq++
 		client.name = s.randName()
 
-		av, loaded := s.ns.LoadOrStore(client.IP, client)
-		if loaded {
-			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, av)
+		ok, clnt := s.ldg.Add(client.IP, client)
+		if !ok {
+			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
 			s.mu.Unlock()
 			return nil
 		}
@@ -222,7 +218,7 @@ func (s *Session) Remove(client *Client) {
 
 	// Remove the client from the session's internal register
 	s.mu.Lock()
-	s.ns.Delete(client.IP)
+	s.ldg.Remove(client.IP)
 	s.mu.Unlock()
 
 	// Remove the client from IP counter
@@ -244,7 +240,7 @@ func (s *Session) randName() string {
 	var suffix string
 	for {
 		name := codewords[rand.Intn(len(codewords))] + suffix
-		if _, has := s.ns.Load(name); !has {
+		if clnt := s.ldg.Get(name); clnt == nil {
 			return name
 		}
 		suffix += strconv.Itoa(rand.Intn(10))
@@ -329,14 +325,16 @@ func (s *Session) NewEventBroadcaster() {
 
 		s.mu.Lock()
 
-		s.ns.Range(func(key, value interface{}) bool {
-			client := value.(*Client)
+		for _, client := range s.ldg.subscribers {
+
 			if client.Subscription_id == "" || client.id == uint(e.GetExtraNumber("id")) {
-				return true
+				continue
 			}
+
 			//nip-04 requires clients authentication before sending kind:4 encrypted Dms
 			if e.Kind == 4 && !client.Authed {
-				return true
+				continue
+
 			} else if e.Kind == 4 && client.Authed {
 				tag := e.Tags[0]
 				recp := strings.Split(tag[1], ",")
@@ -345,19 +343,18 @@ func (s *Session) NewEventBroadcaster() {
 						client.msgwt <- []interface{}{e}
 
 						s.mu.Unlock()
-						return false
+						break
 					}
 				}
 			}
 
 			if filterMatch(e, client.GetFilters()) {
 				client.msgwt <- []interface{}{e}
-				return true
+				continue
 			}
-			return true
-		})
+			continue
+		}
 		s.mu.Unlock()
-
 		continue
 	}
 }
@@ -385,14 +382,23 @@ func (s *Session) Monitor() {
 func (s *Session) sessionState() {
 
 	s.mu.Lock()
-	var clnt_count int
-	s.ns.Range(func(key, value interface{}) bool {
+	clnt_count := 0
 
-		client, ok := value.(*Client)
-		if !ok {
+	for key, client := range s.ldg.subscribers {
+
+		if client == nil {
 			s.slgr.Errorf("[session state] in key [%v] the value is not a client object!", key)
 			client.errFM <- fmt.Errorf("[session state] Inconsistent client [%v] registration!", client.IP)
-			return true
+			s.ldg.Remove(key)
+			continue
+		}
+
+		if client.Subscription_id == "" && len(client.Filetrs) == 0 {
+			s.slgr.Warningf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
+			if time.Now().Unix()-client.CreatedAt > 300 {
+				s.ldg.Remove(client.IP)
+			}
+			continue
 		}
 
 		s.slgr.WithFields(log.Fields{
@@ -402,14 +408,9 @@ func (s *Session) sessionState() {
 			"Filters":    client.Filetrs,
 		}).Infof("[session state] %v", key)
 
-		if client.Subscription_id == "" && len(client.Filetrs) == 0 {
-			s.slgr.Warningf("[session state] Removing not subscribed client [%s]/[%s]", client.IP, client.name)
-			client.errFM <- fmt.Errorf("[session state] Not subscribed client [%v]!", client.IP)
-		}
-
 		clnt_count++
-		return true
-	})
+		continue
+	}
 
 	s.slgr.Println("[session state] total consistant clients:", clnt_count)
 	s.slgr.Println("... session state complete ...")

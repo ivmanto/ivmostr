@@ -2,6 +2,9 @@ package services
 
 import "sync"
 
+// ClientsPool is a pool of clients object preloaded
+// with their default values and taking a connection
+// from the connection pool. (to be fully implemented)
 type ClientsPool struct {
 	clpool *sync.Pool
 	cnt    int

@@ -33,6 +33,7 @@ type Client struct {
 	repo                nostr.NostrRepo
 	id                  uint
 	name                string
+	CreatedAt           int64
 	challenge           string
 	npub                string
 	Subscription_id     string
