@@ -96,6 +96,13 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	hst := tools.DiscoverHost(r)
 	ip := tools.GetIP(r)
 
+	if session.IsRegistered(ip) {
+		h.hlgr.Infof("WSU-REQ: DUPLICATED request arived from already connected ip: %v, Host: %v, Origin: %v", ip, hst, org)
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte("Already connected"))
+		return
+	}
+
 	h.hlgr.Infof("WSU-REQ: ... new request arived from ip: %v, Host: %v, Origin: %v", ip, hst, org)
 
 	upgrader := websocket.Upgrader{

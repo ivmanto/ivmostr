@@ -80,12 +80,25 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	return &session
 }
 
+func (s *Session) IsRegistered(ip string) bool {
+	if v, ok := s.ns.Load(ip); ok {
+		if v != nil {
+			clnt := v.(*Client)
+			e := clnt.Conn.WS.WriteControl(websocket.PingMessage, []byte(`ping`), time.Time.Add(time.Now(), time.Second*1))
+			if e != nil {
+				s.slgr.Errorf("[IsRegistered] Error [%v] while pinging connection to [%v]", e, ip)
+				return false
+			}
+			return true
+		}
+		return false
+	} else {
+		return false
+	}
+}
+
 // Register upgraded websocket connection as client in the sessions
 func (s *Session) Register(conn *Connection, ip string) *Client {
-
-	if _, ok := s.ns.Load(ip); ok {
-		return nil
-	}
 
 	// register the clients IP in the ip-counter
 	tools.IPCount.Add(ip)
