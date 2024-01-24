@@ -79,7 +79,7 @@ func (c *Client) ReceiveMsg() error {
 				if ctx.Err() != nil {
 					c.lgr.Errorf("Goroutine `writeT` canceled: %v", ctx.Err())
 				} else {
-					fmt.Printf("Goroutine `writeT` forced:%v", errfm)
+					c.lgr.Infof("Goroutine `writeT` forced:%v", errfm)
 				}
 			}
 		}
@@ -98,7 +98,7 @@ func (c *Client) ReceiveMsg() error {
 				if ctx.Err() != nil {
 					c.lgr.Errorf("Goroutine `dispatcher` canceled: %v", ctx.Err())
 				} else {
-					fmt.Printf("Goroutine `dispatcher` forced:%v", errfm)
+					c.lgr.Infof("Goroutine `dispatcher` forced:%v", errfm)
 				}
 			}
 		}
@@ -121,7 +121,7 @@ func (c *Client) ReceiveMsg() error {
 			if ctx.Err() != nil {
 				c.lgr.Errorf("Goroutine `errCH` canceled: %v", ctx.Err())
 			} else {
-				fmt.Printf("Goroutine `errCH` forced:%v", errfm)
+				c.lgr.Infof("Goroutine `errCH` forced:%v", errfm)
 			}
 		}
 	}()

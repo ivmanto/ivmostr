@@ -82,10 +82,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 func (s *Session) IsRegistered(ip string) bool {
 
-	s.mu.Lock()
 	v, ok := s.ns.Load(ip)
-	s.mu.Unlock()
-
 	if ok {
 		if v != nil {
 			clnt := v.(*Client)
@@ -140,14 +137,16 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	s.mu.Lock()
 	{
 		client.id = s.seq
+		s.seq++
 		client.name = s.randName()
+
 		av, loaded := s.ns.LoadOrStore(client.IP, client)
 		if loaded {
 			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, av)
+			s.mu.Unlock()
 			return nil
 		}
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
-		s.seq++
 	}
 	s.mu.Unlock()
 
@@ -385,29 +384,36 @@ func (s *Session) Monitor() {
 // sessionState will get the list of registred clients with their attributes
 func (s *Session) sessionState() {
 
+	s.mu.Lock()
 	var clnt_count int
-
 	s.ns.Range(func(key, value interface{}) bool {
 
 		client, ok := value.(*Client)
-
 		if !ok {
 			s.slgr.Errorf("[session state] in key [%v] the value is not a client object!", key)
-			s.mu.Lock()
-			s.ns.Delete(key)
-			s.mu.Unlock()
-
 			client.errFM <- fmt.Errorf("[session state] Inconsistent client [%v] registration!", client.IP)
 			return true
 		}
 
-		s.slgr.WithFields(log.Fields{"clientID": client.id, "clientName": client.name, "SubID": client.Subscription_id, "Filters": client.Filetrs}).Infof("[session state] %v", key)
+		s.slgr.WithFields(log.Fields{
+			"clientID":   client.id,
+			"clientName": client.name,
+			"SubID":      client.Subscription_id,
+			"Filters":    client.Filetrs,
+		}).Infof("[session state] %v", key)
+
+		if client.Subscription_id == "" && len(client.Filetrs) == 0 {
+			s.slgr.Warningf("[session state] Removing not subscribed client [%s]/[%s]", client.IP, client.name)
+			client.errFM <- fmt.Errorf("[session state] Not subscribed client [%v]!", client.IP)
+		}
+
 		clnt_count++
 		return true
 	})
 
-	s.slgr.Println("[session state] total active clients:", clnt_count)
+	s.slgr.Println("[session state] total consistant clients:", clnt_count)
 	s.slgr.Println("... session state complete ...")
+	s.mu.Unlock()
 }
 
 // Close should ensure proper session closure and
