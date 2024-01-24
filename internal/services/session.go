@@ -385,20 +385,24 @@ func (s *Session) sessionState() {
 
 	var clnt_count int
 
-	s.mu.Lock()
 	s.ns.Range(func(key, value interface{}) bool {
+
 		client, ok := value.(*Client)
+
 		if !ok {
 			s.slgr.Errorf("[session state] in key [%v] the value is not a client object!", key)
+			s.mu.Lock()
 			s.ns.Delete(key)
+			s.mu.Unlock()
+
 			client.errFM <- fmt.Errorf("[session state] Inconsistent client [%v] registration!", client.IP)
 			return true
 		}
+
 		s.slgr.WithFields(log.Fields{"clientID": client.id, "clientName": client.name, "SubID": client.Subscription_id, "Filters": client.Filetrs}).Infof("[session state] %v", key)
 		clnt_count++
 		return true
 	})
-	s.mu.Unlock()
 
 	s.slgr.Println("[session state] total active clients:", clnt_count)
 	s.slgr.Println("... session state complete ...")
