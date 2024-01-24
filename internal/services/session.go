@@ -22,7 +22,7 @@ import (
 var (
 	NewEvent      = make(chan *gn.Event, 100)
 	Exit          = make(chan struct{})
-	monitorTicker = time.NewTicker(time.Minute * 60)
+	monitorTicker = time.NewTicker(time.Minute * 1)
 	monitorClose  = make(chan struct{})
 	relay_access  string
 	clientCldLgr  *logging.Client
@@ -81,7 +81,12 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 }
 
 func (s *Session) IsRegistered(ip string) bool {
-	if v, ok := s.ns.Load(ip); ok {
+
+	s.mu.Lock()
+	v, ok := s.ns.Load(ip)
+	s.mu.Unlock()
+
+	if ok {
 		if v != nil {
 			clnt := v.(*Client)
 			e := clnt.Conn.WS.WriteControl(websocket.PingMessage, []byte(`ping`), time.Time.Add(time.Now(), time.Second*1))
@@ -268,7 +273,7 @@ func (s *Session) TuneClientConn(client *Client) {
 	// Full list of WebSocket Status Codes at: https://kapeli.com/cheat_sheets/WebSocket_Status_Codes.docset/Contents/Resources/Documents/index
 	client.Conn.WS.SetCloseHandler(func(code int, text string) error {
 
-		client.lgr.Errorf("[SetCloseHandler] Client sent closing websocket connection control message. Code:%d, Msg:%s.", code, text)
+		client.lgr.Errorf("[SetCloseHandler] Client [%s] sent closing websocket connection control message. Code:%d, Msg:%s.", client.IP, code, text)
 		err := fmt.Errorf("[SetCloseHandler] Client closed the ws connection. [%v]", client.IP)
 
 		if errnc := client.Conn.WS.NetConn().Close(); errnc != nil {
@@ -367,10 +372,8 @@ func (s *Session) Monitor() {
 		select {
 		case <-monitorTicker.C:
 			s.slgr.Println("... ================ ...")
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			s.sessionState()
-			s.slgr.Println("... ================ ...")
+			go s.sessionState()
+			s.slgr.Println("... running session state ...")
 		case <-monitorClose:
 			break
 		}
@@ -380,16 +383,26 @@ func (s *Session) Monitor() {
 // sessionState will get the list of registred clients with their attributes
 func (s *Session) sessionState() {
 
+	var clnt_count int
+
+	s.mu.Lock()
 	s.ns.Range(func(key, value interface{}) bool {
 		client, ok := value.(*Client)
 		if !ok {
-			s.slgr.Errorln("in key the value is not a client: ", key)
+			s.slgr.Errorf("[session state] in key [%v] the value is not a client object!", key)
+			s.ns.Delete(key)
+			client.errFM <- fmt.Errorf("[session state] Inconsistent client [%v] registration!", client.IP)
 			return true
 		}
-		s.slgr.WithFields(log.Fields{"clientID": client.id, "clientName": client.name, "SubID": client.Subscription_id, "Filters": client.Filetrs}).Info(key)
+		s.slgr.WithFields(log.Fields{"clientID": client.id, "clientName": client.name, "SubID": client.Subscription_id, "Filters": client.Filetrs}).Infof("[session state] %v", key)
+		clnt_count++
 		return true
 	})
+	s.mu.Unlock()
 
+	s.slgr.Panicln("[session state] total active clients:", clnt_count)
+	s.slgr.Println("... session state complete ...")
+	return
 }
 
 // Close should ensure proper session closure and
