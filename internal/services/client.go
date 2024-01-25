@@ -410,7 +410,9 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 			return nil
 		} else {
 			// [!] protocol error
+			c.mu.Lock()
 			c.errorRate[c.IP]++
+			c.mu.Unlock()
 			em := fmt.Sprintf("Error: There is already an active subscription for this connection with subscription_id: %v, the new subID %v is ignored.", c.Subscription_id, subscription_id)
 			c.writeCustomNotice(em)
 			return fmt.Errorf("There is already active subscription")
