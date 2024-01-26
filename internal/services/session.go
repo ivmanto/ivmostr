@@ -379,9 +379,9 @@ func (s *Session) sessionState() {
 
 	clnt_count := 0
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for key, client := range s.ldg.subscribers {
-		s.mu.Lock()
-		defer s.mu.Unlock()
 
 		if client == nil {
 			s.slgr.Errorf("[session state] in key [%v] the value is not a client object!", key)
@@ -409,8 +409,8 @@ func (s *Session) sessionState() {
 		continue
 	}
 
-	s.slgr.Println("[session state] total consistant clients:", clnt_count)
-	s.slgr.Println("... session state complete ...")
+	s.slgr.Infof("[session state] total consistant clients:%v", clnt_count)
+	s.slgr.Info("... session state complete ...")
 
 }
 
