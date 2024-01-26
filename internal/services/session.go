@@ -136,8 +136,9 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		client.id = s.seq
 		s.seq++
 		client.name = s.randName()
+		key := fmt.Sprintf("%s:%s", client.name, client.IP)
 
-		ok, clnt := s.ldg.Add(client.IP, client)
+		ok, clnt := s.ldg.Add(key, client)
 		if !ok {
 			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
 			return nil
@@ -219,7 +220,7 @@ func (s *Session) Remove(client *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.ldg.Remove(client.IP)
+	s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
 
 	// Remove the client from IP counter
 	tools.IPCount.Remove(client.IP)
@@ -325,7 +326,17 @@ func (s *Session) NewEventBroadcaster() {
 
 		for _, client := range s.ldg.subscribers {
 
-			if client.Subscription_id == "" || client.id == uint(e.GetExtraNumber("id")) {
+			if client.id == uint(e.GetExtraNumber("id")) {
+				continue
+			}
+
+			if client.Subscription_id == "" || len(client.Filetrs) == 0 {
+				if time.Now().Unix()-client.CreatedAt > 300 {
+					s.mu.Lock()
+					s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
+					s.mu.Unlock()
+					tools.IPCount.Remove(client.IP)
+				}
 				continue
 			}
 
@@ -350,7 +361,6 @@ func (s *Session) NewEventBroadcaster() {
 			}
 			continue
 		}
-
 		continue
 	}
 }
@@ -394,6 +404,7 @@ func (s *Session) sessionState() {
 			s.slgr.Debugf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
 			if time.Now().Unix()-client.CreatedAt > 300 {
 				s.ldg.Remove(client.IP)
+				tools.IPCount.Remove(client.IP)
 			}
 			continue
 		}
