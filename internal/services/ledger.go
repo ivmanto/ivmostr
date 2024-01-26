@@ -12,13 +12,16 @@ type ledger struct {
 // Otherwise it will return false and the existing value and do nothing.
 func (l *ledger) Add(name string, c *Client) (bool, *Client) {
 	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
 	ec := l.subscribers[name]
+
 	if ec != nil {
 		return false, ec
 	}
 
 	l.subscribers[name] = c
-	l.mtx.Unlock()
+
 	return true, nil
 }
 
@@ -26,14 +29,16 @@ func (l *ledger) Add(name string, c *Client) (bool, *Client) {
 // If there is a value under this key, it will be overwritten.
 func (l *ledger) Set(name string, c *Client) {
 	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
 	l.subscribers[name] = c
-	l.mtx.Unlock()
 }
 
 func (l *ledger) Remove(name string) {
 	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
 	delete(l.subscribers, name)
-	l.mtx.Unlock()
 }
 
 func (l *ledger) Len() int {
@@ -43,6 +48,7 @@ func (l *ledger) Len() int {
 func (l *ledger) Get(name string) *Client {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
+
 	return l.subscribers[name]
 }
 

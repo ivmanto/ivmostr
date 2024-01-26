@@ -131,6 +131,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	{
 		client.id = s.seq
 		s.seq++
@@ -139,12 +140,10 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		ok, clnt := s.ldg.Add(client.IP, client)
 		if !ok {
 			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
-			s.mu.Unlock()
 			return nil
 		}
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
 	}
-	s.mu.Unlock()
 
 	// Fine-tune the client's websocket connection
 	s.TuneClientConn(client)
@@ -218,8 +217,9 @@ func (s *Session) Remove(client *Client) {
 
 	// Remove the client from the session's internal register
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.ldg.Remove(client.IP)
-	s.mu.Unlock()
 
 	// Remove the client from IP counter
 	tools.IPCount.Remove(client.IP)
@@ -323,8 +323,6 @@ func (s *Session) NewEventBroadcaster() {
 		// 	continue
 		// }
 
-		s.mu.Lock()
-
 		for _, client := range s.ldg.subscribers {
 
 			if client.Subscription_id == "" || client.id == uint(e.GetExtraNumber("id")) {
@@ -341,8 +339,6 @@ func (s *Session) NewEventBroadcaster() {
 				if len(recp) > 1 {
 					if client.npub == recp[1] {
 						client.msgwt <- []interface{}{e}
-
-						s.mu.Unlock()
 						break
 					}
 				}
@@ -354,7 +350,7 @@ func (s *Session) NewEventBroadcaster() {
 			}
 			continue
 		}
-		s.mu.Unlock()
+
 		continue
 	}
 }
@@ -381,10 +377,11 @@ func (s *Session) Monitor() {
 // sessionState will get the list of registred clients with their attributes
 func (s *Session) sessionState() {
 
-	s.mu.Lock()
 	clnt_count := 0
 
 	for key, client := range s.ldg.subscribers {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 
 		if client == nil {
 			s.slgr.Errorf("[session state] in key [%v] the value is not a client object!", key)
@@ -414,7 +411,7 @@ func (s *Session) sessionState() {
 
 	s.slgr.Println("[session state] total consistant clients:", clnt_count)
 	s.slgr.Println("... session state complete ...")
-	s.mu.Unlock()
+
 }
 
 // Close should ensure proper session closure and
