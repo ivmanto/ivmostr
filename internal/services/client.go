@@ -172,16 +172,17 @@ func (c *Client) writeT() error {
 }
 
 func (c *Client) dispatcher() error {
+
 	var (
 		err error
 	)
 
 	for msg := range c.inmsg {
 
-		c.lgr.Debugf("[disp] received message type:%d", msg[0].(int))
+		c.lgr.Debugf("[disp] from [%s] received message type:%d", c.IP, msg[0].(int))
 
 		if len(msg[1].([]byte)) == 0 {
-			c.lgr.Debug("[disp] The received message has null payload!")
+			c.lgr.Debugf("[disp] [%s] The received message has null payload!", c.IP)
 			continue
 		}
 
@@ -193,8 +194,10 @@ func (c *Client) dispatcher() error {
 				text := "The received message is invalid utf8"
 				_ = c.Conn.WS.WriteControl(websocket.CloseMessage,
 					websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, text),
-					time.Time{})
-				return fmt.Errorf("[disp] %v", text)
+					time.Time.Add(time.Now(), time.Second*2))
+
+				c.errFM <- fmt.Errorf("[disp] invalid utf8 encoding from [%s]!", c.IP)
+				return fmt.Errorf("[disp] %s", text)
 			}
 
 			nostr_msg := msg[1].([]byte)
@@ -216,7 +219,7 @@ func (c *Client) dispatcher() error {
 					c.msgwt <- []interface{}{pr}
 
 				} else {
-					c.lgr.Debugf("[disp] Text message paylod is: %s", txtmsg)
+					c.lgr.Debugf("[disp] from client [%s] text message paylod is: %s", c.IP, txtmsg)
 					c.writeCustomNotice("not a nostr message")
 				}
 			}
@@ -227,21 +230,20 @@ func (c *Client) dispatcher() error {
 			continue
 		case websocket.CloseMessage:
 			msgstr := string(msg[1].([]byte))
-			c.lgr.Debugf("[disp] received a `close` message: %v from client %v", msgstr, c.IP)
-			return fmt.Errorf("[disp] Client closing the connection with: [%v]", msgstr)
+			c.lgr.Debugf("[disp] received a `close` message: %s from client [%s]", msgstr, c.IP)
+			return fmt.Errorf("[disp] Client closing the connection with: %s", msgstr)
 
 		case websocket.PingMessage:
-			c.lgr.Debugf("[disp] Client %v sent PING message (mt = 9):%v", c.IP, string(msg[1].([]byte)))
+			c.lgr.Debugf("[disp] Client [%s] sent PING message (mt = 9):%v", c.IP, string(msg[1].([]byte)))
 			continue
 
 		case websocket.PongMessage:
-			c.lgr.Debugf("[disp] From client %v received PONG message (mt=10) %v", c.IP, string(msg[1].([]byte)))
+			c.lgr.Debugf("[disp] Client [%s] received PONG message (mt=10) %v", c.IP, string(msg[1].([]byte)))
 			continue
 
 		default:
-			c.lgr.Debugf("[disp] Unknown message type: %v", msg[0].(int))
+			c.lgr.Debugf("[disp] From [%s] Unknown message type: %v", c.IP, msg[0].(int))
 			continue
-
 		}
 	}
 	return err
@@ -254,7 +256,7 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 
 	jmsg, err := convertToJSON(*msg)
 	if err != nil {
-		c.lgr.Errorf("[dispatchNostrMsgs] provided payload [%s] is not a valid JSON. Error: %v", string(*msg), err)
+		c.lgr.Errorf("[dispatchNostrMsgs] from [%s] provided payload [%s] is not a valid JSON. Error: %v", c.IP, string(*msg), err)
 		return
 	}
 
@@ -277,13 +279,13 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 		err = c.handlerAuthMsgs(&jmsg)
 
 	default:
-		log.Printf("[dispatchNostrMsgs] Unknown message: %s", key)
+		c.lgr.Errorf("[dispatchNostrMsgs] Unknown message: [%s] from [%s]", key, c.IP)
 		c.writeCustomNotice("Error: invalid format of the received message")
 		return
 	}
 
 	if err != nil {
-		c.lgr.Errorf("[dispatchNostrMsgs] A handlers' function returned Error: %v;  message type: %v", err, key)
+		c.lgr.Errorf("[dispatchNostrMsgs] A handlers' function returned Error: %v;  message type: %v from [%s]", err, key, c.IP)
 	}
 }
 
@@ -298,7 +300,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	if !ok {
 		lmsg := "invalid: unknown message format"
 		c.writeEventNotice("0", false, lmsg)
-		return fmt.Errorf("ERROR: invalid message. unknown format")
+		return fmt.Errorf("ERROR: %s", lmsg)
 	}
 
 	e, err := mapToEvent(se)
@@ -320,10 +322,6 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	switch e.Kind {
 	case 3:
 		// nip-02, kind:3 replaceable, Contact List (overwrite the exiting event for the same pub key)
-
-		// sending the event to a channel, will hijack the event to the broadcaster
-		// Keep it disabled until [ ]TODO: find a way to clone the execution context
-		// NewEvent <- e
 
 		err := c.repo.StoreEventK3(e)
 		if err != nil {

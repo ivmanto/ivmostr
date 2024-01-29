@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	ips = []string{"188.193.116.7"}
+	ips = []string{"188.193.116.7", "109.43.33.44"}
 )
 
 // Handles the CORS part
