@@ -51,11 +51,14 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 		r.rlgr.Warnf("AUTH event should not be stored in the repository")
 		return nil
 	}
+
 	r.mtx.Lock()
+	_, errc := fsclient.Collection(r.events_collection).Doc(e.ID).Create(*r.ctx, ec)
 	defer r.mtx.Unlock()
-	if _, err := fsclient.Collection(r.events_collection).Doc(e.ID).Create(*r.ctx, ec); err != nil {
-		r.rlgr.Errorf("unable to save in clients repository. error: %v", err)
-		return err
+
+	if errc != nil {
+		r.rlgr.Errorf("unable to save in clients repository. error: %v", errc)
+		return errc
 	}
 
 	if len(tgs) < 1 {
@@ -66,8 +69,10 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	docRef := fsclient.Collection(r.events_collection).Doc(ec.ID)
 
 	r.mtx.Lock()
+	_, errt := docRef.Set(*r.ctx, tags, firestore.MergeAll)
 	defer r.mtx.Unlock()
-	if _, errt := docRef.Set(*r.ctx, tags, firestore.MergeAll); errt != nil {
+
+	if errt != nil {
 		r.rlgr.Errorf("unable to save Tags for Event ID: %s. error: %v", ec.ID, errt)
 		return errt
 	}
