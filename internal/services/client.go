@@ -304,6 +304,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	if !ok {
 		lmsg := "invalid: unknown message format"
 		c.writeEventNotice("0", false, lmsg)
+		c.lgr.Debugf("[handlerEventMsgs] from [%s] invalid message format", c.IP)
 		return fmt.Errorf("ERROR: %s", lmsg)
 	}
 
@@ -313,6 +314,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		c.errorRate[c.IP]++
 		lmsg := "invalid:" + err.Error()
 		c.writeEventNotice(e.ID, false, lmsg)
+		c.lgr.Debugf("[handlerEventMsgs] from [%s] unable tp map to event format.", c.IP)
 		return err
 	}
 
@@ -320,6 +322,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	if errv != nil {
 		lmsg := fmt.Sprintf("result %v, invalid: %v", rsl, errv.Error())
 		c.writeEventNotice(e.ID, false, lmsg)
+		c.lgr.Debugf("[handlerEventMsgs] from [%s] error [%s] validating signature", c.IP, errv)
 		return errv
 	}
 
@@ -351,6 +354,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	err = c.repo.StoreEvent(e)
 	if err != nil {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
+		c.lgr.Debugf("[handlerEventMsgs] from [%s] error [%s] storing in the DB", c.IP, err)
 		return err
 	}
 
@@ -361,6 +365,8 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	NewEvent <- e
 
 	c.writeEventNotice(e.ID, true, "")
+
+	c.lgr.Debugf("[handlerEventMsgs] from [%s] saving took [%d] ms", c.IP, time.Now().Unix()-c.responseRate)
 
 	payloadEvnt := fmt.Sprintf(`{"method":"[handlerEventMsgs]","client":"%s", "eventID-stored":"%s","servedIn": %d}`, c.IP, e.ID, time.Now().UnixMilli()-c.responseRate)
 	leop.Payload = payloadEvnt
