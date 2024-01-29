@@ -282,26 +282,22 @@ func (s *Session) TuneClientConn(client *Client) {
 		return err
 	})
 
+	// [!] PING message is a control message and the text 'ping' is optional and can be an empty string. Valid is the message type!
 	client.Conn.WS.SetPingHandler(func(appData string) error {
-		client.lgr.Debugf("[SetPingHandler] Ping message received as: %v", appData)
+		client.lgr.Debugf("[SetPingHandler] the perr [%s] sent Ping message! Message text is: %s", client.IP, appData)
 		// Send a pong message back to the client
 		err := client.Conn.WS.WriteControl(websocket.PongMessage, []byte(`"pong"`), time.Now().Add(time.Second*2))
 		if err != nil {
-			client.lgr.Errorf("[SetPingHandler] Error sending pong message: %v", err)
+			client.lgr.Errorf("[SetPingHandler] Error sending pong message to [%s]: %v", err, client.IP)
 			return err
 		}
+		client.lgr.Debugf("[SetPingHandler] Pong message sent successfuly to client [%s]", client.IP)
 		return nil
 	})
 
+	// [!] PONG message is a control message and the text 'ping' is optional and can be an empty string. Valid is the message type!
 	client.Conn.WS.SetPongHandler(func(appData string) error {
-		client.lgr.Debugf("[SetPongHandler] Pong message received as: %v", appData)
-		ad := strings.ToLower(appData)
-		if ad != "pong" && ad != `["pong"]` {
-			err = fmt.Errorf("[SetPongHandler] received appData:%v. Not a valid pong message.", appData)
-			client.lgr.Errorf("%v", err)
-			return err
-		}
-		// suposed the received pong reply is successful
+		client.lgr.Debugf("[SetPongHandler] the peer [%s] sent Pong message! Message text is: %s", client.IP, appData)
 		return nil
 	})
 }
@@ -317,12 +313,6 @@ func (s *Session) NewEventBroadcaster() {
 		if e.Kind != 22242 {
 			continue
 		}
-
-		// be, err := tools.ConvertStructToByte(e)
-		// if err != nil {
-		// 	log.Printf("Error: [%v] while converting event to byte array!", err)
-		// 	continue
-		// }
 
 		for _, client := range s.ldg.subscribers {
 

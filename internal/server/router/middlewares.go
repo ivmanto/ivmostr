@@ -136,7 +136,7 @@ func controlIPConn(h http.Handler) http.Handler {
 			return
 		}
 
-		if tools.IPCount.IPConns(ip) > 0 {
+		if tools.IPCount.IPConns(ip) > 3 {
 			// fmt.Printf(
 			// 	"[MW-ipc] Too many requests [%d] from %s, headers [upgrade %v, accept %v, sec-ws-p %v], req URL [%v]\n", tools.IPCount[ip], ip, r.Header.Get("Upgrade"), r.Header.Get("Accept"), r.Header.Get("Sec-WebSocket-Protocol"), r.URL)
 			http.Error(w, "Too many requests", http.StatusTooManyRequests)
