@@ -1,0 +1,6 @@
+v0.0.11
+        - stble running over more than 24 hours
+        - multiple websocket connections possible from the same client. Presume the previous connection(s) has died and will be cleaned up.
+        - complete overwrite of subscription and filetrs, if a new subscription id arrives.
+        - Introduce limit to the firestore queries in order to decrease the number of reads from the DB.
+        - cloud logging new Events stored in the DB operations.
