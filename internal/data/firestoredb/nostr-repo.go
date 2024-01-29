@@ -224,6 +224,10 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 		lcnt, ecnt int
 	)
 
+	if len(kinds) > 30 {
+		kinds = kinds[:30]
+	}
+
 	switch {
 	case since == 0 && until > 0:
 		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
@@ -293,6 +297,10 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 		query      *firestore.DocumentIterator
 		lcnt, ecnt int
 	)
+
+	if len(authors) > 30 {
+		authors = authors[:30]
+	}
 
 	switch {
 	case since == 0 && until > 0:
@@ -364,18 +372,22 @@ func (r *nostrRepo) GetEventsByIds(ids []string, limit int, since, until int64) 
 		lcnt, ecnt int
 	)
 
+	if len(ids) > 30 {
+		ids = ids[:30]
+	}
+
 	switch {
 	case since == 0 && until > 0:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("ID", "in", ids).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	case since > 0 && until == 0:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("ID", "in", ids).Where("CreatedAt", ">", since).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	case since > 0 && until > 0:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("ID", "in", ids).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	default:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("ID", "in", ids).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	}
 
@@ -404,7 +416,7 @@ func (r *nostrRepo) GetEventsByIds(ids []string, limit int, since, until int64) 
 		lcnt++
 	}
 
-	rsl := fmt.Sprintf(`{"events": %d, "filter_authors": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), ids, limit, since, until, time.Now().UnixMilli()-ts)
+	rsl := fmt.Sprintf(`{"events": %d, "filter_ids": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), ids, limit, since, until, time.Now().UnixMilli()-ts)
 
 	r.ilgr.Printf("%v", rsl)
 
@@ -594,6 +606,13 @@ func (r *nostrRepo) GetEventsBtAuthorsAndKinds(authors []string, kinds []int, li
 		query  *firestore.DocumentIterator
 		ecnt   int
 	)
+
+	if len(kinds) > 30 {
+		kinds = kinds[:30]
+	}
+	if len(authors) > 30 {
+		authors = authors[:30]
+	}
 
 	switch {
 	case since == 0 && until > 0:

@@ -289,6 +289,8 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 	if err != nil {
 		c.lgr.Errorf("[dispatchNostrMsgs] A handlers function returned Error: %v;  message type: %v from [%s]", err, key, c.IP)
 	}
+
+	c.lgr.Infof("[dispatchNostrMsgs] nostr message from [%s] handled without errors.", c.IP)
 }
 
 // ****************************** Messages types Handlers ***********************************************
