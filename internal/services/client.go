@@ -254,16 +254,18 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 		err error
 	)
 
-	jmsg, err := convertToJSON(*msg)
-	if err != nil {
-		c.lgr.Errorf("[dispatchNostrMsgs] from [%s] provided payload [%s] is not a valid JSON. Error: %v", c.IP, string(*msg), err)
+	jmsg, errj := convertToJSON(*msg)
+	if errj != nil {
+		c.lgr.Errorf("[dispatchNostrMsgs] from [%s] provided payload [%s] is not a valid JSON. Error: %v", c.IP, string(*msg), errj)
 		return
 	}
+	c.lgr.Debugf("[dispatchNostrMsgs] from [%s] json message: [%v]", c.IP, jmsg)
 
 	key, ok := jmsg[0].(string)
 	if !ok {
 		c.lgr.Errorf("[dispatchNostrMsgs] nostr message label [%v] is not a string!", jmsg[0])
 	}
+	c.lgr.Debugf("[dispatchNostrMsgs] from [%s] message key is: [%s]", c.IP, key)
 
 	switch key {
 	case "EVENT":
@@ -285,7 +287,7 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 	}
 
 	if err != nil {
-		c.lgr.Errorf("[dispatchNostrMsgs] A handlers' function returned Error: %v;  message type: %v from [%s]", err, key, c.IP)
+		c.lgr.Errorf("[dispatchNostrMsgs] A handlers function returned Error: %v;  message type: %v from [%s]", err, key, c.IP)
 	}
 }
 
