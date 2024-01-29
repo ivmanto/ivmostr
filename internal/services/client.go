@@ -292,6 +292,8 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	// OK messages MUST be sent in response to EVENT messages received from clients, they must have the 3rd parameter set to true when an event has been accepted by the relay, false otherwise. The 4th parameter MAY be empty when the 3rd is true, otherwise it MUST be a string containing a machine-readable single-word prefix followed by a : and then a human-readable message. The standardized machine-readable prefixes are: duplicate, pow, blocked, rate-limited, invalid, and error for when none of that fits.
 
+	c.responseRate = time.Now().UnixMilli()
+
 	se, ok := (*msg)[1].(map[string]interface{})
 	if !ok {
 		lmsg := "invalid: unknown message format"
@@ -357,6 +359,11 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	NewEvent <- e
 
 	c.writeEventNotice(e.ID, true, "")
+
+	payloadEvnt := fmt.Sprintf(`{"method":"[handlerEventMsgs]","client":"%s", "eventID-stored":"%s","servedIn": %d}`, c.IP, e.ID, time.Now().UnixMilli()-c.responseRate)
+	leop.Payload = payloadEvnt
+	cclnlgr.Log(leop)
+
 	return nil
 }
 
@@ -367,6 +374,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	var subscription_id string
 	var filter map[string]interface{}
 
+	// handle invalid subscription IDs
 	if len(*msg) >= 2 {
 		subscription_id = (*msg)[1].(string)
 		if subscription_id == "" || len(subscription_id) > 64 {
@@ -394,29 +402,24 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	// [x] Relays should manage <subscription_id>s independently for each WebSocket connection; even if <subscription_id>s are the same string, they should be treated as different subscriptions for different connections
 
 	if c.Subscription_id != "" {
-		if c.Subscription_id == subscription_id {
-			// [x] OVERWRITE subscription fileters
-			c.Filetrs = []map[string]interface{}{}
-			c.Filetrs = append(c.Filetrs, msgfilters...)
 
-			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
-			c.writeCustomNotice("Update: The subscription filter has been overwriten.")
+		// Overwrite the existing subscription id
+		c.Subscription_id = subscription_id
 
-			err := c.SubscriptionSuplier()
-			if err != nil {
-				return err
-			}
+		// [x] OVERWRITE subscription fileters
+		c.Filetrs = []map[string]interface{}{}
+		c.Filetrs = append(c.Filetrs, msgfilters...)
 
-			return nil
-		} else {
-			// [!] protocol error
-			c.mu.Lock()
-			c.errorRate[c.IP]++
-			c.mu.Unlock()
-			em := fmt.Sprintf("Error: There is already an active subscription for this connection with subscription_id: %v, the new subID %v is ignored.", c.Subscription_id, subscription_id)
-			c.writeCustomNotice(em)
-			return fmt.Errorf("There is already active subscription")
+		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
+		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
+
+		err := c.SubscriptionSuplier()
+		if err != nil {
+			return err
 		}
+
+		return nil
+
 	}
 	c.Subscription_id = subscription_id
 	c.Filetrs = append(c.Filetrs, msgfilters...)

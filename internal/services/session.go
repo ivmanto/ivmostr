@@ -62,7 +62,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	relay_access = cfg.Relay_access
 
-	td, err := repo.TotalDocs()
+	td, err := repo.TotalDocs2()
 	if err != nil {
 		session.slgr.Errorf("error getting total number of docs: %v ", err)
 	}

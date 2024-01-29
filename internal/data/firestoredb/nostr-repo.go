@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	gn "github.com/nbd-wtf/go-nostr"
 	"google.golang.org/api/iterator"
 
@@ -42,7 +43,8 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	// multi-level array are not supported by firestore! It must be converted into a array of objects with string elements
 	ec := *e
 	// [ ]: Add extra field ExpireAt. The value of live should be different for public (7 days = 604800s) and paid versions(TBD???).
-	ec.SetExtra("ExpireAt", float64(ec.CreatedAt+604800))
+	ec.SetExtra("ExpireAt", float64(time.Now().Unix()+604800))
+
 	var tgs gn.Tags = ec.Tags
 	ec.Tags = nil
 
@@ -153,6 +155,32 @@ func (r *nostrRepo) GetEvents(ids []string) ([]*gn.Event, error) {
 	return events, nil
 }
 
+func (r *nostrRepo) TotalDocs2() (int, error) {
+
+	// [ ]: review ========= client per job ============
+	fsclient, err := r.clients.GetClient()
+	if err != nil {
+		return 0, fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+	// ==================== end of client ================
+
+	// Calculate the total number of documents available in the collection r.events_collection
+
+	agq := fsclient.Collection(r.events_collection).NewAggregationQuery().WithCount("total_events")
+
+	countResult, err := agq.Get(*r.ctx)
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return -1, err
+	}
+
+	count := countResult["total_events"]
+	countValue := count.(*firestorepb.Value)
+
+	return int(countValue.GetIntegerValue()), nil
+
+}
+
 func (r *nostrRepo) TotalDocs() (int, error) {
 
 	// [ ]: review ========= client per job ============
@@ -198,17 +226,17 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 
 	switch {
 	case since == 0 && until > 0:
-		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", "<", until).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	case since > 0 && until == 0:
-		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	case since > 0 && until > 0:
-		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	default:
 		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
-		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kinds).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	}
 
@@ -268,17 +296,17 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 
 	switch {
 	case since == 0 && until > 0:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("CreatedAt", "<", until).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	case since > 0 && until == 0:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("CreatedAt", ">", since).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("CreatedAt", ">", since).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	case since > 0 && until > 0:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	default:
 		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", authors).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	}
 
@@ -338,16 +366,16 @@ func (r *nostrRepo) GetEventsByIds(ids []string, limit int, since, until int64) 
 
 	switch {
 	case since == 0 && until > 0:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", "<", until).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	case since > 0 && until == 0:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	case since > 0 && until > 0:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	default:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).Documents(*r.ctx)
+		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", ids).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	}
 
@@ -405,7 +433,7 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 		lcnt, ecnt int
 	)
 
-	query = fsclient.Collection(r.events_collection).Where("CreatedAt", ">", since).Documents(*r.ctx)
+	query = fsclient.Collection(r.events_collection).Where("CreatedAt", ">", since).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	for {
 		doc, err := query.Next()
@@ -461,7 +489,7 @@ func (r *nostrRepo) GetEventsSinceUntil(limit int, since, until int64) ([]*gn.Ev
 		lcnt, ecnt int
 	)
 
-	query = fsclient.Collection(r.events_collection).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).Documents(*r.ctx)
+	query = fsclient.Collection(r.events_collection).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(limit).Documents(*r.ctx)
 
 	for {
 		doc, err := query.Next()
