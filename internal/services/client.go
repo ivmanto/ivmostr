@@ -202,7 +202,7 @@ func (c *Client) dispatcher() error {
 
 			nostr_msg := msg[1].([]byte)
 			if string(msg[1].([]byte)[:1]) == "[" {
-				go c.dispatchNostrMsgs(&nostr_msg)
+				c.dispatchNostrMsgs(&nostr_msg)
 				continue
 			} else {
 				// Artificial PING/PONG handler - for cases when the control message is not supported by the client(s)
@@ -304,7 +304,6 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	if !ok {
 		lmsg := "invalid: unknown message format"
 		c.writeEventNotice("0", false, lmsg)
-		c.lgr.Debugf("[handlerEventMsgs] from [%s] invalid message format", c.IP)
 		return fmt.Errorf("ERROR: %s", lmsg)
 	}
 
@@ -314,7 +313,6 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		c.errorRate[c.IP]++
 		lmsg := "invalid:" + err.Error()
 		c.writeEventNotice(e.ID, false, lmsg)
-		c.lgr.Debugf("[handlerEventMsgs] from [%s] unable tp map to event format.", c.IP)
 		return err
 	}
 
@@ -322,7 +320,6 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	if errv != nil {
 		lmsg := fmt.Sprintf("result %v, invalid: %v", rsl, errv.Error())
 		c.writeEventNotice(e.ID, false, lmsg)
-		c.lgr.Debugf("[handlerEventMsgs] from [%s] error [%s] validating signature", c.IP, errv)
 		return errv
 	}
 
@@ -354,7 +351,6 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	err = c.repo.StoreEvent(e)
 	if err != nil {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
-		c.lgr.Debugf("[handlerEventMsgs] from [%s] error [%s] storing in the DB", c.IP, err)
 		return err
 	}
 
