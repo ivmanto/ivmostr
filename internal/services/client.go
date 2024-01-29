@@ -265,7 +265,7 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 	if !ok {
 		c.lgr.Errorf("[dispatchNostrMsgs] nostr message label [%v] is not a string!", jmsg[0])
 	}
-	c.lgr.Debugf("[dispatchNostrMsgs] from [%s] message key is: [%s]", c.IP, key)
+	c.lgr.Debugf("[dispatchNostrMsgs] from [%s] message key is: `%s`", c.IP, key)
 
 	switch key {
 	case "EVENT":

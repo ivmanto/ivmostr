@@ -3,8 +3,6 @@ package firestoredb
 import (
 	"context"
 	"fmt"
-	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -15,7 +13,7 @@ import (
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/fspool"
-	"github.com/dasiyes/ivmostr-tdd/tools"
+	log "github.com/sirupsen/logrus"
 )
 
 // Holds the required objects by `nostr` relay according to the protocol
@@ -26,8 +24,7 @@ type nostrRepo struct {
 	clients           *fspool.ConnectionPool
 	fsclient          *firestore.Client
 	default_limit     int
-	elgr              *log.Logger
-	ilgr              *log.Logger
+	rlgr              *log.Logger
 }
 
 func (r *nostrRepo) StoreEvent(e *gn.Event) error {
@@ -35,7 +32,8 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	// [ ]: review ========= client per job ============
 	fsclient, err := r.clients.GetClient()
 	if err != nil {
-		return fmt.Errorf("unable to get firestore client. error: %v", err)
+		r.rlgr.Errorf("unable to get firestore client. error: %v", err)
+		return err
 	}
 
 	// ==================== end of client ================
@@ -50,12 +48,14 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 
 	// Filter out the events kinds that should not be stored according to the `nostr` protocol
 	if ec.Kind == 22242 {
-		return fmt.Errorf("AUTH event should not be stored in the repository")
+		r.rlgr.Warnf("AUTH event should not be stored in the repository")
+		return nil
 	}
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	if _, err := fsclient.Collection(r.events_collection).Doc(e.ID).Create(*r.ctx, ec); err != nil {
-		return fmt.Errorf("unable to save in clients repository. error: %v", err)
+		r.rlgr.Errorf("unable to save in clients repository. error: %v", err)
+		return err
 	}
 
 	if len(tgs) < 1 {
@@ -68,10 +68,11 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	if _, errt := docRef.Set(*r.ctx, tags, firestore.MergeAll); errt != nil {
-		return fmt.Errorf("unable to save Tags for Event ID: %s. error: %v", ec.ID, errt)
+		r.rlgr.Errorf("unable to save Tags for Event ID: %s. error: %v", ec.ID, errt)
+		return errt
 	}
 
-	fmt.Printf("Event ID: %s saved in repository\n", ec.ID)
+	r.rlgr.Infof("Event ID: %s saved in repository.", ec.ID)
 	return nil
 }
 
@@ -250,14 +251,14 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("[GetEventsByKinds] ERROR raised while reading a doc from the DB: %v", err)
+			r.rlgr.Errorf("[GetEventsByKinds] ERROR raised while reading a doc from the DB: %v", err)
 			ecnt++
 			continue
 		}
 
 		e, err := r.transformTagMapIntoTAGS(doc)
 		if err != nil {
-			r.elgr.Printf("[GetEventsByKinds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			r.rlgr.Errorf("[GetEventsByKinds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
 
@@ -271,7 +272,7 @@ func (r *nostrRepo) GetEventsByKinds(kinds []int, limit int, since, until int64)
 
 	rsl := fmt.Sprintf(`{"events": %d, "filter_kinds": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), kinds, limit, since, until, time.Now().UnixMilli()-ts)
 
-	r.ilgr.Printf("%v", rsl)
+	r.rlgr.Debugf("%v", rsl)
 
 	if len(events) == 0 {
 		return nil, fmt.Errorf("[GetEventsByKinds] no events found for the provided filter")
@@ -324,14 +325,14 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("[GetEventsByAuthors] ERROR: raised while reading a doc from the DB: %v", err)
+			r.rlgr.Errorf("[GetEventsByAuthors] ERROR: raised while reading a doc from the DB: %v", err)
 			ecnt++
 			continue
 		}
 
 		e, err := r.transformTagMapIntoTAGS(doc)
 		if err != nil {
-			r.elgr.Printf("[GetEventsByAuthors] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			r.rlgr.Errorf("[GetEventsByAuthors] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
 
@@ -345,7 +346,7 @@ func (r *nostrRepo) GetEventsByAuthors(authors []string, limit int, since, until
 
 	rsl := fmt.Sprintf(`{"events": %d, "filter_authors": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), authors, limit, since, until, time.Now().UnixMilli()-ts)
 
-	r.ilgr.Printf("%v", rsl)
+	r.rlgr.Debugf("%v", rsl)
 
 	if len(events) == 0 {
 		return nil, fmt.Errorf("[GetEventsByAuthors] no events found for the provided filter")
@@ -397,14 +398,14 @@ func (r *nostrRepo) GetEventsByIds(ids []string, limit int, since, until int64) 
 			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("[GetEventsByIds] ERROR: raised while reading a doc from the DB: %v", err)
+			r.rlgr.Errorf("[GetEventsByIds] ERROR: raised while reading a doc from the DB: %v", err)
 			ecnt++
 			continue
 		}
 
 		e, err := r.transformTagMapIntoTAGS(doc)
 		if err != nil {
-			r.elgr.Printf("[GetEventsByIds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			r.rlgr.Errorf("[GetEventsByIds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
 
@@ -418,7 +419,7 @@ func (r *nostrRepo) GetEventsByIds(ids []string, limit int, since, until int64) 
 
 	rsl := fmt.Sprintf(`{"events": %d, "filter_ids": "%v", "limit": %d, "since": %d, "until": %d, "took": %d}`, len(events), ids, limit, since, until, time.Now().UnixMilli()-ts)
 
-	r.ilgr.Printf("%v", rsl)
+	r.rlgr.Debugf("%v", rsl)
 
 	if len(events) == 0 {
 		return nil, fmt.Errorf("[GetEventsByIds] no events found for the provided filter")
@@ -453,14 +454,14 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("[GetEventsSince] ERROR raised while reading a doc from the DB: %v", err)
+			r.rlgr.Errorf("[GetEventsSince] ERROR raised while reading a doc from the DB: %v", err)
 			ecnt++
 			continue
 		}
 
 		e, err := r.transformTagMapIntoTAGS(doc)
 		if err != nil {
-			r.elgr.Printf("[GetEventsSince] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			r.rlgr.Errorf("[GetEventsSince] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
 
@@ -474,7 +475,7 @@ func (r *nostrRepo) GetEventsSince(limit int, since int64) ([]*gn.Event, error) 
 
 	rsl := fmt.Sprintf(`{"events": %d, "filter_all": "all_events", "limit": %d, "since": %d, "took": %d}`, len(events), limit, since, time.Now().UnixMilli()-ts)
 
-	r.ilgr.Printf("%v", rsl)
+	r.rlgr.Debugf("%v", rsl)
 
 	if len(events) == 0 {
 		return nil, fmt.Errorf("[GetEventsSince] no events found for the provided filter")
@@ -509,14 +510,14 @@ func (r *nostrRepo) GetEventsSinceUntil(limit int, since, until int64) ([]*gn.Ev
 			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("[GetEventsSinceUntil] ERROR raised while reading a doc from the DB: %v", err)
+			r.rlgr.Errorf("[GetEventsSinceUntil] ERROR raised while reading a doc from the DB: %v", err)
 			ecnt++
 			continue
 		}
 
 		e, err := r.transformTagMapIntoTAGS(doc)
 		if err != nil {
-			r.elgr.Printf("[GetEventsSinceUntil] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			r.rlgr.Errorf("[GetEventsSinceUntil] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
 
@@ -530,7 +531,7 @@ func (r *nostrRepo) GetEventsSinceUntil(limit int, since, until int64) ([]*gn.Ev
 
 	rsl := fmt.Sprintf(`{"events": %d, "filter_all": "all_events", "limit": %d, "since": %d, "until": %d,"took": %d}`, len(events), limit, since, until, time.Now().UnixMilli()-ts)
 
-	r.ilgr.Printf("%v", rsl)
+	r.rlgr.Debugf("%v", rsl)
 
 	if len(events) == 0 {
 		return nil, fmt.Errorf("[GetEventsSinceUntil] no events found for the provided filter")
@@ -565,14 +566,14 @@ func (r *nostrRepo) GetLastNEvents(limit int) ([]*gn.Event, error) {
 			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("[GetLastNEvents] ERROR raised while reading a doc from the DB: %v", err)
+			r.rlgr.Errorf("[GetLastNEvents] ERROR raised while reading a doc from the DB: %v", err)
 			ecnt++
 			continue
 		}
 
 		e, err := r.transformTagMapIntoTAGS(doc)
 		if err != nil {
-			r.elgr.Printf("[GetLastNEvents] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			r.rlgr.Errorf("[GetLastNEvents] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
 
@@ -581,7 +582,7 @@ func (r *nostrRepo) GetLastNEvents(limit int) ([]*gn.Event, error) {
 
 	rsl := fmt.Sprintf(`{"events": %d, "filter_all": "all_events", "limit": %d, "took": %d}`, len(events), limit, time.Now().UnixMilli()-ts)
 
-	r.ilgr.Printf("%v", rsl)
+	r.rlgr.Debugf("%v", rsl)
 
 	if len(events) == 0 {
 		return nil, fmt.Errorf("[GetLastNEvents] no events found for the provided filter")
@@ -636,14 +637,14 @@ func (r *nostrRepo) GetEventsBtAuthorsAndKinds(authors []string, kinds []int, li
 			if err == iterator.Done || ecnt > 3 {
 				break
 			}
-			r.elgr.Printf("[GetEventsBtAuthorsAndKinds] ERROR raised while reading a doc from the DB: %v", err)
+			r.rlgr.Errorf("[GetEventsBtAuthorsAndKinds] ERROR raised while reading a doc from the DB: %v", err)
 			ecnt++
 			continue
 		}
 
 		e, err := r.transformTagMapIntoTAGS(doc)
 		if err != nil {
-			r.elgr.Printf("[GetEventsBtAuthorsAndKinds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+			r.rlgr.Errorf("[GetEventsBtAuthorsAndKinds] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
 			continue
 		}
 
@@ -652,161 +653,10 @@ func (r *nostrRepo) GetEventsBtAuthorsAndKinds(authors []string, kinds []int, li
 
 	rsl := fmt.Sprintf(`{"events": %d, "filter_all": "all_events", "limit": %d, "took": %d}`, len(events), limit, time.Now().UnixMilli()-ts)
 
-	r.ilgr.Printf("%v", rsl)
+	r.rlgr.Debugf("%v", rsl)
 
 	if len(events) == 0 {
 		return nil, fmt.Errorf("[GetEventsBtAuthorsAndKinds] no events found for the provided filter")
-	}
-
-	return events, nil
-}
-
-// DEPRICATED  GetEventsByFilter - returns a list of events that match the filter provided from a client subscription
-func (r *nostrRepo) GetEventsByFilter(filter map[string]interface{}) ([]*gn.Event, error) {
-
-	// [ ]: review ========= client per job ============
-	fsclient, errc := r.clients.GetClient()
-	if errc != nil {
-		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
-	}
-
-	// ==================== end of client ================
-
-	var (
-		err                                             error
-		events, kind_events, ids_events, authors_events []*gn.Event
-		max_length                                      int
-		flt_lngth                                       int = len(filter)
-		kinds, ids, authors                             []interface{}
-	)
-
-	// ===================================== FILTER TEMPLATE ============================================
-
-	//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
-	//{
-	//  "ids": <a list of event ids>,
-	//  "authors": <a list of lowercase pubkeys, the pubkey of an event must be one of these>,
-	//  "kinds": <a list of a kind numbers>,
-	//  "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
-	//  "since": <an integer unix timestamp in seconds, events must be newer than this to pass>,
-	//  "until": <an integer unix timestamp in seconds, events must be older than this to pass>,
-	//  "limit": <maximum number of events relays SHOULD return in the initial query>
-	//}
-	//==================================================================================================
-
-	// =================================== LIMIT =======================================================
-	// The limit of number of events returned by the filter should be set by either 1) the fileter or 2) by server limit. The cases where the filter's limit is 0, can be handled in the future for paying clients and when this function implements paging (portions of eevents) to be sent.
-	// [ ]: implement paging
-
-	lim, ok := filter["limit"].(float64)
-	if !ok {
-		// set the default max_length from config file
-		max_length = r.default_limit
-	} else if lim == 0 || lim > 5000 {
-		// until the paging is implemented for paying clients OR always for public clients
-		// 5000 is the value from attribute from server_info limits
-		max_length = 5000
-	} else {
-		// set the requested by the filter value
-		max_length = int(lim)
-	}
-	r.ilgr.Printf("filters limit max_length is set to: %v", max_length)
-
-	// =================================== SINCE - UNTIL ===============================================
-	var since, until interface{}
-	if since, ok = filter["since"]; !ok {
-		since = nil
-	}
-	if until, ok = filter["until"]; !ok {
-		until = nil
-	}
-
-	// [x]:================================= KINDS =========================================================
-	// Dealing with filetrs `kinds`...
-	kinds, ok = filter["kinds"].([]interface{})
-	if !ok {
-		goto IDS
-	}
-	if len(kinds) > 30 {
-		kinds = kinds[:30]
-	}
-
-	kind_events, err = r.retrieveKinds(kinds, since, until, max_length, fsclient)
-	if err != nil {
-		r.elgr.Printf("Error retrieving `kinds` from the database: %v", err)
-	}
-	r.ilgr.Printf("%d events retrieved from the DB with the `kinds` filter", len(kind_events))
-
-	if (len(events) + len(kind_events)) <= max_length {
-		events = append(events, kind_events...)
-	} else {
-		events = append(events, kind_events[:max_length-len(events)]...)
-		return events, nil
-	}
-
-	// [x]:=================================== IDS ===========================================================
-	// Dealing with filetrs `IDs`...
-IDS:
-	ids, ok = filter["ids"].([]interface{})
-	if !ok {
-		goto AUTHORS
-	}
-	if len(ids) > 30 {
-		ids = ids[:30]
-	}
-
-	ids_events, err = r.retrievIDs(ids, since, until, max_length, fsclient)
-	if err != nil {
-		r.elgr.Printf("Error retrieving `IDs` from the database: %v", err)
-	}
-	r.ilgr.Printf("%d events retrieved from the DB with the `IDs` filter", len(ids_events))
-
-	if (len(events) + len(ids_events)) <= max_length {
-		events = append(events, ids_events...)
-	} else {
-		events = append(events, ids_events[:max_length-len(events)]...)
-		return events, nil
-	}
-
-	// [x]:=================================== AUTHORS =======================================================
-	// Dealing with filetrs `authors`...
-AUTHORS:
-	authors, ok = filter["authors"].([]interface{})
-	if !ok {
-		goto SINCE
-	}
-	if len(authors) > 30 {
-		authors = authors[:30]
-	}
-
-	authors_events, err = r.retrievAuthors(authors, since, until, max_length, fsclient)
-	if err != nil {
-		r.elgr.Printf("Error retrieving `authors` from the database: %v", err)
-	}
-	r.ilgr.Printf("%d events retrieved from the DB with the `Authors` filter", len(authors_events))
-	if (len(events) + len(authors_events)) <= max_length {
-		events = append(events, authors_events...)
-	} else {
-		events = append(events, authors_events[:max_length-len(events)]...)
-		return events, nil
-	}
-
-	// [ ]:=================================== TAGS ==========================================================
-
-	// ======================================= SINCE - UNTIL ==================================================
-SINCE:
-	if since != nil && flt_lngth == 1 {
-		fromPast, err := r.retrieveFromPast(since, max_length, fsclient)
-		if err != nil {
-			r.elgr.Printf("Error retrieving `fromPast` from the database: %v", err)
-		}
-		r.ilgr.Printf("%d events retrieved from the DB with the `fromPast` filter", len(fromPast))
-		if (len(events) + len(fromPast)) <= max_length {
-			events = append(events, fromPast...)
-		} else {
-			events = append(events, fromPast[:max_length-len(events)]...)
-			return events, nil
-		}
 	}
 
 	return events, nil
@@ -824,7 +674,7 @@ func (r *nostrRepo) DeleteEvent(id string) error {
 
 	_, err = fsclient.Collection(r.events_collection).Doc(id).Delete(*r.ctx)
 	if err != nil {
-		r.elgr.Printf("Error deleting event with id: %s from the database: %v", id, err)
+		r.rlgr.Errorf("Error deleting event with id: %s from the database: %v", id, err)
 	}
 
 	r.clients.ReleaseClient(fsclient)
@@ -852,18 +702,17 @@ func NewNostrRepository(ctx *context.Context, clients *fspool.ConnectionPool, dl
 		return nil, fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
 
-	nr := &nostrRepo{
+	nr := nostrRepo{
 		ctx:               ctx,
 		mtx:               &sync.Mutex{},
 		events_collection: ecn,
 		clients:           clients,
 		fsclient:          client,
 		default_limit:     dlv,
-		ilgr:              log.New(os.Stdout, "[nostr-repo] ", log.LstdFlags),
-		elgr:              log.New(os.Stderr, "[nostr-repo] ", log.LstdFlags),
+		rlgr:              log.New(),
 	}
 
-	return nr, nil
+	return &nr, nil
 }
 
 // ================================== Supports functions =====================================
@@ -885,270 +734,6 @@ func tagsToTagMap(tgs gn.Tags) map[string]interface{} {
 	}
 
 	return map[string]interface{}{"ТagsMap": tm}
-}
-
-// retrieveKinds - query events collection from the DB by kinds and if there is valid time slot limitation applies that filtration to the returned result.
-func (r *nostrRepo) retrieveKinds(kinds []interface{}, since, until interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
-
-	var events []*gn.Event
-	var kindsI []int64
-	var lcnt, ecnt int
-
-	for _, kind := range kinds {
-		_kind, ok := kind.(float64)
-		if !ok {
-			kindsI = append(kindsI, int64(-1))
-			continue
-		}
-		kindsI = append(kindsI, int64(_kind))
-	}
-
-	var query *firestore.DocumentIterator
-
-	switch {
-	case since == nil && until == nil:
-		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kindsI).Documents(*r.ctx)
-
-	case since != nil && until == nil:
-		tsSince, err := tools.ConvertToTS(since)
-		if err != nil {
-			return nil, err
-		}
-		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kindsI).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
-
-	case since == nil && until != nil:
-		tsUntil, err := tools.ConvertToTS(until)
-		if err != nil {
-			return nil, err
-		}
-		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kindsI).Where("CreatedAt", "<", tsUntil).Documents(*r.ctx)
-
-	default:
-		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
-		query = fsclient.Collection(r.events_collection).Where("Kind", "in", kindsI).Documents(*r.ctx)
-
-	}
-
-	// Query the events collection
-	// iterate over docs collection where the kind matches the filter kind
-	for {
-		doc, err := query.Next()
-		if err != nil {
-			if err == iterator.Done || ecnt > 3 {
-				break
-			}
-			r.elgr.Printf("[retrieveKinds] Error raised while reading a doc from the DB: %v", err)
-			ecnt++
-			continue
-		}
-
-		e, err := r.transformTagMapIntoTAGS(doc)
-		if err != nil {
-			r.elgr.Printf("Error %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
-			continue
-		}
-
-		if lcnt < limit {
-			events = append(events, e)
-		} else {
-			break
-		}
-		lcnt++
-	}
-
-	return events, nil
-}
-
-// retrievIDs - query events collection from the DB by IDs and if there is valid time slot limitation applies that filtration to the returned result.
-func (r *nostrRepo) retrievIDs(ids []interface{}, since, until interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
-
-	var (
-		events     []*gn.Event
-		lcnt, ecnt int
-		query      *firestore.DocumentIterator
-		_ids       []string
-	)
-
-	for _, id := range ids {
-		_id, ok := id.(string)
-		if !ok {
-			_ids = append(_ids, "")
-			continue
-		}
-		_ids = append(_ids, _id)
-	}
-
-	switch {
-	case since == nil && until == nil:
-		query = fsclient.Collection(r.events_collection).Where("ID", "in", _ids).Documents(*r.ctx)
-
-	case since != nil && until == nil:
-		tsSince, err := tools.ConvertToTS(since)
-		if err != nil {
-			return nil, err
-		}
-		query = fsclient.Collection(r.events_collection).Where("ID", "in", _ids).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
-
-	case since == nil && until != nil:
-		tsUntil, err := tools.ConvertToTS(until)
-		if err != nil {
-			return nil, err
-		}
-		query = fsclient.Collection(r.events_collection).Where("ID", "in", _ids).Where("CreatedAt", "<", tsUntil).Documents(*r.ctx)
-
-	default:
-		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
-		query = fsclient.Collection(r.events_collection).Where("ID", "in", _ids).Documents(*r.ctx)
-
-	}
-
-	// Query the events collection
-	// iterate over docs collection where the IDs matches the filter array of IDs
-	for {
-		doc, err := query.Next()
-		if err != nil {
-			if err == iterator.Done || ecnt > 3 {
-				break
-			}
-			r.elgr.Printf("[retrievIDs] Error raised while reading a doc from the DB: %v", err)
-			ecnt++
-			continue
-		}
-
-		e, err := r.transformTagMapIntoTAGS(doc)
-		if err != nil {
-			r.elgr.Printf("Error %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
-			continue
-		}
-		lcnt++
-
-		if lcnt <= limit {
-			events = append(events, e)
-		} else {
-			break
-		}
-	}
-	return events, nil
-}
-
-// retrievAuthors - query events collection from the DB by authors and if there is valid time slot limitation applies that filtration to the returned result.
-func (r *nostrRepo) retrievAuthors(authors []interface{}, since, until interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
-
-	var (
-		events     []*gn.Event
-		lcnt, ecnt int
-		_authors   []string
-	)
-
-	for _, author := range authors {
-		_author, ok := author.(string)
-		if !ok {
-			_authors = append(_authors, "")
-			continue
-		}
-		_authors = append(_authors, _author)
-	}
-
-	var query *firestore.DocumentIterator
-
-	switch {
-	case since == nil && until == nil:
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", _authors).Documents(*r.ctx)
-
-	case since != nil && until == nil:
-		tsSince, err := tools.ConvertToTS(since)
-		if err != nil {
-			return nil, err
-		}
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", _authors).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
-
-	case since == nil && until != nil:
-		tsUntil, err := tools.ConvertToTS(until)
-		if err != nil {
-			return nil, err
-		}
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", _authors).Where("CreatedAt", "<", tsUntil).Documents(*r.ctx)
-
-	default:
-		// [ ]: ??? to implement `between` (from `since` to `until`) use case...
-		query = fsclient.Collection(r.events_collection).Where("PubKey", "in", _authors).Documents(*r.ctx)
-
-	}
-
-	// Query the events collection
-	// iterate over docs collection where the PubKey matches the filter array of PubKeys
-	for {
-		doc, err := query.Next()
-		if err != nil {
-			if err == iterator.Done || ecnt > 3 {
-				break
-			}
-			r.elgr.Printf("[retrievAuthors] Error raised while reading a doc from the DB: %v", err)
-			ecnt++
-			continue
-		}
-
-		e, err := r.transformTagMapIntoTAGS(doc)
-		if err != nil {
-			r.elgr.Printf("Error %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
-			continue
-		}
-		lcnt++
-
-		if lcnt <= limit {
-			events = append(events, e)
-		} else {
-			break
-		}
-	}
-	return events, nil
-}
-
-// retrieveFromPast - query events collection from the DB by createdAt and if there are events created after the `since` timestamp, applies that filtration to the returned result.
-func (r *nostrRepo) retrieveFromPast(since interface{}, limit int, fsclient *firestore.Client) ([]*gn.Event, error) {
-
-	var (
-		events     []*gn.Event
-		lcnt, ecnt int
-		query      *firestore.DocumentIterator
-	)
-
-	tsSince, err := tools.ConvertToTS(since)
-	if err != nil {
-		return nil, err
-	}
-
-	query = fsclient.Collection(r.events_collection).Where("CreatedAt", ">", tsSince).Documents(*r.ctx)
-
-	// Query the events collection
-	// iterate over docs collection where the PubKey matches the filter array of PubKeys
-	for {
-		doc, err := query.Next()
-		if err != nil {
-			if err == iterator.Done || ecnt > 3 {
-				break
-			}
-			r.elgr.Printf("[retrieveFromPast] Error raised while reading a doc from the DB: %v", err)
-			ecnt++
-			continue
-		}
-
-		e, err := r.transformTagMapIntoTAGS(doc)
-		if err != nil {
-			r.elgr.Printf("Error %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
-			continue
-		}
-
-		if lcnt < limit {
-			events = append(events, e)
-			lcnt++
-		} else {
-			break
-		}
-	}
-
-	return events, nil
-
 }
 
 // transformTagMapIntoTAGS - convert the TagsMap from the doc into a Tags array in the event `e`
