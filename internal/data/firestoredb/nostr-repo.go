@@ -68,9 +68,9 @@ func (r *nostrRepo) StoreEvent(e *gn.Event) error {
 	tags := tagsToTagMap(tgs)
 	docRef := fsclient.Collection(r.events_collection).Doc(ec.ID)
 
-	r.mtx.Lock()
+	//r.mtx.Lock()
 	_, errt := docRef.Set(*r.ctx, tags, firestore.MergeAll)
-	defer r.mtx.Unlock()
+	//defer r.mtx.Unlock()
 
 	if errt != nil {
 		r.rlgr.Errorf("unable to save Tags for Event ID: %s. error: %v", ec.ID, errt)
