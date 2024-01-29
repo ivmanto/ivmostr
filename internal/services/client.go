@@ -159,12 +159,12 @@ func (c *Client) writeT() error {
 		c.mu.Unlock()
 
 		if err != nil {
-			c.lgr.Debugf("write_status:%s, client:%s, took:%d, size[B]: %d, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb), err)
+			c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size: %d B, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb), err)
 			break
 		}
 
 		sb, _ = tools.ConvertStructToByte(message)
-		c.lgr.Debugf("write_status:%s, client:%s, took:%d, size[B]:%d", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb))
+		c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size:%d B", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb))
 		c.wrchrr = time.Now().UnixMilli()
 	}
 
