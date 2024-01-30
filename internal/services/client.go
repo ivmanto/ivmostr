@@ -434,7 +434,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
-	log.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
+	log.Printf("NEW: subscription id: %s from [%s] with filter %v", c.Subscription_id, c.IP, msgfilters)
 	metrics.ChNewSubscription <- 1
 	metrics.ChNrOfSubsFilters <- len(c.Filetrs)
 
