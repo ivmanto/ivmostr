@@ -54,7 +54,7 @@ var (
 
 func init() {
 	recordAppMetrics()
-	ivmMetricsRunner()
+	//ivmMetricsRunner()
 }
 
 func recordAppMetrics() {
