@@ -2,42 +2,54 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
+	"io"
 	"math/rand"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"cloud.google.com/go/logging"
+	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
 var (
-	nbmrevents int
-	stop       = make(chan struct{})
-	msgw       = make(chan *[]interface{})
-	leop       = logging.Entry{Severity: logging.Info, Payload: ""}
+	leop = logging.Entry{Severity: logging.Info, Payload: ""}
 )
 
 type Client struct {
-	conn            *websocket.Conn
-	lgr             *log.Logger
-	cclnlgr         *logging.Logger
-	id              uint
-	name            string
-	session         *Session
-	challenge       string
-	npub            string
-	Subscription_id string
-	Filetrs         []map[string]interface{}
-	errorRate       map[string]int
-	IP              string
-	Authed          bool
+	Conn                *Connection
+	mu                  sync.Mutex
+	lgr                 *log.Logger
+	cclnlgr             *logging.Logger
+	repo                nostr.NostrRepo
+	id                  uint
+	name                string
+	CreatedAt           int64
+	challenge           string
+	npub                string
+	Subscription_id     string
+	Filetrs             []map[string]interface{}
+	Relay_Host          string
+	errorRate           map[string]int
+	default_limit_value int
+	read_events         int
+	IP                  string
+	Authed              bool
+	responseRate        int64 // subscription suply response rate
+	wrchrr              int64 // wrchrr = write channel response rate
+	msgwt               chan []interface{}
+	inmsg               chan []interface{}
+	errFM               chan error
+	errCH               chan error
 }
 
 func (c *Client) Name() string {
@@ -45,104 +57,240 @@ func (c *Client) Name() string {
 }
 
 func (c *Client) ReceiveMsg() error {
-	var message []interface{}
-	errRM := make(chan error)
+	var errch, errfm error
+	// Create a sync.WaitGroup to track the number of goroutines waiting to finish
+	var wg sync.WaitGroup
+	// Create a context to cancel the goroutines if needed
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
+	// [ ]: to be tested if it is filtering logs corectly
+	c.lgr.Level = log.DebugLevel
+
+	wg.Add(1)
 	go func() {
-		for {
-			err := c.conn.ReadJSON(&message)
-			if err != nil {
-				errRM <- fmt.Errorf("Error while reading message: %v", err)
-				continue
-			}
-			// sending the message to the write channel
-			err = c.dispatcher(&message)
-			if err != nil {
-				errRM <- fmt.Errorf("Error while classifing a message: %v", err)
-				continue
-			}
-		}
-	}()
-
-	err := c.write()
-	if err != nil {
-		errRM <- fmt.Errorf("Error while writing message: %v", err)
-	}
-
-	// Receive errors from the channel and handle them
-	for err := range errRM {
-		if err != nil {
-			fmt.Println("[receiveMSG] Error received:", err)
-			// Perform error handling or logging here
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *Client) write() error {
-	errWM := make(chan error)
-	var msg *[]interface{}
-
-	go func() {
-		mutex := sync.Mutex{}
+		defer wg.Done()
 		for {
 			select {
-			case <-stop:
-				c.lgr.Printf("[write] Stopping the write channel")
-				return
+			case c.errCH <- c.writeT():
 			default:
-				msg = <-msgw
-
-				if msg != nil {
-					mutex.Lock()
-					err := c.conn.WriteJSON(msg)
-					mutex.Unlock()
-					if err != nil {
-						errWM <- err
-					}
-
-					// [ ]: Remove the next 2 lines for production performance
-					lb := tools.CalcLenghtInBytes(msg)
-					c.lgr.Printf(" * %d bytes sent to [%s] over ws connection", lb, c.IP)
-
-					msg = nil
+				errfm = <-c.errFM
+				c.Conn.WS.Close()
+				// Check if the context has been canceled
+				if ctx.Err() != nil {
+					c.lgr.Errorf("Goroutine `writeT` canceled: %v", ctx.Err())
+				} else {
+					c.lgr.Infof("Goroutine `writeT` forced:%v", errfm)
 				}
-				errWM <- nil
 			}
 		}
 	}()
 
-	for err := range errWM {
-		if err != nil {
-			fmt.Println("[write] Error received: ", err)
-			// Perform error handling or logging here
-			return err
-		} else {
-			return nil
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case c.errCH <- c.dispatcher():
+			default:
+				errfm = <-c.errFM
+				c.Conn.WS.Close()
+				// Check if the context has been canceled
+				if ctx.Err() != nil {
+					c.lgr.Errorf("Goroutine `dispatcher` canceled: %v", ctx.Err())
+				} else {
+					c.lgr.Infof("Goroutine `dispatcher` forced:%v", errfm)
+				}
+			}
 		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case <-c.errCH:
+			for errch = range c.errCH {
+				if errch != nil {
+					c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errch)
+				}
+			}
+		default:
+			errfm := <-c.errFM
+			c.Conn.WS.Close()
+			// Check if the context has been canceled
+			if ctx.Err() != nil {
+				c.lgr.Errorf("Goroutine `errCH` canceled: %v", ctx.Err())
+			} else {
+				c.lgr.Infof("Goroutine `errCH` forced:%v", errfm)
+			}
+		}
+	}()
+
+	for {
+		mt, p, err := c.Conn.WS.ReadMessage()
+		if (err != nil && err != io.EOF) || (mt == -1) {
+			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
+			c.Conn.WS.Close()
+			c.errFM <- err
+			break
+		}
+
+		c.lgr.Debugf("read_status:%s, client:%s, message_type:%d, size:%d, ts:%d", "success", c.IP, mt, len(p), time.Now().UnixNano())
+		c.inmsg <- []interface{}{mt, p}
 	}
-	return nil
+
+	wg.Wait()
+	c.lgr.Infof("[ReceiveMsg] for client [%v] completed!", c.IP)
+	return errfm
 }
 
-func (c *Client) dispatcher(msg *[]interface{}) error {
-	// [x]: implement the logic to dispatch the message to the client
-	switch (*msg)[0] {
+func (c *Client) writeT() error {
+	var (
+		sb  []byte
+		err error
+	)
+
+	for message := range c.msgwt {
+		c.lgr.Infof("[range msgwt] received message in %d ms", time.Now().UnixMilli()-c.wrchrr)
+
+		c.mu.Lock()
+		err = c.Conn.WS.WriteJSON(message)
+		c.mu.Unlock()
+
+		if err != nil {
+			c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size: %d B, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb), err)
+			break
+		}
+
+		sb, _ = tools.ConvertStructToByte(message)
+		c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size:%d B", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb))
+		c.wrchrr = time.Now().UnixMilli()
+	}
+
+	return err
+}
+
+func (c *Client) dispatcher() error {
+
+	var (
+		err error
+	)
+
+	for msg := range c.inmsg {
+
+		c.lgr.Debugf("[disp] from [%s] received message type:%d", c.IP, msg[0].(int))
+
+		if len(msg[1].([]byte)) == 0 {
+			c.lgr.Debugf("[disp] [%s] The received message has null payload!", c.IP)
+			continue
+		}
+
+		// msg is an enchance []interface{} by the ReadMsg method with the message type int as first element.
+		switch msg[0].(int) {
+		case websocket.TextMessage:
+
+			if !utf8.Valid(msg[1].([]byte)) {
+				text := "The received message is invalid utf8"
+				_ = c.Conn.WS.WriteControl(websocket.CloseMessage,
+					websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, text),
+					time.Time.Add(time.Now(), time.Second*2))
+
+				c.errFM <- fmt.Errorf("[disp] invalid utf8 encoding from [%s]!", c.IP)
+				return fmt.Errorf("[disp] %s", text)
+			}
+
+			nostr_msg := msg[1].([]byte)
+			if string(msg[1].([]byte)[:1]) == "[" {
+				c.dispatchNostrMsgs(&nostr_msg)
+				continue
+			} else {
+				// Artificial PING/PONG handler - for cases when the control message is not supported by the client(s)
+				txtmsg := strings.ToLower(string(msg[1].([]byte)))
+				c.wrchrr = time.Now().UnixMilli()
+
+				if txtmsg == "ping" || txtmsg == `["ping"]` {
+					c.msgwt <- []interface{}{`pong`}
+
+				} else if txtmsg == `{"op":"ping"}` {
+					c.wrchrr = time.Now().UnixMilli()
+					var pr = make(map[string]interface{}, 1)
+					pr["res"] = "pong"
+					c.msgwt <- []interface{}{pr}
+
+				} else {
+					c.lgr.Debugf("[disp] from client [%s] text message paylod is: %s", c.IP, txtmsg)
+					c.writeCustomNotice("not a nostr message")
+				}
+			}
+			continue
+
+		case websocket.BinaryMessage:
+			c.lgr.Debug("[disp] received binary message! Processing not implemented")
+			continue
+		case websocket.CloseMessage:
+			msgstr := string(msg[1].([]byte))
+			c.lgr.Debugf("[disp] received a `close` message: %s from client [%s]", msgstr, c.IP)
+			return fmt.Errorf("[disp] Client closing the connection with: %s", msgstr)
+
+		case websocket.PingMessage:
+			c.lgr.Debugf("[disp] Client [%s] sent PING message (mt = 9):%v", c.IP, string(msg[1].([]byte)))
+			continue
+
+		case websocket.PongMessage:
+			c.lgr.Debugf("[disp] Client [%s] received PONG message (mt=10) %v", c.IP, string(msg[1].([]byte)))
+			continue
+
+		default:
+			c.lgr.Debugf("[disp] From [%s] Unknown message type: %v", c.IP, msg[0].(int))
+			continue
+		}
+	}
+	return err
+}
+
+func (c *Client) dispatchNostrMsgs(msg *[]byte) {
+	var (
+		err error
+	)
+
+	jmsg, errj := convertToJSON(*msg)
+	if errj != nil {
+		c.lgr.Errorf("[dispatchNostrMsgs] from [%s] provided payload [%s] is not a valid JSON. Error: %v", c.IP, string(*msg), errj)
+		return
+	}
+	c.lgr.Debugf("[dispatchNostrMsgs] from [%s] json message: [%v]", c.IP, jmsg)
+
+	key, ok := jmsg[0].(string)
+	if !ok {
+		c.lgr.Errorf("[dispatchNostrMsgs] nostr message label [%v] is not a string!", jmsg[0])
+	}
+	c.lgr.Debugf("[dispatchNostrMsgs] from [%s] message key is: `%s`", c.IP, key)
+
+	switch key {
 	case "EVENT":
-		return c.handlerEventMsgs(msg)
+		err = c.handlerEventMsgs(&jmsg)
 
 	case "REQ":
-		return c.handlerReqMsgs(msg)
+		err = c.handlerReqMsgs(&jmsg)
 
 	case "CLOSE":
-		return c.handlerCloseSubsMsgs(msg)
+		err = c.handlerCloseSubsMsgs(&jmsg)
 
 	case "AUTH":
-		return c.handlerAuthMsgs(msg)
+		err = c.handlerAuthMsgs(&jmsg)
+
 	default:
+		c.lgr.Errorf("[dispatchNostrMsgs] Unknown message: [%s] from [%s]", key, c.IP)
 		c.writeCustomNotice("Error: invalid format of the received message")
-		return fmt.Errorf("[dispatcher] ERROR: unknown message type: %v", (*msg)[0])
+		return
 	}
+
+	if err != nil {
+		c.lgr.Errorf("[dispatchNostrMsgs] A handlers function returned Error: %v;  message type: %v from [%s]", err, key, c.IP)
+	}
+
+	c.lgr.Infof("[dispatchNostrMsgs] nostr message from [%s] handled without errors.", c.IP)
 }
 
 // ****************************** Messages types Handlers ***********************************************
@@ -150,11 +298,13 @@ func (c *Client) dispatcher(msg *[]interface{}) error {
 func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	// OK messages MUST be sent in response to EVENT messages received from clients, they must have the 3rd parameter set to true when an event has been accepted by the relay, false otherwise. The 4th parameter MAY be empty when the 3rd is true, otherwise it MUST be a string containing a machine-readable single-word prefix followed by a : and then a human-readable message. The standardized machine-readable prefixes are: duplicate, pow, blocked, rate-limited, invalid, and error for when none of that fits.
 
+	c.responseRate = time.Now().UnixMilli()
+
 	se, ok := (*msg)[1].(map[string]interface{})
 	if !ok {
 		lmsg := "invalid: unknown message format"
 		c.writeEventNotice("0", false, lmsg)
-		return fmt.Errorf("ERROR: invalid message. unknown format")
+		return fmt.Errorf("ERROR: %s", lmsg)
 	}
 
 	e, err := mapToEvent(se)
@@ -177,11 +327,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	case 3:
 		// nip-02, kind:3 replaceable, Contact List (overwrite the exiting event for the same pub key)
 
-		// sending the event to a channel, will hijack the event to the broadcaster
-		// Keep it disabled until [ ]TODO: find a way to clone the execution context
-		// NewEvent <- e
-
-		err := c.session.Repo.StoreEventK3(e)
+		err := c.repo.StoreEventK3(e)
 		if err != nil {
 			c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 			return err
@@ -202,19 +348,26 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		// do nothing
 	}
 
-	err = c.session.Repo.StoreEvent(e)
+	err = c.repo.StoreEvent(e)
 	if err != nil {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		return err
 	}
 
 	// The customer name is required in NewEventBroadcaster method in order to skip the broadcast process for the customer that brought the event on the relay.
-	e.SetExtra("cname", c.name)
+	e.SetExtra("id", float64(c.id))
 
-	// [x]: fire-up a new go routine to handle the NEW event broadcating for all the clients having subscriptions with at least one filter matching the event paramateres.
-	go c.session.BroadcasterQueue(*e)
+	// Send the new event to the broadcaster
+	NewEvent <- e
 
 	c.writeEventNotice(e.ID, true, "")
+
+	c.lgr.Debugf("[handlerEventMsgs] from [%s] saving took [%d] ms", c.IP, time.Now().Unix()-c.responseRate)
+
+	payloadEvnt := fmt.Sprintf(`{"method":"[handlerEventMsgs]","client":"%s", "eventID-stored":"%s","servedIn": %d}`, c.IP, e.ID, time.Now().UnixMilli()-c.responseRate)
+	leop.Payload = payloadEvnt
+	cclnlgr.Log(leop)
+
 	return nil
 }
 
@@ -225,6 +378,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	var subscription_id string
 	var filter map[string]interface{}
 
+	// handle invalid subscription IDs
 	if len(*msg) >= 2 {
 		subscription_id = (*msg)[1].(string)
 		if subscription_id == "" || len(subscription_id) > 64 {
@@ -252,48 +406,35 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	// [x] Relays should manage <subscription_id>s independently for each WebSocket connection; even if <subscription_id>s are the same string, they should be treated as different subscriptions for different connections
 
 	if c.Subscription_id != "" {
-		if c.Subscription_id == subscription_id {
-			// [x] OVERWRITE subscription fileters
-			c.Filetrs = []map[string]interface{}{}
-			c.Filetrs = append(c.Filetrs, msgfilters...)
 
-			err := c.SubscriptionSuplier()
-			if err != nil {
-				return err
-			}
+		// Overwrite the existing subscription id
+		c.Subscription_id = subscription_id
 
-			c.lgr.Printf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
-			c.writeCustomNotice("Update: The subscription filter has been overwriten.")
-			return nil
-		} else {
-			// [!] protocol error
-			c.errorRate[c.IP]++
-			em := fmt.Sprintf("Error: There is already an active subscription for this connection with subscription_id: %v, the new subID %v is ignored.", c.Subscription_id, subscription_id)
-			c.writeCustomNotice(em)
-			return fmt.Errorf("There is already active subscription")
+		// [x] OVERWRITE subscription fileters
+		c.Filetrs = []map[string]interface{}{}
+		c.Filetrs = append(c.Filetrs, msgfilters...)
+
+		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
+		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
+
+		err := c.SubscriptionSuplier()
+		if err != nil {
+			return err
 		}
+
+		return nil
+
 	}
 	c.Subscription_id = subscription_id
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
-	c.lgr.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
+	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
+	log.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
 
-	//err := c.SubscriptionSuplier()
-	responseRate := time.Now().UnixMilli()
-
-	err := c.ReadFilteredEvents()
+	err := c.SubscriptionSuplier()
 	if err != nil {
 		return err
 	}
-
-	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
-
-	rslt := time.Now().UnixMilli() - responseRate
-
-	leop.Payload = fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
-
-	cclnlgr.Log(leop)
-	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
 
 	return nil
 }
@@ -397,20 +538,34 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 //		[ ] `rate-limited`,
 //		[x] `invalid`, and
 //		[x] `error` for when none of that fits.
+
 func (c *Client) writeEventNotice(event_id string, accepted bool, message string) {
-	var note = []interface{}{"OK", event_id, accepted, message}
-	msgw <- &note
+	c.wrchrr = time.Now().UnixMilli()
+	c.msgwt <- []interface{}{"OK", event_id, accepted, message}
+	c.lgr.Debugf("client [%v]: note sent to write in %d ms", c.IP, time.Now().UnixMilli()-c.wrchrr)
 }
 
 func (c *Client) writeCustomNotice(notice_msg string) {
+	c.wrchrr = time.Now().UnixMilli()
 	var note = []interface{}{"NOTICE", notice_msg}
-	msgw <- &note
+	c.msgwt <- note
+	c.lgr.Debugf("client [%v]: notice sent to write in %d ms", c.IP, time.Now().UnixMilli()-c.wrchrr)
 }
 
 // Protocol definition: ["EOSE", <subscription_id>], used to indicate that the relay has no more events to send for a subscription.
 func (c *Client) writeEOSE(subID string) {
+	c.wrchrr = time.Now().UnixMilli()
 	var eose = []interface{}{"EOSE", subID}
-	msgw <- &eose
+	c.msgwt <- eose
+	c.lgr.Debugf("client [%v]: EOSE sent to write in %d ms", c.IP, time.Now().UnixMilli()-c.wrchrr)
+}
+
+// Protocol definition: ["AUTH", <challenge>], (nip-42) used to request authentication from the client.
+func (c *Client) writeAUTHChallenge() {
+	c.wrchrr = time.Now().UnixMilli()
+	var note = []interface{}{"AUTH", c.challenge}
+	c.msgwt <- note
+	c.lgr.Debugf("client [%v]: challenge sent to write in %d ms", c.IP, time.Now().UnixMilli()-c.wrchrr)
 }
 
 // Generate challenge for the client to authenticate.
@@ -431,12 +586,6 @@ func (c *Client) GenChallenge() {
 	c.challenge = string(b)
 }
 
-// Protocol definition: ["AUTH", <challenge>], (nip-42) used to request authentication from the client.
-func (c *Client) writeAUTHChallenge() {
-	var note = []interface{}{"AUTH", c.challenge}
-	msgw <- &note
-}
-
 // Get Filters returns the filters of the current client's subscription
 func (c *Client) GetFilters() []map[string]interface{} {
 	return c.Filetrs
@@ -451,10 +600,7 @@ func (c *Client) confirmURLDomainMatch(relayURL string) bool {
 		return false
 	}
 
-	// get the relay HOST name from the configuration
-	cfg_relayHost := c.session.cfg.Relay_Host
-
-	return relURL.Hostname() == cfg_relayHost
+	return relURL.Hostname() == c.Relay_Host
 }
 
 // *****************************************************************************
@@ -462,26 +608,29 @@ func (c *Client) confirmURLDomainMatch(relayURL string) bool {
 // *****************************************************************************
 
 func (c *Client) SubscriptionSuplier() error {
-	nbmrevents = 0
-	ctx := context.Background()
-	responseRate := time.Now().UnixMilli()
 
-	fmt.Printf("\n\n## SubscriptionSuplier: %s\n", c.Subscription_id)
+	ctx := context.Background()
+	c.responseRate = time.Now().UnixMilli()
+	c.read_events = 0
+
+	c.lgr.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "Filters": c.Filetrs}).Debug("Starting SubscriptionSuplier")
 
 	err := c.fetchAllFilters(ctx)
 	if err != nil {
 		return err
 	}
 
+	c.lgr.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "fetchAllFilters", "took": time.Now().UnixMilli() - c.responseRate}).Debug("fetchAllFilters completed")
+
 	// Send EOSE
 	c.writeEOSE(c.Subscription_id)
 
-	rslt := time.Now().UnixMilli() - responseRate
+	c.lgr.WithFields(log.Fields{"method": "[SubscriptionSuplier]", "client": c.IP, "SubscriptionID": c.Subscription_id, "func": "writeEOSE", "took": time.Now().UnixMilli() - c.responseRate}).Debug("writeEOSE completed")
 
-	leop.Payload = fmt.Sprintf(`{"IP":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, nbmrevents, rslt)
+	payloadV := fmt.Sprintf(`{"method":"[SubscriptionSuplier]","client":"%s","Filters":"%v","events":%d,"servedIn": %d}`, c.IP, c.Filetrs, c.read_events, time.Now().UnixMilli()-c.responseRate)
+	leop.Payload = payloadV
 	cclnlgr.Log(leop)
 
-	c.lgr.Printf(`{"IP":"%s","Subscription":"%s","events":%d,"servedIn": %d}`, c.IP, c.Subscription_id, nbmrevents, rslt)
 	return nil
 }
 
@@ -489,10 +638,10 @@ func (c *Client) SubscriptionSuplier() error {
 func (c *Client) fetchAllFilters(ctx context.Context) error {
 
 	eg := errgroup.Group{}
-
-	// Run all the HTTP requests in parallel
-	for _, filter := range c.Filetrs {
+	for idx, filter := range c.Filetrs {
 		fltr := filter
+		c.lgr.WithFields(log.Fields{"method": "[fetchAllFilters]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": fltr, "##idx": idx}).Info("Parsing filters")
+
 		eg.Go(func() error {
 			return c.fetchData(fltr, &eg)
 		})
@@ -503,8 +652,6 @@ func (c *Client) fetchAllFilters(ctx context.Context) error {
 }
 
 func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) error {
-	// Function to fetch data from the specified filter
-
 	return func() error {
 		// [ ]: de-compose the filter
 		// ===================================== FILTER TEMPLATE ============================================
@@ -520,17 +667,19 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		//  "limit": <maximum number of events relays SHOULD return in the initial query>
 		//}
 		//==================================================================================================
+
 		var (
 			err            error
-			events         []*gn.Event
+			_events        []*gn.Event
+			events         []gn.Event
 			max_events     int
 			_since, _until int64
-			fltl           int
 		)
 
-		lim, ok := filter["limit"].(float64)
-		if !ok {
-			max_events = c.session.cfg.GetDLV()
+		// =================================== MAX_EVENTS ===============================================
+		lim, flt_limit := filter["limit"].(float64)
+		if !flt_limit {
+			max_events = c.default_limit_value
 		} else if lim == 0 || lim > 5000 {
 			// until the paging is implemented for paying clients OR always for public clients
 			// 5000 is the value from attribute from server_info limits
@@ -541,221 +690,131 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		}
 
 		// =================================== SINCE - UNTIL ===============================================
-		if since, ok := filter["since"].(float64); !ok {
+		if since, flt_since := filter["since"].(float64); !flt_since {
 			_since = int64(0)
 		} else {
 			_since = int64(since)
 		}
-		if until, ok := filter["until"].(float64); !ok {
+		if until, flt_until := filter["until"].(float64); !flt_until {
 			_until = int64(0)
 		} else {
 			_until = int64(until)
 		}
 
-		// Parsing filter's lists
+		// =================================== Parse the filter list components ===========================
+		_, flt_authors := filter["authors"].([]interface{})
+		_, flt_ids := filter["ids"].([]interface{})
+		_, flt_kinds := filter["kinds"].([]interface{})
+		var flt_tags bool
 		for key, val := range filter {
-
-			if nbmrevents > max_events {
+			if strings.HasPrefix(key, "#") {
+				_, flt_tags = val.([]interface{})
 				break
 			}
+		}
 
-			nbmrevents += len(events)
+		// =================================== FILTERS LIST ===============================================
 
-			switch {
-			case key == "kinds":
+		// =================================== Select the query case for the filter =======================
+		//for key, val := range filter {
 
-				c.lgr.Printf("Filter kinds:%v", val)
+		events = []gn.Event{}
 
-				var (
-					kinds  []interface{}
-					kindsi []int
-				)
+		switch {
+		case flt_authors && !flt_ids && !flt_kinds && !flt_tags:
+			// ONLY "authors" list ...
 
-				kinds, ok = filter["kinds"].([]interface{})
-				if !ok {
-					return fmt.Errorf("Wrong filter format used! Kinds are not a list")
-				}
+			var (
+				authors  []interface{}
+				_authors []string
+			)
 
-				if len(kinds) > 30 {
-					kinds = kinds[:30]
-				}
+			authors, ok := filter["authors"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Authors are not a list")
+			}
 
-				for _, kind := range kinds {
-					_kind, ok := kind.(float64)
-					if ok {
-						kindsi = append(kindsi, int(_kind))
+			// limit of the number of elements comes from Firestore query limit for the IN clause
+			if len(_authors) >= 30 {
+				_authors = _authors[:29]
+			}
+
+			for _, auth := range authors {
+				_auth, ok := auth.(string)
+				if ok {
+					// nip-01: `The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.`
+					_auth = strings.ToLower(_auth)
+					if len(_auth) != 64 {
+						c.lgr.Errorf("Wrong author value! It must be 64 chars long. Skiping this value.")
+						continue
 					}
-				}
-
-				events, err = c.session.Repo.GetEventsByKinds(kindsi, max_events, _since, _until)
-				if err != nil {
-					c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
-					return err
-				}
-
-			case key == "authors":
-
-				c.lgr.Printf("Filter authors:%v", val)
-
-				var (
-					authors  []interface{}
-					_authors []string
-				)
-
-				authors, ok = filter["authors"].([]interface{})
-				if !ok {
-					return fmt.Errorf("Wrong filter format used! Authors are not a list")
-				}
-
-				for _, auth := range authors {
-					_auth, ok := auth.(string)
-					if ok {
-						_authors = append(_authors, _auth)
-					}
-				}
-
-				if len(_authors) > 30 {
-					_authors = _authors[:30]
-				}
-
-				events, err = c.session.Repo.GetEventsByAuthors(_authors, max_events, _since, _until)
-				if err != nil {
-					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-					return err
-				}
-
-			case key == "ids":
-
-				c.lgr.Printf("Filter ids:%v", val)
-
-				var (
-					ids  []interface{}
-					_ids []string
-				)
-
-				ids, ok = filter["ids"].([]interface{})
-				if !ok {
-					return fmt.Errorf("Wrong filter format used! Ids are not a list")
-				}
-
-				for _, id := range ids {
-					_id, ok := id.(string)
-					if ok {
-						_ids = append(_ids, _id)
-					}
-				}
-
-				if len(_ids) > 30 {
-					_ids = _ids[:30]
-				}
-
-				events, err = c.session.Repo.GetEventsByAuthors(_ids, max_events, _since, _until)
-				if err != nil {
-					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-					return err
-				}
-			case strings.HasPrefix(key, "#"):
-			// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
-			// case filter["#e"]: ...
-
-			default:
-				if _since > 0 && _until == 0 {
-
-					events, err = c.session.Repo.GetEventsSince(max_events, _since)
-					if err != nil {
-						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-						return err
-					}
-				} else if _since > 0 && _until > 0 {
-
-					events, err = c.session.Repo.GetEventsSinceUntil(max_events, _since, _until)
-					if err != nil {
-						c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-						return err
-					}
-				} else {
-					//events, err = c.session.Repo.GetEventsByFilter(filter)
-					// if err != nil {
-					// 	c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-					// 	return err
-					// }
-					c.lgr.Printf("Customer [%v]. Filter is too complex:\n %v\n", c.IP, filter)
+					_authors = append(_authors, _auth)
 				}
 			}
 
-			fltl++
-		}
+			_events, err = c.repo.GetEventsByAuthors(_authors, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
 
-		c.lgr.Printf("Filter components: %v", fltl)
+			for _, ev := range _events {
+				events = append(events, *ev)
+			}
 
-		msgw <- &[]interface{}{events}
-		return nil
-	}()
-}
+		case flt_ids && !flt_authors && !flt_kinds && !flt_tags:
+			// ONLY "ids" list...
 
-// ################# End of Subscription Supplier ##############################
+			var (
+				ids  []interface{}
+				_ids []string
+			)
 
-func (c *Client) ReadFilteredEvents() error {
+			ids, ok := filter["ids"].([]interface{})
+			if !ok {
+				return fmt.Errorf("Wrong filter format used! Ids are not a list")
+			}
 
-	filter := c.Filetrs[0]
-	var (
-		err            error
-		events         []*gn.Event
-		max_events     int
-		_since, _until int64
-		fltl           int
-	)
+			if len(_ids) >= 30 {
+				_ids = _ids[:29]
+			}
 
-	lim, ok := filter["limit"].(float64)
-	if !ok {
-		max_events = c.session.cfg.GetDLV()
-	} else if lim == 0 || lim > 5000 {
-		// until the paging is implemented for paying clients OR always for public clients
-		// 5000 is the value from attribute from server_info limits
-		max_events = 5000
-	} else {
-		// set the requested by the filter value
-		max_events = int(lim)
-	}
+			for _, id := range ids {
+				_id, ok := id.(string)
+				if ok {
+					if len(_id) != 64 {
+						c.lgr.Errorf("Wrong ID value! It must be 64 chars long. Skiping this value.")
+						continue
+					}
+					_ids = append(_ids, _id)
+				}
+			}
 
-	// =================================== SINCE - UNTIL ===============================================
-	if since, ok := filter["since"].(float64); !ok {
-		_since = int64(0)
-	} else {
-		_since = int64(since)
-	}
-	if until, ok := filter["until"].(float64); !ok {
-		_until = int64(0)
-	} else {
-		_until = int64(until)
-	}
+			_events, err = c.repo.GetEventsByIds(_ids, max_events, _since, _until)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
 
-	// Parsing filter's lists
-	for key, val := range filter {
+			for _, ev := range _events {
+				events = append(events, *ev)
+			}
 
-		if nbmrevents > max_events {
-			break
-		}
-
-		nbmrevents += len(events)
-
-		switch {
-		case key == "kinds":
-
-			c.lgr.Printf("Filter kinds:%v", val)
+		case flt_kinds && !flt_authors && !flt_ids && !flt_tags:
+			// ONLY "kinds" list ...
 
 			var (
 				kinds  []interface{}
 				kindsi []int
 			)
 
-			kinds, ok = filter["kinds"].([]interface{})
+			kinds, ok := filter["kinds"].([]interface{})
 			if !ok {
 				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
 			}
 
-			if len(kinds) > 30 {
-				kinds = kinds[:30]
+			if len(kinds) >= 30 {
+				kinds = kinds[:29]
 			}
 
 			for _, kind := range kinds {
@@ -765,108 +824,145 @@ func (c *Client) ReadFilteredEvents() error {
 				}
 			}
 
-			events, err = c.session.Repo.GetEventsByKinds(kindsi, max_events, _since, _until)
+			_events, err = c.repo.GetEventsByKinds(kindsi, max_events, _since, _until)
 			if err != nil {
-				c.lgr.Printf("ERROR: %v from subscription %v filter [kinds]: %v", err, c.Subscription_id, filter)
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter [kinds]: %v", err, c.IP, c.Subscription_id, filter)
 				return err
 			}
 
-		case key == "authors":
+			for _, ev := range _events {
+				events = append(events, *ev)
+			}
 
-			c.lgr.Printf("Filter authors:%v", val)
+		case flt_tags && !flt_authors && !flt_ids && !flt_kinds:
+			// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
+			// case filter["#e"]: ...
+			// case filter["#p"]: ...
+
+		case flt_limit && !flt_tags && !flt_authors && !flt_ids && !flt_kinds:
+			// ANY EVENT from the last N (limit) events arrived
+
+			_events, err = c.repo.GetLastNEvents(max_events)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+			for _, ev := range _events {
+				events = append(events, *ev)
+			}
+
+		case _since > 0 && _until == 0:
+			// ONLY Events since (newer than...) the required timestamp
+
+			_events, err = c.repo.GetEventsSince(max_events, _since)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+			for _, ev := range _events {
+				events = append(events, *ev)
+			}
+
+		case _since > 0 && _until > 0:
+			// ONLYEvents between `since` and `until`
+
+			_events, err = c.repo.GetEventsSinceUntil(max_events, _since, _until)
+			if err != nil {
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
+				return err
+			}
+
+			for _, ev := range _events {
+				events = append(events, *ev)
+			}
+
+		case flt_authors && flt_kinds && !flt_ids && !flt_tags:
+			// Combined filter about events from list of AUTHORS AND specified list of KINDS of the events
 
 			var (
 				authors  []interface{}
 				_authors []string
+				kinds    []interface{}
+				_kinds   []int
 			)
 
-			authors, ok = filter["authors"].([]interface{})
+			authors, ok := filter["authors"].([]interface{})
 			if !ok {
 				return fmt.Errorf("Wrong filter format used! Authors are not a list")
+			}
+
+			if len(_authors) >= 30 {
+				_authors = _authors[:29]
 			}
 
 			for _, auth := range authors {
 				_auth, ok := auth.(string)
 				if ok {
+					// nip-01: `The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.`
+					_auth = strings.ToLower(_auth)
+					if len(_auth) != 64 {
+						c.lgr.Errorf("Wrong author value! It must be 64 chars long. Skiping this value.")
+						continue
+					}
 					_authors = append(_authors, _auth)
 				}
 			}
 
-			if len(_authors) > 30 {
-				_authors = _authors[:30]
-			}
-
-			events, err = c.session.Repo.GetEventsByAuthors(_authors, max_events, _since, _until)
-			if err != nil {
-				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-				return err
-			}
-
-		case key == "ids":
-
-			c.lgr.Printf("Filter ids:%v", val)
-
-			var (
-				ids  []interface{}
-				_ids []string
-			)
-
-			ids, ok = filter["ids"].([]interface{})
+			kinds, ok = filter["kinds"].([]interface{})
 			if !ok {
-				return fmt.Errorf("Wrong filter format used! Ids are not a list")
+				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
 			}
 
-			for _, id := range ids {
-				_id, ok := id.(string)
+			if len(kinds) >= 30 {
+				kinds = kinds[:29]
+			}
+
+			for _, kind := range kinds {
+				_kind, ok := kind.(float64)
 				if ok {
-					_ids = append(_ids, _id)
+					_kinds = append(_kinds, int(_kind))
 				}
 			}
 
-			if len(_ids) > 30 {
-				_ids = _ids[:30]
-			}
-
-			events, err = c.session.Repo.GetEventsByAuthors(_ids, max_events, _since, _until)
+			_events, err = c.repo.GetEventsBtAuthorsAndKinds(_authors, _kinds, max_events, _since, _until)
 			if err != nil {
-				c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
+				c.lgr.Errorf("ERROR: %v from client %v subscription %v filter: %v", err, c.IP, c.Subscription_id, filter)
 				return err
 			}
-		case strings.HasPrefix(key, "#"):
-		// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
-		// case filter["#e"]: ...
+
+			for _, ev := range _events {
+				events = append(events, *ev)
+			}
 
 		default:
-			if _since > 0 && _until == 0 {
+			// ANT Other not implemented case of filter
 
-				events, err = c.session.Repo.GetEventsSince(max_events, _since)
-				if err != nil {
-					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-					return err
-				}
-			} else if _since > 0 && _until > 0 {
-
-				events, err = c.session.Repo.GetEventsSinceUntil(max_events, _since, _until)
-				if err != nil {
-					c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-					return err
-				}
-			} else {
-				//events, err = c.session.Repo.GetEventsByFilter(filter)
-				// if err != nil {
-				// 	c.lgr.Printf("ERROR: %v from subscription %v filter: %v", err, c.Subscription_id, filter)
-				// 	return err
-				// }
-				c.lgr.Printf("Customer [%v]. Filter is too complex:\n %v\n", c.IP, filter)
-			}
+			c.lgr.Errorf("Customer [%v] Subscription [%v] Not implemented filter: [%v]", c.IP, c.Subscription_id, filter)
 		}
 
-		fltl++
-	}
+		// Count at the end of each filter component
+		c.read_events += len(events)
+		c.lgr.Debugf("[fetchData] Filter components: %v", len(filter))
 
-	c.lgr.Printf("Filter components: %v", fltl)
+		var wev []interface{} = []interface{}{}
+		var intf = make(map[string]interface{}, 1)
 
-	msgw <- &[]interface{}{events}
+		for _, evnt := range events {
+			inrec, _ := json.Marshal(&evnt)
+			_ = json.Unmarshal(inrec, &intf)
+			wev = append(wev, intf)
+		}
 
-	return nil
+		// sending []Events array as bytes to the writeT channel
+		c.wrchrr = time.Now().UnixMilli()
+		c.msgwt <- wev
+
+		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(events), "servedIn": time.Now().UnixMilli() - c.responseRate}).Debug("Sent to writeT")
+
+		return nil
+	}()
 }
+
+// ################# End of Subscription Supplier ##############################

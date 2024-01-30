@@ -1,12 +1,9 @@
 package services
 
 import (
-	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,103 +16,143 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
 	gn "github.com/nbd-wtf/go-nostr"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
-	NewEvent = make(chan *gn.Event)
-	Exit     = make(chan struct{})
-	//ticker       = time.NewTicker(5 * time.Minute)
-	relay_access string
-	clientCldLgr *logging.Client
-	cclnlgr      *logging.Logger
-	lep          = logging.Entry{Severity: logging.Notice, Payload: ""}
+	NewEvent      = make(chan *gn.Event, 100)
+	Exit          = make(chan struct{})
+	monitorTicker = time.NewTicker(time.Minute * 10)
+	monitorClose  = make(chan struct{})
+	relay_access  string
+	clientCldLgr  *logging.Client
+	cclnlgr       *logging.Logger
+	lep           = logging.Entry{Severity: logging.Notice, Payload: ""}
 )
 
-// Session represents a WebSocket session that handles multiple client connections.
+// Session is global object in nostr relay. It's living over
+// the entire relay's life-cycle and managing the incoming
+// clients WebSocket connections.
 type Session struct {
+	Clients *ClientsPool
 	mu      sync.Mutex
 	seq     uint
-	clients []*Client
-	ns      sync.Map
-	bq      sync.Map
-	out     chan []byte
-	ilgr    *log.Logger
-	elgr    *log.Logger
+	ldg     *ledger
 	clgr    *logging.Logger
+	slgr    *log.Logger
 	pool    *gopool.Pool
+	wspool  *ConnectionPool
 	cfg     *config.ServiceConfig
-	Repo    nostr.NostrRepo
+	repo    nostr.NostrRepo
 }
 
-// NewSession creates a new WebSocket session.
-func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConfig) *Session {
-
-	// Initate Cloud logging
-	ctx := context.Background()
-	clientCldLgr, _ = logging.NewClient(ctx, cfg.Firestore.ProjectID)
-	clientCldLgr.OnError = func(err error) {
-		fmt.Printf("[cloud-logger] Error [%v] raised while logging to cloud logger", err)
-	}
-	clgr := clientCldLgr.Logger("ivmostr-cnn")
+// NewSession creates a new WebSocket session at the time when the http server Handler WSHandler is created.
+func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConfig, clp *ClientsPool, wspool *ConnectionPool) *Session {
 
 	session := Session{
-		ns:   sync.Map{},
-		bq:   sync.Map{},
-		out:  make(chan []byte, 1),
-		ilgr: log.New(os.Stdout, "[ivmws][info] ", log.LstdFlags),
-		elgr: log.New(os.Stderr, "[ivmws][error] ", log.LstdFlags),
-		clgr: clgr,
-		pool: pool,
-		Repo: repo,
-		cfg:  cfg,
+		Clients: clp,
+		clgr:    initCloudLogger(cfg.Firestore.ProjectID, "ivmostr-cnn"),
+		slgr:    log.New(),
+		pool:    pool,
+		wspool:  wspool,
+		repo:    repo,
+		cfg:     cfg,
+		ldg:     NewLedger(),
 	}
 
 	relay_access = cfg.Relay_access
 
-	td, err := repo.TotalDocs()
+	td, err := repo.TotalDocs2()
 	if err != nil {
-		session.elgr.Printf("error getting total number of docs: %v ", err)
+		session.slgr.Errorf("error getting total number of docs: %v ", err)
 	}
-	session.ilgr.Printf("total events in the DB %d", td)
+	session.slgr.Infof("total events in the DB %d", td)
 
-	// [x]: review and rework the event broadcaster
+	// receives new nostr events messages to broadcast among the subscribers
 	go session.NewEventBroadcaster()
+
+	// [x]: Session monitor:
+	// On regular base (10min - 1 hour) to display:
+	// * the list of IP addresses of registered clients in session.ldg
+	// * SubscriptionID per each registred client
+	// * Filters per SubscriptionID
+	go session.Monitor()
 
 	return &session
 }
 
-// Register upgraded websocket connection as client in the sessions
-func (s *Session) Register(conn *websocket.Conn, ip string) *Client {
+func (s *Session) IsRegistered(ip string) bool {
 
+	clnt := s.ldg.Get(ip)
+
+	if clnt != nil {
+		e := clnt.Conn.WS.WriteControl(websocket.PingMessage, []byte(`ping`), time.Time.Add(time.Now(), time.Second*1))
+		if e != nil {
+			s.slgr.Errorf("[IsRegistered] Error [%v] while pinging connection to [%v]", e, ip)
+		}
+		return true
+	}
+	return false
+}
+
+// Register upgraded websocket connection as client in the sessions
+func (s *Session) Register(conn *Connection, ip string) *Client {
+
+	// register the clients IP in the ip-counter
+	tools.IPCount.Add(ip)
+
+	// initiate cloud Logger
 	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
 
-	client := Client{
-		session:   s,
-		conn:      conn,
-		lgr:       log.New(os.Stderr, "[client] ", log.LstdFlags),
-		cclnlgr:   cclnlgr,
-		IP:        ip,
-		Authed:    false,
-		errorRate: make(map[string]int),
+	client := s.Clients.Get()
+	//defer s.Clients.Put(client)
+
+	client.Conn = conn
+	client.IP = ip
+	client.repo = s.repo
+	client.cclnlgr = cclnlgr
+	client.Authed = false
+	client.errorRate = make(map[string]int)
+	client.Relay_Host = s.cfg.Relay_Host
+	client.default_limit_value = s.cfg.GetDLV()
+	client.mu = sync.Mutex{}
+	client.msgwt = make(chan []interface{}, 20)
+	client.inmsg = make(chan []interface{}, 10)
+	client.errFM = make(chan error)
+	client.errCH = make(chan error)
+	client.read_events = 0
+	client.lgr = &log.Logger{
+		Out:   os.Stdout,
+		Level: log.DebugLevel,
+		Formatter: &log.JSONFormatter{
+			DisableTimestamp:  true,
+			DisableHTMLEscape: true,
+		},
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	{
 		client.id = s.seq
-		client.name = s.randName()
-
-		s.clients = append(s.clients, &client)
-
 		s.seq++
-	}
-	s.mu.Unlock()
+		client.name = s.randName()
+		key := fmt.Sprintf("%s:%s", client.name, client.IP)
 
-	s.ns.Store(client.name, &client)
+		ok, clnt := s.ldg.Add(key, client)
+		if !ok {
+			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
+			return nil
+		}
+		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
+	}
+
+	// Fine-tune the client's websocket connection
+	s.TuneClientConn(client)
 
 	switch relay_access {
 	case "public":
 
-		lep.Payload = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, len(s.clients), time.Now().Unix())
+		lep.Payload = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, s.Clients.Len(), time.Now().Unix())
 		s.clgr.Log(lep)
 
 	case "authenticated":
@@ -133,24 +170,70 @@ func (s *Session) Register(conn *websocket.Conn, ip string) *Client {
 		// Unknown relay access type - by default it is publi
 		client.writeCustomNotice(fmt.Sprintf("connected to ivmostr relay as `%v`", client.name))
 	}
-	return &client
+
+	return client
+}
+
+func (s *Session) HandleClient(client *Client) {
+
+	if client == nil {
+		s.slgr.Errorln("[HandleClient] client is nil")
+		return
+	}
+
+	// Handle client
+	// Schedule Client connection handling into a goroutine from the pool
+	s.pool.Schedule(func() {
+
+		// Anonymous func to close the connection when Read/Write  raises an error.
+		defer func() {
+			// release the client resources
+			s.Remove(client)
+		}()
+
+		if err := client.ReceiveMsg(); err != nil {
+			s.slgr.Errorf("[handleClient-go-routine] ReceiveMsg got an error: %v", err)
+		}
+	})
 }
 
 // Remove removes client from session.
 func (s *Session) Remove(client *Client) {
-	s.mu.Lock()
-	removed := s.remove(client)
-	s.mu.Unlock()
-	if !removed {
-		fmt.Printf("[rmv]: * client with IP %v was NOT removed from session connections!\n", client.IP)
+
+	if client == nil {
 		return
 	}
 
-	// Only remove from IPCount if removed from the session
+	// [ ]: Review what exactly more resources (than websocket connection) need to be released
+
+	e := client.Conn.WS.Close()
+	if e != nil {
+		s.slgr.Errorf("[Remove] error closing websocket connection: %v", e)
+	}
+
+	s.wspool.Put(client.Conn)
+
+	// Put the Client back in the client's pool
+	s.Clients.Put(client)
+
+	// Remove the client from the session's internal register
 	s.mu.Lock()
-	tools.IPCount[client.IP]--
-	s.mu.Unlock()
-	fmt.Printf("[rmv]: - %d active clients, %d connected\n", len(s.clients), len(s.clients))
+	defer s.mu.Unlock()
+
+	s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
+
+	// Remove the client from IP counter
+	tools.IPCount.Remove(client.IP)
+
+	// Release client resources
+	client.repo = nil
+	client.cclnlgr = nil
+	client.errorRate = nil
+	client.msgwt = nil
+	client.inmsg = nil
+	client.errFM = nil
+	client.errCH = nil
+	client = nil
 }
 
 // Give code-word as name to the client connection
@@ -158,35 +241,11 @@ func (s *Session) randName() string {
 	var suffix string
 	for {
 		name := codewords[rand.Intn(len(codewords))] + suffix
-		if _, has := s.ns.Load(name); !has {
+		if clnt := s.ldg.Get(name); clnt == nil {
 			return name
 		}
 		suffix += strconv.Itoa(rand.Intn(10))
 	}
-}
-
-// mutex must be held.
-func (s *Session) remove(client *Client) bool {
-	if _, ok := s.ns.Load(client.name); !ok {
-		return false
-	}
-
-	s.ns.Delete(client.name)
-	//delete(s.ns, client.name)
-
-	i := sort.Search(len(s.clients), func(i int) bool {
-		return s.clients[i].id >= client.id
-	})
-	if i >= len(s.clients) {
-		panic("session: inconsistent state")
-	}
-
-	without := make([]*Client, len(s.clients)-1)
-	copy(without[:i], s.clients[:i])
-	copy(without[i:], s.clients[i+1:])
-	s.clients = without
-
-	return true
 }
 
 // tuneClientConn tunes the client connection parameters
@@ -194,82 +253,105 @@ func (s *Session) TuneClientConn(client *Client) {
 	// Set t value to 0 to disable the read deadline
 	var t time.Time = time.Time{}
 
-	err := client.conn.SetReadDeadline(t)
+	err := client.Conn.WS.SetReadDeadline(t)
 	if err != nil {
-		s.elgr.Printf("ERROR client-side %s (set-read-deadline): %v", client.IP, err)
+		log.Printf("ERROR client-side %s (set-read-deadline): %v", client.IP, err)
 	}
 
 	// Set read message size limit as stated in the server_info.json file
-	client.conn.SetReadLimit(int64(16384))
+	client.Conn.WS.SetReadLimit(int64(16384))
 
-	err = client.conn.SetWriteDeadline(t)
+	// [!] IMPORTANT: DO NOT set timeout to the write!!!
+	err = client.Conn.WS.SetWriteDeadline(t)
 	if err != nil {
-		s.elgr.Printf("ERROR client-side %s (set-write-deadline): %v", client.IP, err)
+		log.Errorf("[TuneClientConn] error for client %s (set-write-deadline): %v", client.IP, err)
 	}
 
-	client.conn.SetCloseHandler(func(code int, text string) error {
-		s.Remove(client)
-		client.lgr.Printf("[close]: [-] Closing client %v, code: %v, text: %v", client.IP, code, text)
-		return nil
-	})
+	// SetCloseHandler will be called by the reading methods when the client announced connection close event.
+	// Full list of WebSocket Status Codes at: https://kapeli.com/cheat_sheets/WebSocket_Status_Codes.docset/Contents/Resources/Documents/index
+	client.Conn.WS.SetCloseHandler(func(code int, text string) error {
 
-	client.conn.SetPingHandler(func(appData string) error {
-		if appData == "ping" || appData == "PING" || appData == "Ping" {
-			fmt.Println("Received ping:", appData)
-			// Send a pong message in response to the ping
-			s.mu.Lock()
-			err := client.conn.WriteControl(websocket.PingMessage, []byte("pong"), time.Time.Add(time.Now(), time.Millisecond*100))
-			s.mu.Unlock()
-			if err != nil {
-				client.lgr.Printf("ERROR client-side %s (ping-handler): %v", client.IP, err)
-			}
+		client.lgr.Errorf("[SetCloseHandler] Client [%s] sent closing websocket connection control message. Code:%d, Msg:%s.", client.IP, code, text)
+		err := fmt.Errorf("[SetCloseHandler] Client closed the ws connection. [%v]", client.IP)
+
+		if errnc := client.Conn.WS.NetConn().Close(); errnc != nil {
+			log.Printf("[SetCloseHandler] Error closing underlying network connection: %v", errnc)
 		}
+
+		client.errCH <- err
+		return err
+	})
+
+	// [!] PING message is a control message and the text 'ping' is optional and can be an empty string. Valid is the message type!
+	client.Conn.WS.SetPingHandler(func(appData string) error {
+		client.lgr.Debugf("[SetPingHandler] the perr [%s] sent Ping message! Message text is: %s", client.IP, appData)
+		// Send a pong message back to the client
+		err := client.Conn.WS.WriteControl(websocket.PongMessage, []byte(`"pong"`), time.Now().Add(time.Second*2))
+		if err != nil {
+			client.lgr.Errorf("[SetPingHandler] Error sending pong message to [%s]: %v", err, client.IP)
+			return err
+		}
+		client.lgr.Debugf("[SetPingHandler] Pong message sent successfuly to client [%s]", client.IP)
 		return nil
 	})
-}
 
-func (s *Session) BroadcasterQueue(e gn.Event) {
-	// [x]: form a queue of events to be broadcasted
-	s.bq.Store(e.ID, e)
-	NewEvent <- &e
+	// [!] PONG message is a control message and the text 'ping' is optional and can be an empty string. Valid is the message type!
+	client.Conn.WS.SetPongHandler(func(appData string) error {
+		client.lgr.Debugf("[SetPongHandler] the peer [%s] sent Pong message! Message text is: %s", client.IP, appData)
+		return nil
+	})
 }
 
 // [x]: to re-work the event broadcaster
 func (s *Session) NewEventBroadcaster() {
-	for {
-		e := <-NewEvent
-		if e != nil && e.Kind != 22242 {
-			s.ilgr.Printf(" ...-= starting new event braodcasting =-...")
 
-			s.ns.Range(func(key, value interface{}) bool {
-				client := value.(*Client)
-				if client.Subscription_id == "" || client.name == e.GetExtraString("cname") {
-					return true
-				}
-				//nip-04 requires clients authentication before sending kind:4 encrypted Dms
-				if e.Kind == 4 && !client.Authed {
-					return true
-				} else if e.Kind == 4 && client.Authed {
-					tag := e.Tags[0]
-					recp := strings.Split(tag[1], ",")
-					if len(recp) > 1 {
-						if client.npub == recp[1] {
-							msgw <- &[]interface{}{e}
-							return false
-						}
-					}
-				}
+	for e := range NewEvent {
 
-				if filterMatch(e, client.GetFilters()) {
-					msgw <- &[]interface{}{e}
-					return true
-				}
-				return true
-			})
+		log.Printf(" ...-= starting new event braodcasting =-...")
 
-			s.bq.Delete(e.ID)
+		// 22242 is auth event - not to be stored or published
+		if e.Kind != 22242 {
 			continue
 		}
+
+		for _, client := range s.ldg.subscribers {
+
+			if client.id == uint(e.GetExtraNumber("id")) {
+				continue
+			}
+
+			if client.Subscription_id == "" || len(client.Filetrs) == 0 {
+				if time.Now().Unix()-client.CreatedAt > 300 {
+					s.mu.Lock()
+					s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
+					s.mu.Unlock()
+					tools.IPCount.Remove(client.IP)
+				}
+				continue
+			}
+
+			//nip-04 requires clients authentication before sending kind:4 encrypted Dms
+			if e.Kind == 4 && !client.Authed {
+				continue
+
+			} else if e.Kind == 4 && client.Authed {
+				tag := e.Tags[0]
+				recp := strings.Split(tag[1], ",")
+				if len(recp) > 1 {
+					if client.npub == recp[1] {
+						client.msgwt <- []interface{}{e}
+						break
+					}
+				}
+			}
+
+			if filterMatch(e, client.GetFilters()) {
+				client.msgwt <- []interface{}{e}
+				continue
+			}
+			continue
+		}
+		continue
 	}
 }
 
@@ -277,13 +359,67 @@ func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 	s.cfg = cfg
 }
 
-// ================================ aux functions =================================
-// Checking if the specific event `e` matches atleast one of the filters of customers subscription;
-func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
-	for _, filter := range filters {
-		if tools.FilterMatchSingle(e, filter) {
-			return true
+// Monitor is to run in yet another go-routine and show
+// the session state in terms of clients and their activities.
+func (s *Session) Monitor() {
+	for {
+		select {
+		case <-monitorTicker.C:
+			s.slgr.Println("... ================ ...")
+			go s.sessionState()
+			s.slgr.Println("... running session state ...")
+		case <-monitorClose:
+			break
 		}
 	}
-	return false
+}
+
+// sessionState will get the list of registred clients with their attributes
+func (s *Session) sessionState() {
+
+	clnt_count := 0
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, client := range s.ldg.subscribers {
+
+		if client == nil {
+			s.slgr.Errorf("[session state] in key [%v] the value is not a client object!", key)
+			client.errFM <- fmt.Errorf("[session state] Inconsistent client [%v] registration!", client.IP)
+			s.ldg.Remove(key)
+			continue
+		}
+
+		if client.Subscription_id == "" && len(client.Filetrs) == 0 {
+			s.slgr.Debugf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
+			if time.Now().Unix()-client.CreatedAt > 300 {
+				s.ldg.Remove(client.IP)
+				tools.IPCount.Remove(client.IP)
+			}
+			continue
+		}
+
+		s.slgr.WithFields(log.Fields{
+			"clientID":   client.id,
+			"clientName": client.name,
+			"SubID":      client.Subscription_id,
+			"Filters":    client.Filetrs,
+		}).Debugf("[session state] %v", key)
+
+		clnt_count++
+		continue
+	}
+
+	s.slgr.Infof("[session state] total consistant clients:%v", clnt_count)
+	s.slgr.Info("... session state complete ...")
+
+}
+
+// Close should ensure proper session closure and
+// make sure the resources are released - graceful shoutdown
+func (s *Session) Close() bool {
+	monitorClose <- struct{}{}
+	<-Exit
+	//[ ]TODO: release resources and gracefully close the session
+	return true
 }

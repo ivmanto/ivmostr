@@ -1,9 +1,8 @@
 package ivmws
 
 import (
-	"fmt"
-	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -15,42 +14,55 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
 	session *services.Session
 	pool    *gopool.Pool
-	repo    nostr.NostrRepo
-	//lrepo          nostr.ListRepo
-	mu             sync.Mutex
-	trustedOrigins = []string{"nostr.ivmanto.dev", "relay.ivmanto.dev", "localhost", "127.0.0.1", "nostr.watch", "nostr.info", "nostr.band", "nostrcheck.me", "nostr"}
+	wspool  *services.ConnectionPool
+	clpool  *services.ClientsPool
 )
 
 type WSHandler struct {
-	lgr  *log.Logger
-	repo nostr.NostrRepo
-	cfg  *config.ServiceConfig
+	repo           nostr.NostrRepo
+	cfg            *config.ServiceConfig
+	trustedOrigins []string
+	hlgr           *log.Logger
 }
 
-func NewWSHandler(
-	l *log.Logger,
-	repo nostr.NostrRepo,
-	cfg *config.ServiceConfig,
+func NewWSHandler(repo nostr.NostrRepo, cfg *config.ServiceConfig) *WSHandler {
 
-) *WSHandler {
+	trustedOrigins := cfg.TrustedOrigins
+	if len(trustedOrigins) == 0 {
+		// set default values only
+		trustedOrigins = []string{"127.0.0.1", "localhost", "nostr.ivmanto.dev", "ivmanto.dev", "nostr"}
+	}
+	lgr := log.New()
 
 	hndlr := WSHandler{
-		lgr:  l,
-		repo: repo,
-		cfg:  cfg,
+		repo:           repo,
+		cfg:            cfg,
+		trustedOrigins: trustedOrigins,
+		hlgr:           lgr,
 	}
 
-	// Setting up the websocket session and pool
+	// Setting up the websocket session and pools
 	workers := cfg.PoolMaxWorkers
 	queue := cfg.PoolQueue
-	spawn := 1
+	spawn := 2
+	// pool is a pool of go-routines avaialble
+	// to handle Clients with their websocket conns
 	pool = gopool.NewPool(workers, queue, spawn)
-	session = services.NewSession(pool, repo, cfg)
+
+	// clpool - the clients pool should be same size as the go
+	// routines pool, while each client connection will be running
+	// in its own go-routine.
+	clpool = services.NewClientsPool(cfg.PoolMaxWorkers)
+
+	// The same as above is valid for websocket connections pool.
+	wspool = services.NewConnectionPool(cfg.PoolMaxWorkers)
+	session = services.NewSession(pool, repo, cfg, clpool, wspool)
 
 	return &hndlr
 }
@@ -84,13 +96,23 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	hst := tools.DiscoverHost(r)
 	ip := tools.GetIP(r)
 
-	h.lgr.Printf("WSU-REQ: ... ip: %v, Host: %v, Origin: %v", ip, hst, org)
+	if session.IsRegistered(ip) {
+		h.hlgr.Infof("WSU-REQ: DUPLICATED request arived from already connected ip: %v, Host: %v, Origin: %v", ip, hst, org)
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte("Already connected"))
+		return
+	}
+
+	h.hlgr.Infof("WSU-REQ: ... new request arived from ip: %v, Host: %v, Origin: %v", ip, hst, org)
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:      []string{"nostr"},
-		EnableCompression: true,
+		ReadBufferSize:    16384,
+		WriteBufferSize:   4096,
+		WriteBufferPool:   &sync.Pool{},
+		EnableCompression: false,
 		CheckOrigin: func(r *http.Request) bool {
-			for _, v := range trustedOrigins {
+			for _, v := range h.trustedOrigins {
 				if strings.Contains(org, v) || strings.Contains(hst, v) {
 					return true
 				}
@@ -99,54 +121,26 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	uc, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		h.lgr.Printf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v", err)
+		h.hlgr.Warnf("[connman]: CRITICAL error upgrading the connection to websocket protocol: %v", err)
 		return
 	}
 
-	mu.Lock()
-	tools.IPCount[ip]++
-	mu.Unlock()
-	h.lgr.Printf("[connman] [+] client IP %s increased to %d active connection", ip, tools.IPCount[ip])
-
-	_ = pool.ScheduleTimeout(time.Millisecond, func() {
-		handle(conn, ip, org, hst)
-	})
-}
-
-func handle(conn *websocket.Conn, ip, org, hst string) {
+	// Get a connection from the pool
+	conn := wspool.Get()
+	conn.WS = uc
 
 	client := session.Register(conn, ip)
+	if client == nil {
+		return
+	}
 
-	fmt.Printf("[ivmws][handle]: client %v connected from [%v], Origin: [%v], Host: [%v]\n", client.Name(), ip, org, hst)
-
-	session.TuneClientConn(client)
-
-	// Schedule Client connection handling into a goroutine from the pool
-	pool.Schedule(func() {
-		if err := client.ReceiveMsg(); err != nil {
-			if strings.Contains(err.Error(), "websocket: close 1001") {
-				fmt.Printf("[wsh] ERROR: client %s closed the connection. %v\n", client.IP, err)
-			} else {
-				fmt.Printf("[wsh] ERROR: client-side %s (HandleWebSocket): %v\n", client.IP, err)
-			}
-
-			//RemoveIPCount(ip)
-			session.Remove(client)
-			conn.Close()
-			return
-		}
+	poolerr := pool.ScheduleTimeout(time.Duration(1)*time.Millisecond, func() {
+		session.HandleClient(client)
 	})
-}
-
-// Handling clients' IP addresses
-func RemoveIPCount(ip string) {
-	mu := sync.Mutex{}
-	if ip != "" && tools.IPCount[ip] > 0 {
-		mu.Lock()
-		tools.IPCount[ip]--
-		mu.Unlock()
-		fmt.Printf("[wsh] [-] Closing client IP %s decreased active connections to %d\n", ip, tools.IPCount[ip])
+	if poolerr != nil {
+		h.hlgr.Warnf("[connman]: CRITICAL error scheduling the client to the pool: %v", poolerr)
+		return
 	}
 }

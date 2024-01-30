@@ -15,6 +15,17 @@ go env -u GOOS
 go env -u GOARCH
 go clean
 
+# Deploy to `ivmhome` server
+
+# Get the IP address of the Ubuntu server
+server_ip="192.168.178.10"
+
+# Get the name of the executable file to copy
+executable_file="ivmostr"
+
+# Copy the executable file to the Ubuntu server
+scp "build/linux/ivmostr" "tonev@$server_ip:/home/tonev"
+
 # Handle the app versioning
 VERSION_FILE="version"
 VERSION=$(git describe --tags --abbrev=0)

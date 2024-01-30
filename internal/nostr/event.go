@@ -15,8 +15,9 @@ type NostrRepo interface {
 	GetEventsByIds(ids []string, limit int, since, until int64) ([]*gn.Event, error)
 	GetEventsSince(limit int, since int64) ([]*gn.Event, error)
 	GetEventsSinceUntil(limit int, since, until int64) ([]*gn.Event, error)
-	GetEventsByFilter(filter map[string]interface{}) ([]*gn.Event, error)
+	GetLastNEvents(limit int) ([]*gn.Event, error)
+	GetEventsBtAuthorsAndKinds(authors []string, kinds []int, limit int, since, until int64) ([]*gn.Event, error)
 	DeleteEvent(id string) error
 	DeleteEvents(ids []string) error
-	TotalDocs() (int, error)
+	TotalDocs2() (int, error)
 }

@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -11,13 +13,54 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 
 	gn "github.com/nbd-wtf/go-nostr"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
-	IPCount = make(map[string]int)
+	IPCount *ipCount
 )
+
+func init() {
+	IPCount = NewIPCount()
+}
+
+type ipCount struct {
+	ipcount map[string]int
+	mutex   *sync.Mutex
+}
+
+func (i *ipCount) Add(ip string) {
+	i.mutex.Lock()
+	i.ipcount[ip]++
+	i.mutex.Unlock()
+}
+
+func (i *ipCount) Remove(ip string) {
+	i.mutex.Lock()
+	i.ipcount[ip]--
+	if i.ipcount[ip] < 1 {
+		delete(i.ipcount, ip)
+	}
+	i.mutex.Unlock()
+}
+
+func (i *ipCount) Len() int {
+	return len(i.ipcount)
+}
+
+func (i *ipCount) IPConns(ip string) int {
+	return i.ipcount[ip]
+}
+
+func NewIPCount() *ipCount {
+	return &ipCount{
+		ipcount: make(map[string]int),
+		mutex:   &sync.Mutex{},
+	}
+}
 
 // Filter attributes containing lists (ids, authors, kinds and tag filters like #e) are JSON arrays with one or more values.
 // [x] At least one of the arrays' values must match the relevant field in an event for the condition to be considered a match.
@@ -52,7 +95,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "ids":
 			ids, ok := v.([]interface{})
 			if !ok {
-				fmt.Printf("ids value %v is not `[]interface{}`\n", v)
+				log.Printf("ids value %v is not `[]interface{}`\n", v)
 				return false
 			}
 			for _, id := range ids {
@@ -63,7 +106,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "authors":
 			authors, ok := v.([]interface{})
 			if !ok {
-				fmt.Printf("authors value %v is not `[]interface{}`\n", v)
+				log.Printf("authors value %v is not `[]interface{}`\n", v)
 				return false
 			}
 			for _, author := range authors {
@@ -74,7 +117,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "kinds":
 			kinds, ok := v.([]interface{})
 			if !ok {
-				fmt.Printf("kinds value %v is not `[]interface{}`\n", v)
+				log.Printf("kinds value %v is not `[]interface{}`\n", v)
 				return false
 			}
 			for _, kind := range kinds {
@@ -85,7 +128,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "since":
 			since, err := ConvertToTS(v)
 			if err != nil {
-				fmt.Printf("Error %v converting the since value\n", err)
+				log.Printf("Error %v converting the since value\n", err)
 				return false
 			}
 			if since <= e.CreatedAt {
@@ -94,7 +137,7 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		case "until":
 			until, err := ConvertToTS(v)
 			if err != nil {
-				fmt.Printf("Error %v converting the until value\n", err)
+				log.Printf("Error %v converting the until value\n", err)
 				return false
 			}
 			if until >= e.CreatedAt {
@@ -143,35 +186,35 @@ func PrintVersion() {
 
 	f, err := os.OpenFile("version", os.O_RDONLY, 0666)
 	if err != nil {
-		fmt.Println("Error opening version file")
+		log.Println("Error opening version file")
 		return
 	}
 	defer f.Close()
 	b := make([]byte, 100)
 	_, err = f.Read(b)
 	if err != nil {
-		fmt.Println("Error reading version file")
+		log.Println("Error reading version file")
 		return
 	}
-	fmt.Println(string(b))
+	log.Println(string(b))
 }
 
 func ServerInfo(w http.ResponseWriter, r *http.Request) {
 
 	ip := GetIP(r)
 	org := r.Header.Get("Origin")
-	fmt.Printf("providing server info to %v, %v...\n", ip, org)
+	log.Printf("providing server info to %v, %v...\n", ip, org)
 
 	assetsPath, err := filepath.Abs("assets")
 	if err != nil {
-		fmt.Printf("ERROR: Failed to get absolute path to assets folder: %v", err)
+		log.Printf("ERROR: Failed to get absolute path to assets folder: %v", err)
 	}
 
 	// Read the contents of the server_info.json file
 	filePath := filepath.Join(assetsPath, "server_info.json")
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Printf("ERROR:Failed to read server_info.json file from path %v, error: %v", filePath, err)
+		log.Printf("ERROR:Failed to read server_info.json file from path %v, error: %v", filePath, err)
 	}
 
 	if len(data) > 0 {
@@ -203,7 +246,9 @@ func GetIP(r *http.Request) string {
 		xff := r.Header.Get("X-Forwarded-For")
 		if len(xff) > 15 {
 			xffs := strings.Split(xff, ",")
-			if len(xffs) > 1 {
+			if len(xffs) > 2 {
+				ip = xffs[1]
+			} else {
 				ip = xffs[0]
 			}
 		}
@@ -230,7 +275,7 @@ func DiscoverHost(r *http.Request) string {
 		if h_host == "" {
 			if fh_host == "" {
 				if url_host == "" {
-					fmt.Printf("HOST value not find in the request")
+					log.Printf("HOST value not find in the request")
 				}
 			} else {
 				host = fh_host
@@ -248,8 +293,6 @@ func DiscoverHost(r *http.Request) string {
 func CalcLenghtInBytes(i *[]interface{}) int {
 	var wstr string
 	for _, intf := range *i {
-
-		fmt.Printf("type of: %v\n", reflect.TypeOf(intf).String())
 
 		switch reflect.TypeOf(intf).String() {
 		case "bool":
@@ -269,4 +312,24 @@ func CalcLenghtInBytes(i *[]interface{}) int {
 		}
 	}
 	return len([]byte(wstr))
+}
+
+func ConvertStructToByte(e any) ([]byte, error) {
+
+	gob.Register(map[string]interface{}{})
+	gob.Register(gn.Event{})
+	gob.Register([]interface{}{})
+
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	errE := enc.Encode(e)
+	if errE != nil {
+		log.Println("[ConvertStructToByte] Error encoding struct []events:", errE)
+		return nil, errE
+	}
+	return buf.Bytes(), nil
+}
+
+func GetIPCount() int {
+	return IPCount.Len()
 }

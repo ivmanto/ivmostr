@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"os"
 
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
@@ -13,6 +12,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/services"
 	"github.com/dasiyes/ivmostr-tdd/pkg/fspool"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	log "github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -42,25 +42,25 @@ func main() {
 		os.Exit(0)
 	}
 
+	log.SetLevel(log.InfoLevel)
+
 	// Check debug mode request
 	if *debug {
-		log.SetFlags(log.LstdFlags | log.Lshortfile)
+		log.SetLevel(log.DebugLevel)
 		*cfgfn = "../../configs/config_debug.yaml"
 	}
 
 	// initializing the web application as a handler
 	var (
 		// db *sql.DB     = &sql.DB{}
-		ml               *log.Logger = log.New(os.Stderr, "[main] ", log.LstdFlags)
-		l                *log.Logger = log.New(os.Stderr, "[http-srv] ", log.LstdFlags)
-		pool_max_workers int         = 128
-		pool_queue       int         = 1
+		pool_max_workers int = 128
+		pool_queue       int = 1
 	)
 
 	// Load the configuration file
 	cfg, err := config.LoadConfig(*cfgfn)
 	if err != nil {
-		ml.Printf("Error loading configuration file %s \nExit, unable to proceed", *cfgfn)
+		log.Printf("[main] CRITICAL:Error loading configuration file %s \nExit, unable to proceed", *cfgfn)
 		panic(err)
 	}
 
@@ -90,14 +90,14 @@ func main() {
 	// Initialize the nostr repository
 	prj := cfg.GetProjectID()
 	if prj == "" {
-		ml.Printf("Firestore project id %v is empty. Exit: unable to proceed.", prj)
+		log.Printf("[main] CRITICAL: Firestore project id %v is empty. Exiting now, unable to proceed.", prj)
 		panic(nil)
 	}
 
 	fsClientsPool := fspool.NewConnectionPool(prj)
 
 	if fsClientsPool == nil {
-		ml.Printf("firestore client pool initiation failed..\n Exit: unable to proceed.")
+		log.Printf("[main] CRITICAL: firestore client pool initiation failed...\n Exiting now, unable to proceed.")
 		panic(err)
 	}
 
@@ -107,27 +107,27 @@ func main() {
 
 	nostrRepo, err := firestoredb.NewNostrRepository(&ctx, fsClientsPool, dlv, ecn)
 	if err != nil {
-		ml.Printf("firestore repository init error %s.\n Exit: unable to proceed.", err.Error())
+		log.Printf("[main] CRITICAL: firestore repository init error %s.\n Exiting now, unable to proceed.", err.Error())
 		panic(err)
 	}
 
 	// listRepo, err := firestoredb.NewListRepository(
 	// 	&ctx, fsClientsPool, cfg.GetWhiteListCollectionName(), cfg.GetBlackListCollectionName())
 	// if err != nil {
-	// 	ml.Printf("firestore repository init error %s.\n Exit: unable to proceed.", err.Error())
+	// 	log.Printf("[main] CRITICAL: firestore repository init error %s.\n Exiting now, unable to proceed.", err.Error())
 	// 	panic(err)
 	// }
 
 	// Init a new HTTP server instance
 	httpServer := server.NewInstance()
-	hdlr := router.NewHandler(l, nostrRepo, cfg)
+	hdlr := router.NewHandler(nostrRepo, cfg)
 	errs := make(chan error, 2)
 	go func() {
 		addr := ":" + cfg.Port
-		ml.Printf("...starting ivmostr (-tdd) instance at %s...", addr)
+		log.Printf("...starting ivmostr (-tdd) instance at %s...", addr)
 		errs <- httpServer.Start(addr, hdlr)
 		services.Exit <- struct{}{}
 	}()
 
-	ml.Printf("ivmostr http server terminated! %v", <-errs)
+	log.Printf("[main] !ivmostr http server terminated! %v", <-errs)
 }

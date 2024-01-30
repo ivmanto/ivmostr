@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
@@ -11,7 +12,7 @@ import (
 )
 
 var (
-	ips = []string{"188.194.53.116"}
+	ips = []string{"188.193.116.7", "109.43.33.44"}
 )
 
 // Handles the CORS part
@@ -48,21 +49,28 @@ func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// Check if the request is a health-check request
-		if r.URL.Path == "/hc" {
+		if r.URL.Path == "/hc" || strings.HasPrefix(r.URL.Path, "/v1/api") {
+			h.ServeHTTP(w, r)
+			return
+		}
+
+		ac := r.Header.Get("Accept")
+		if strings.Contains(ac, "application/nostr+json") {
 			h.ServeHTTP(w, r)
 			return
 		}
 
 		// Check if the request is a websocket request
 		uh := r.Header.Get("Upgrade")
-		ac := r.Header.Get("Accept")
+		ch := r.Header.Get("Connection")
 		//wsp := r.Header.Get("Sec-WebSocket-Protocol")
 
-		if uh != "websocket" && ac != "application/nostr+json" {
+		if strings.ToLower(uh) != "websocket" && strings.ToLower(ch) != "upgrade" {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "Bad request")
 			return
 		}
+
 		// [ ]: To review later but as of now (20231223) no-one is setting this Header properlly
 		// if !strings.Contains(wsp, "nostr") {
 		// 	w.WriteHeader(http.StatusFailedDependency)
@@ -88,8 +96,8 @@ func rateLimiter(h http.Handler) http.Handler {
 		rateLimit := ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext).RateLimit
 
 		// Check if the IP address has made too many requests recently
-		if time.Since(rateLimit.Timestamp) < time.Second*30 {
-			if rateLimit.Requests >= 10 {
+		if time.Since(rateLimit.Timestamp) < time.Second*3 {
+			if rateLimit.Requests >= 2 {
 				// Block the request
 				w.WriteHeader(http.StatusTooManyRequests)
 				fmt.Fprintf(w, "Too many requests! If continue the ip will be blacklisted!")
@@ -128,7 +136,7 @@ func controlIPConn(h http.Handler) http.Handler {
 			return
 		}
 
-		if tools.IPCount[ip] > 0 {
+		if tools.IPCount.IPConns(ip) > 3 {
 			// fmt.Printf(
 			// 	"[MW-ipc] Too many requests [%d] from %s, headers [upgrade %v, accept %v, sec-ws-p %v], req URL [%v]\n", tools.IPCount[ip], ip, r.Header.Get("Upgrade"), r.Header.Get("Accept"), r.Header.Get("Sec-WebSocket-Protocol"), r.URL)
 			http.Error(w, "Too many requests", http.StatusTooManyRequests)
