@@ -9,8 +9,8 @@ import (
 
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/tools"
-	gn "github.com/nbd-wtf/go-nostr"
 	log "github.com/sirupsen/logrus"
+	gn "github.com/studiokaiji/go-nostr"
 )
 
 // mapToEvent converts a map[string]interface{} to a gn.Event

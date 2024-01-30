@@ -8,7 +8,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
-	gn "github.com/nbd-wtf/go-nostr"
+	gn "github.com/studiokaiji/go-nostr"
 	"google.golang.org/api/iterator"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"

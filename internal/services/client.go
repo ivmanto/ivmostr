@@ -16,8 +16,8 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
-	gn "github.com/nbd-wtf/go-nostr"
 	log "github.com/sirupsen/logrus"
+	gn "github.com/studiokaiji/go-nostr"
 	"golang.org/x/sync/errgroup"
 )
 

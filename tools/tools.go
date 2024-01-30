@@ -15,8 +15,8 @@ import (
 	"strings"
 	"sync"
 
-	gn "github.com/nbd-wtf/go-nostr"
 	log "github.com/sirupsen/logrus"
+	gn "github.com/studiokaiji/go-nostr"
 )
 
 var (

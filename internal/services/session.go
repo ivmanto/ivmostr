@@ -15,8 +15,8 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/gorilla/websocket"
-	gn "github.com/nbd-wtf/go-nostr"
 	log "github.com/sirupsen/logrus"
+	gn "github.com/studiokaiji/go-nostr"
 )
 
 var (
@@ -152,7 +152,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	switch relay_access {
 	case "public":
 
-		lep.Payload = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, s.Clients.Len(), time.Now().Unix())
+		lep.Payload = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, s.ldg.Len(), time.Now().Unix())
 		s.clgr.Log(lep)
 
 	case "authenticated":

@@ -1,7 +1,7 @@
 package nostr
 
 import (
-	gn "github.com/nbd-wtf/go-nostr"
+	gn "github.com/studiokaiji/go-nostr"
 )
 
 // Provide access to the Nostr storage
