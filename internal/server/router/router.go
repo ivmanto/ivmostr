@@ -65,9 +65,7 @@ func (h *srvHandler) router() chi.Router {
 	})
 
 	// Handle Prometheus metrics
-	rtr.Route("/metrics", func(wr chi.Router) {
-		wr.Handle("/metrics", promhttp.Handler())
-	})
+	rtr.Handle("/metrics", promhttp.Handler())
 
 	// Route the API calls to/v1/api/ ...
 	rtr.Route("/v1", func(r chi.Router) {
