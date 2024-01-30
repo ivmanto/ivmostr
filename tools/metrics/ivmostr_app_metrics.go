@@ -5,16 +5,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// Defined application metrics to track
 var (
 	ChStoreEvent         chan int
 	ChBroadcastEvent     chan int
 	ChNewSubscription    chan int
 	ChUpdateSubscription chan int
 	ChNrOfSubsFilters    chan int
-
 	// [ ]: ChClosedSubscriptions chan int
+)
 
+// Defined application metrics to track
+var (
 	evntStored = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "ivmostr",
 		Subsystem: "nostr",
@@ -50,6 +51,11 @@ var (
 		Help:      "The total number of filters in subscriptions",
 	})
 )
+
+func init() {
+	recordAppMetrics()
+	ivmMetricsRunner()
+}
 
 func recordAppMetrics() {
 
@@ -87,9 +93,4 @@ func recordAppMetrics() {
 			evntNrOfSubsFilters.Add(float64(v))
 		}
 	}()
-}
-
-func init() {
-	recordAppMetrics()
-	ivmMetricsRunner()
 }
