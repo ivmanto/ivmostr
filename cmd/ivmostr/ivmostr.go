@@ -17,13 +17,10 @@ import (
 
 func main() {
 	var (
-		// addr      = flag.String("listen", ":3333", "address to bind to")
-		debug = flag.Bool("debug", false, "debug mode")
-		vers  = flag.Bool("version", false, "prints version")
-		// pprof   = flag.String("pprof", "", "address for pprof http")
-		workers = flag.Int("workers", 0, "max workers count")
-		queue   = flag.Int("queue", 0, "workers task queue size")
-		// ioTimeout = flag.Duration("io_timeout", time.Millisecond*100, "i/o operations timeout")
+		debug    = flag.Bool("debug", false, "debug mode")
+		vers     = flag.Bool("version", false, "prints version")
+		workers  = flag.Int("workers", 0, "max workers count")
+		queue    = flag.Int("queue", 0, "workers task queue size")
 		cfgfn    = flag.String("config", "configs/config.yaml", "--config=<file_name> configuration file name. Default is configs/config.yaml")
 		newEvent = flag.String("newEvent", "", "prints new event on the console as configured in the tools create-event")
 	)
@@ -110,13 +107,6 @@ func main() {
 		log.Printf("[main] CRITICAL: firestore repository init error %s.\n Exiting now, unable to proceed.", err.Error())
 		panic(err)
 	}
-
-	// listRepo, err := firestoredb.NewListRepository(
-	// 	&ctx, fsClientsPool, cfg.GetWhiteListCollectionName(), cfg.GetBlackListCollectionName())
-	// if err != nil {
-	// 	log.Printf("[main] CRITICAL: firestore repository init error %s.\n Exiting now, unable to proceed.", err.Error())
-	// 	panic(err)
-	// }
 
 	// Init a new HTTP server instance
 	httpServer := server.NewInstance()

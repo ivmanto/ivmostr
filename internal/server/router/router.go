@@ -58,11 +58,15 @@ func (h *srvHandler) router() chi.Router {
 	rtr.Use(rateLimiter)
 	rtr.Use(controlIPConn)
 
-	// Handle requests to the root URL "/"
+	// Handle requests to the root URL "/" - nostr websocket connections
 	rtr.Route("/", func(wr chi.Router) {
 		ws := ivmws.NewWSHandler(h.repo, h.cfg)
 		wr.Mount("/", ws.Router())
-		wr.Mount("/metrics", promhttp.Handler())
+	})
+
+	// Handle Prometheus metrics
+	rtr.Route("/metrics", func(wr chi.Router) {
+		wr.Handle("/metrics", promhttp.Handler())
 	})
 
 	// Route the API calls to/v1/api/ ...

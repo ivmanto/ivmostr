@@ -6,13 +6,15 @@ import (
 	"log"
 	"strings"
 
-	gn "github.com/nbd-wtf/go-nostr"
+	gn "github.com/studiokaiji/go-nostr"
 )
 
-// key converter at: https://nostrcheck.me/converter/
+// online key converter at: https://nostrcheck.me/converter/
+
+// [!]: PREFFERED!!! locally installed key-converter: https://github.com/rot13maxi/key-convertr. Insttaled localy at: /Users/tonevSr/development/key-convertr
 
 var (
-	pk, pkhex string
+	pk string
 	// this is hex value of the pubKey of the ivmostr relay (the same for ivmanto nostr account) in server_info file
 
 	pubKh = "29480df94c3c41a416285e920cc3ba7887efe05fecb58e73a783231c426969b9"
@@ -33,7 +35,7 @@ var tag8 = []string{"r", "wss://relay.ivmanto.dev", "read"}
 var tag9 = []string{"r", "wss://nostr.ivmanto.dev", "write"}
 
 func PrintNewEvent() {
-	fmt.Println("Enter private key to sign event with:")
+	fmt.Println("Enter private key (HEX encoded) to sign event with:")
 
 	// Read a single line of input
 	_, err := fmt.Scan(&pk)
@@ -43,19 +45,13 @@ func PrintNewEvent() {
 	}
 	fmt.Println("You entered:", pk)
 
-	//publicKey := "npub199yqm72v83q6g93gt6fqesa60zr7lczlaj6cuua8sv33csnfdxusxlc3yg"
 	publicKeyNoSpaces := strings.Replace(pk, " ", "", -1)
 	publicKeyNoCaps := strings.ToLower(publicKeyNoSpaces)
 	publicKeyHex := hex.EncodeToString([]byte(publicKeyNoCaps))
 	fmt.Println(publicKeyHex)
 
-	//fmt.Println("hex:", pkhex)
-
-	//e := CreateEvent()
-	//e := CreateAuthEvent()
-	//e := CreateNip65Event()
 	e := CreateMetadataEvent()
-	//e.ID = e.GetID()
+
 	err = e.Sign(pk)
 	if err != nil {
 		log.Printf("Error signing event: %v", err)

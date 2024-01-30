@@ -49,7 +49,7 @@ func rateLimiter(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// Check if the request is a health-check request
-		if r.URL.Path == "/hc" || strings.HasPrefix(r.URL.Path, "/v1/api") {
+		if r.URL.Path == "/hc" || r.URL.Path == "/metrics" || strings.HasPrefix(r.URL.Path, "/v1/api") {
 			h.ServeHTTP(w, r)
 			return
 		}
@@ -123,7 +123,7 @@ func rateLimiter(h http.Handler) http.Handler {
 func controlIPConn(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		if r.URL.Path == "/hc" {
+		if r.URL.Path == "/hc" || r.URL.Path == "/metrics" {
 			h.ServeHTTP(w, r)
 			return
 		}
