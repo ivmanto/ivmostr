@@ -28,19 +28,21 @@ func ivmMetricsRunner() {
 	// Register the metrics with Prometheus
 	prometheus.MustRegister(ivmostrMemoryUsage, ivmostrCpuUtilization)
 
-	// Start monitoring memory usage and CPU utilization
-	for {
-		// Update memory usage metric
-		stats := runtime.MemStats{}
-		runtime.ReadMemStats(&stats)
-		ivmostrMemoryUsage.WithLabelValues("heap").Add(float64(stats.HeapAlloc))
+	go func() {
+		// Start monitoring memory usage and CPU utilization
+		for {
+			// Update memory usage metric
+			stats := runtime.MemStats{}
+			runtime.ReadMemStats(&stats)
+			ivmostrMemoryUsage.WithLabelValues("heap").Add(float64(stats.HeapAlloc))
 
-		// Update CPU utilization metric
-		idle, total := runtime.GOMAXPROCS(0), runtime.NumGoroutine()
-		busy := total - idle
-		ivmostrCpuUtilization.Set(float64(busy) / float64(total) * 100)
+			// Update CPU utilization metric
+			idle, total := runtime.GOMAXPROCS(0), runtime.NumGoroutine()
+			busy := total - idle
+			ivmostrCpuUtilization.Set(float64(busy) / float64(total) * 100)
 
-		// Sleep for a second
-		time.Sleep(time.Second)
-	}
+			// Sleep for a second
+			time.Sleep(time.Second)
+		}
+	}()
 }
