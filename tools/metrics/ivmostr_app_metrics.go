@@ -12,15 +12,10 @@ var (
 	ChUpdateSubscription chan int
 	ChNrOfSubsFilters    chan int
 	// [ ]: ChClosedSubscriptions chan int
-	evntStored               prometheus.Counter
-	evntBroadcasted          prometheus.Counter
-	evntNewSubscriptions     prometheus.Counter
-	evntUpdatedSubscriptions prometheus.Counter
-	evntNrOfSubsFilters      prometheus.Counter
 )
 
 // Defined application metrics to track
-func initCounters() {
+var (
 	evntStored = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "ivmostr",
 		Subsystem: "nostr",
@@ -55,10 +50,7 @@ func initCounters() {
 		Name:      "ivmostr_total_subscription_filters",
 		Help:      "The total number of filters in subscriptions",
 	})
-
-	// Register the Counters
-	prometheus.MustRegister(evntStored, evntBroadcasted, evntNewSubscriptions, evntUpdatedSubscriptions, evntNrOfSubsFilters)
-}
+)
 
 func recordAppMetrics() {
 
@@ -99,7 +91,6 @@ func recordAppMetrics() {
 }
 
 func init() {
-	initCounters()
 	recordAppMetrics()
 	ivmMetricsRunner()
 }
