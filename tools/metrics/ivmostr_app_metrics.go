@@ -6,11 +6,11 @@ import (
 )
 
 var (
-	ChStoreEvent         chan int
-	ChBroadcastEvent     chan int
-	ChNewSubscription    chan int
-	ChUpdateSubscription chan int
-	ChNrOfSubsFilters    chan int
+	ChStoreEvent         = make(chan int, 100)
+	ChBroadcastEvent     = make(chan int, 50)
+	ChNewSubscription    = make(chan int, 20)
+	ChUpdateSubscription = make(chan int, 20)
+	ChNrOfSubsFilters    = make(chan int, 20)
 	// [ ]: ChClosedSubscriptions chan int
 )
 
