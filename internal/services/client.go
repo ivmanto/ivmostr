@@ -15,6 +15,7 @@ import (
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
@@ -353,6 +354,8 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		return err
 	}
+	// Update metrics tracking channel for stored events
+	metrics.ChStoreEvent <- 1
 
 	// The customer name is required in NewEventBroadcaster method in order to skip the broadcast process for the customer that brought the event on the relay.
 	e.SetExtra("id", float64(c.id))
@@ -416,6 +419,8 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
+		metrics.ChUpdateSubscription <- 1
+		metrics.ChNrOfSubsFilters <- len(msgfilters)
 
 		err := c.SubscriptionSuplier()
 		if err != nil {
@@ -430,6 +435,8 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 	log.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
+	metrics.ChNewSubscription <- 1
+	metrics.ChNrOfSubsFilters <- len(c.Filetrs)
 
 	err := c.SubscriptionSuplier()
 	if err != nil {

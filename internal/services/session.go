@@ -14,6 +14,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
@@ -346,7 +347,13 @@ func (s *Session) NewEventBroadcaster() {
 			}
 
 			if filterMatch(e, client.GetFilters()) {
+
+				// Sending the event to the client
 				client.msgwt <- []interface{}{e}
+
+				// Updating the metrics channel
+				metrics.ChBroadcastEvent <- 1
+
 				continue
 			}
 			continue
