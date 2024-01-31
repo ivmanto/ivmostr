@@ -11,7 +11,7 @@ var (
 	ChNewSubscription    = make(chan int, 20)
 	ChUpdateSubscription = make(chan int, 20)
 	ChNrOfSubsFilters    = make(chan int, 20)
-	// [ ]: ChClosedSubscriptions chan int
+	ChTopDemandingIP     = make(chan map[string]int, 2)
 )
 
 // Defined application metrics to track
@@ -50,6 +50,16 @@ var (
 		Name:      "ivmostr_total_subscription_filters",
 		Help:      "The total number of filters in subscriptions",
 	})
+
+	connsTopDemandingIP = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "ivmostr",
+		Subsystem: "nostr",
+		Name:      "ivmostr_top_demanding_ip",
+		Help:      "The top demanding IP on number of connections",
+	},
+		[]string{
+			"ip",
+		})
 )
 
 func init() {
@@ -91,6 +101,17 @@ func recordAppMetrics() {
 	go func() {
 		for v := range ChNrOfSubsFilters {
 			evntNrOfSubsFilters.Add(float64(v))
+		}
+	}()
+
+	// Worker to track on most demanding IP address keep connecting to the relay
+	go func() {
+		for tdip := range ChTopDemandingIP {
+
+			for ip, v := range tdip {
+				connsTopDemandingIP.WithLabelValues(ip).Set(float64(v))
+				break
+			}
 		}
 	}()
 }

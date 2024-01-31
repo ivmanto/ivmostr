@@ -374,6 +374,7 @@ func (s *Session) Monitor() {
 		case <-monitorTicker.C:
 			s.slgr.Println("... ================ ...")
 			go s.sessionState()
+			go getMaxConnIP()
 			s.slgr.Println("... running session state ...")
 		case <-monitorClose:
 			break
@@ -419,7 +420,6 @@ func (s *Session) sessionState() {
 
 	s.slgr.Infof("[session state] total consistant clients:%v", clnt_count)
 	s.slgr.Info("... session state complete ...")
-
 }
 
 // Close should ensure proper session closure and
@@ -429,4 +429,12 @@ func (s *Session) Close() bool {
 	<-Exit
 	//[ ]TODO: release resources and gracefully close the session
 	return true
+}
+
+func getMaxConnIP() {
+
+	tip, max := tools.IPCount.TopIP()
+	var tdip = make(map[string]int, 1)
+	tdip[tip] = max
+	metrics.ChTopDemandingIP <- tdip
 }
