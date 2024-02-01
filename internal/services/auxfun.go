@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -151,4 +152,40 @@ func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
 		}
 	}
 	return false
+}
+
+// checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,
+// `#e` and `#p` tags. All of them required to be 64 chars length strings
+// representing lower case HEX value.
+func checkAndConvertFilterLists(fl interface{}, key string) (cclist []string) {
+
+	var (
+		svlist  []string
+		_svlist []string
+		ok      bool
+	)
+
+	svlist, ok = fl.([]string)
+	if !ok {
+		log.Errorf("Wrong filter format used! [%s] is not a list of string values", key)
+		return nil
+	}
+
+	// limit of the number of elements comes from Firestore query limit for the IN clause
+	if len(svlist) > 30 {
+		svlist = svlist[:30]
+	}
+
+	for _, item := range svlist {
+
+		// nip-01: `The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.`
+		_, errhx := strconv.ParseUint(item, 16, 64)
+		if len(item) == 64 && errhx == nil {
+			item = strings.ToLower(item)
+			_svlist = append(_svlist, item)
+		} else {
+			log.Debugf("Wrong list value! It must be 64 chars long lowercase hex value. Skiping this value.")
+		}
+	}
+	return _svlist
 }

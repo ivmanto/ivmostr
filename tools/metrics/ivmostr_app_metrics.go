@@ -47,7 +47,7 @@ var (
 	evntNrOfSubsFilters = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "ivmostr",
 		Subsystem: "nostr",
-		Name:      "ivmostr_total_subscription_filters",
+		Name:      "ivmostr_total_subs_filters",
 		Help:      "The total number of filters in subscriptions",
 	})
 
@@ -107,7 +107,7 @@ func recordAppMetrics() {
 	// Worker to track on most demanding IP address keep connecting to the relay
 	go func() {
 		for tdip := range ChTopDemandingIP {
-
+			connsTopDemandingIP.Reset()
 			for ip, v := range tdip {
 				connsTopDemandingIP.WithLabelValues(ip).Set(float64(v))
 				break
