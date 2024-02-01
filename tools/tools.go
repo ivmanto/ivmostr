@@ -124,62 +124,115 @@ func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 	//  "until": <an integer unix timestamp in seconds, events must be older than this to pass>,
 	//  "limit": <maximum number of events relays SHOULD return in the initial query>
 	//}
+	//
+	// All conditions of a filter that are specified must match for an event for it to pass the filter, i.e., **multiple conditions are interpreted as `&&` conditions**.
 
 	// [ ]: Refactor this to work with mixed filters - means when there is i.e. list of kinds [...] + until or since clause - then the filetr should run in sequens / nested format
-	for k, v := range filter {
-		switch k {
-		case "ids":
-			ids, ok := v.([]interface{})
-			if !ok {
-				log.Printf("ids value %v is not `[]interface{}`\n", v)
-				return false
-			}
-			for _, id := range ids {
-				if id.(string) == e.ID {
-					return true
-				}
-			}
-		case "authors":
-			authors, ok := v.([]interface{})
-			if !ok {
-				log.Printf("authors value %v is not `[]interface{}`\n", v)
-				return false
-			}
-			for _, author := range authors {
-				if author.(string) == e.PubKey {
-					return true
-				}
-			}
-		case "kinds":
-			kinds, ok := v.([]interface{})
-			if !ok {
-				log.Printf("kinds value %v is not `[]interface{}`\n", v)
-				return false
-			}
-			for _, kind := range kinds {
-				if kind.(float64) == float64(e.Kind) {
-					return true
-				}
-			}
-		case "since":
-			since, err := ConvertToTS(v)
-			if err != nil {
-				log.Printf("Error %v converting the since value\n", err)
-				return false
-			}
-			if since <= e.CreatedAt {
-				return true
-			}
-		case "until":
-			until, err := ConvertToTS(v)
-			if err != nil {
-				log.Printf("Error %v converting the until value\n", err)
-				return false
-			}
-			if until >= e.CreatedAt {
+
+	_, flt_authors := filter["authors"].([]interface{})
+	_, flt_ids := filter["ids"].([]interface{})
+	_, flt_kinds := filter["kinds"].([]interface{})
+	var flt_tags bool
+	for key, val := range filter {
+		if strings.HasPrefix(key, "#") {
+			_, flt_tags = val.([]interface{})
+			break
+		}
+	}
+
+	switch {
+	case flt_authors && !flt_ids && !flt_kinds && !flt_tags:
+		for _, author := range filter["authors"].([]interface{}) {
+			if author.(string) == e.PubKey {
 				return true
 			}
 		}
+	case !flt_authors && flt_ids && !flt_kinds && !flt_tags:
+		for _, id := range filter["ids"].([]interface{}) {
+			if id.(string) == e.ID {
+				return true
+			}
+		}
+	case !flt_authors && !flt_ids && flt_kinds && !flt_tags:
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				return true
+			}
+		}
+	case flt_authors && !flt_ids && flt_kinds && !flt_tags:
+		var kr, ar bool
+
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				kr = true
+				break
+			}
+		}
+
+		for _, author := range filter["authors"].([]interface{}) {
+			if author.(string) == e.PubKey {
+				ar = true
+				break
+			}
+		}
+
+		return kr && ar
+
+	case !flt_authors && !flt_ids && flt_kinds && flt_tags:
+		var kr, tr bool
+
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				kr = true
+				break
+			}
+		}
+
+		for tkey, tval := range filter {
+			switch tkey {
+			case "#e":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.ID {
+						tr = true
+						break
+					}
+				}
+			case "#p":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.PubKey {
+						tr = true
+					}
+				}
+			default:
+				continue
+			}
+		}
+		return kr && tr
+
+	case !flt_authors && !flt_ids && !flt_kinds && flt_tags:
+		for tkey, tval := range filter {
+			switch tkey {
+			case "#e":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.ID {
+						return true
+					}
+				}
+			case "#p":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.PubKey {
+						return true
+					}
+				}
+			case "#d":
+				//[ ]: to be implemented later on
+			default:
+				continue
+			}
+		}
+
+	default:
+		return false
 	}
 
 	return false

@@ -323,9 +323,7 @@ func (s *Session) NewEventBroadcaster() {
 
 			if client.Subscription_id == "" || len(client.Filetrs) == 0 {
 				if time.Now().Unix()-client.CreatedAt > 300 {
-					s.mu.Lock()
 					s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
-					s.mu.Unlock()
 					tools.IPCount.Remove(client.IP)
 				}
 				continue
