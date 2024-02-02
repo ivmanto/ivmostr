@@ -163,25 +163,29 @@ func filterMatch() {
 		evnt := pair.event
 		clnt := pair.client
 		filters := pair.client.GetFilters()
+		var (
+			result chan bool
+			fltr   map[string]interface{}
+		)
 
 		for _, filter := range filters {
 
+			fltr = filter
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
+			result = make(chan bool)
 
-			result := make(chan bool)
 			go filterMatchSingle(evnt, filter, result)
+		}
 
-			match := <-result
+		match := <-result
+		if match {
+			clnt.msgwt <- []interface{}{*evnt}
+			// Updating the metrics channel
+			metrics.ChBroadcastEvent <- 1
 
-			if match {
-				clnt.msgwt <- []interface{}{*evnt}
-				// Updating the metrics channel
-				metrics.ChBroadcastEvent <- 1
-
-			} else {
-				// [ ]: TO REMOVE this else clause after debug. NO required
-				fmlgr.Debugf("        *** Filter [%v] does not match the event [%v]!", filter, *evnt)
-			}
+		} else {
+			// [ ]: TO REMOVE this else clause after debug. NO required
+			fmlgr.Debugf("*** Filter [%v] does not match the event [%v]!", fltr, *evnt)
 		}
 	}
 }
@@ -237,6 +241,7 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 			if author.(string) == e.PubKey {
 				rslt <- true
 				close(rslt)
+				return
 			}
 		}
 	case !flt_authors && flt_ids && !flt_kinds && !flt_tags:
@@ -244,6 +249,7 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 			if id.(string) == e.ID {
 				rslt <- true
 				close(rslt)
+				return
 			}
 		}
 	case !flt_authors && !flt_ids && flt_kinds && !flt_tags:
@@ -251,6 +257,7 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 			if kind.(float64) == float64(e.Kind) {
 				rslt <- true
 				close(rslt)
+				return
 			}
 		}
 	case flt_authors && !flt_ids && flt_kinds && !flt_tags:
@@ -272,6 +279,7 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 
 		rslt <- (kr && ar)
 		close(rslt)
+		return
 	case !flt_authors && !flt_ids && flt_kinds && flt_tags:
 		var kr, tr bool
 
@@ -303,6 +311,7 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 		}
 		rslt <- (kr && tr)
 		close(rslt)
+		return
 	case !flt_authors && !flt_ids && !flt_kinds && flt_tags:
 		for tkey, tval := range filter {
 			switch tkey {
@@ -311,6 +320,7 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 					if tag.(string) == e.ID {
 						rslt <- true
 						close(rslt)
+						return
 					}
 				}
 			case "#p":
@@ -318,6 +328,7 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 					if tag.(string) == e.PubKey {
 						rslt <- true
 						close(rslt)
+						return
 					}
 				}
 			case "#d":
@@ -328,8 +339,10 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 		}
 
 	default:
+		log.Debugf("*** Filter combination [%v] not implemented", filter)
 		rslt <- false
 		close(rslt)
+		return
 	}
 
 	rslt <- false
