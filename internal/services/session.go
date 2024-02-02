@@ -324,7 +324,7 @@ func (s *Session) NewEventBroadcaster() {
 		log.Printf(" ...-= starting new event braodcasting =-...")
 
 		// 22242 is auth event - not to be stored or published
-		if e.Kind != 22242 {
+		if e.Kind == 22242 {
 			continue
 		}
 
