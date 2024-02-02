@@ -23,6 +23,7 @@ import (
 var (
 	NewEvent      = make(chan *gn.Event, 100)
 	Exit          = make(chan struct{})
+	chEM          = make(chan eventClientPair, 100)
 	monitorTicker = time.NewTicker(time.Minute * 10)
 	monitorClose  = make(chan struct{})
 	relay_access  string
@@ -78,6 +79,11 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	// * SubscriptionID per each registred client
 	// * Filters per SubscriptionID
 	go session.Monitor()
+
+	// The filterMatch routine will be addressed by the NewEventBroadcaster
+	// to supply the subscribed customers with the new arriving Events that
+	// match the respective clients' filters.
+	go filterMatch()
 
 	return &session
 }
@@ -349,7 +355,6 @@ func (s *Session) NewEventBroadcaster() {
 				client: client,
 			}
 
-			go filterMatch()
 			chEM <- ecp
 
 			// next subscribed client

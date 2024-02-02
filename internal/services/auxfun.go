@@ -14,10 +14,6 @@ import (
 	gn "github.com/studiokaiji/go-nostr"
 )
 
-var (
-	chEM = make(chan eventClientPair, 100)
-)
-
 type eventClientPair struct {
 	event  *gn.Event
 	client *Client
@@ -164,40 +160,42 @@ func filterMatch() {
 
 		for _, filter := range filters {
 
-			go func(e *gn.Event, filt map[string]interface{}, cl *Client) {
+			result := make(chan bool)
+			go filterMatchSingle(evnt, filter, result)
 
-				match := filterMatchSingle(e, filt)
-				if match {
-					cl.msgwt <- []interface{}{*e}
+			match := <-result
 
-					// Updating the metrics channel
-					metrics.ChBroadcastEvent <- 1
+			if match {
+				clnt.msgwt <- []interface{}{*evnt}
+				// Updating the metrics channel
+				metrics.ChBroadcastEvent <- 1
 
-				} else {
-					// [ ]: TO REMOVE this else clause after debug. NO required
-					log.Debugf("        *** Filter [%v] does not match the event [%v]!", filt, *e)
-				}
-
-			}(evnt, filter, clnt)
+			} else {
+				// [ ]: TO REMOVE this else clause after debug. NO required
+				log.Debugf("        *** Filter [%v] does not match the event [%v]!", filter, *evnt)
+			}
 		}
 	}
 }
 
+// === NOTES:
 // Filter attributes containing lists (ids, authors, kinds and tag filters like #e) are JSON arrays with one or more values.
 // [x] At least one of the arrays' values must match the relevant field in an event for the condition to be considered a match.
 // [ ] For scalar event attributes such as authors and kind, the attribute from the event must be contained in the filter list.
 // [ ] In the case of tag attributes such as #e, for which an event may have multiple values, the event and filter condition values must have at least one item in common.
-
+//
 // The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.
-
+//
 // The since and until properties can be used to specify the time range of events returned in the subscription. If a filter includes the since property, events with created_at greater than or equal to since are considered to match the filter. The until property is similar except that created_at must be less than or equal to until. In short, an event matches a filter if since <= created_at <= until holds.
-
+//
 // All conditions of a filter that are specified must match for an event for it to pass the filter, i.e., multiple conditions are interpreted as && conditions.
-
+//
 // A REQ message may contain multiple filters. In this case, events that match any of the filters are to be returned, i.e., multiple filters are to be interpreted as || conditions.
-
+//
 // The limit property of a filter is only valid for the initial query and MUST be ignored afterwards. When limit: n is present it is assumed that the events returned in the initial query will be the last n events ordered by the created_at. It is safe to return less events than limit specifies, but it is expected that relays do not return (much) more events than requested so clients don't get unnecessarily overwhelmed by data.
-func filterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
+
+// filterMatchSingle verfies if an Event `e` attributes match a specific subscription filter values.
+func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan bool) {
 
 	//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
 	//{
@@ -229,19 +227,22 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 	case flt_authors && !flt_ids && !flt_kinds && !flt_tags:
 		for _, author := range filter["authors"].([]interface{}) {
 			if author.(string) == e.PubKey {
-				return true
+				rslt <- true
+				close(rslt)
 			}
 		}
 	case !flt_authors && flt_ids && !flt_kinds && !flt_tags:
 		for _, id := range filter["ids"].([]interface{}) {
 			if id.(string) == e.ID {
-				return true
+				rslt <- true
+				close(rslt)
 			}
 		}
 	case !flt_authors && !flt_ids && flt_kinds && !flt_tags:
 		for _, kind := range filter["kinds"].([]interface{}) {
 			if kind.(float64) == float64(e.Kind) {
-				return true
+				rslt <- true
+				close(rslt)
 			}
 		}
 	case flt_authors && !flt_ids && flt_kinds && !flt_tags:
@@ -261,8 +262,8 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 			}
 		}
 
-		return kr && ar
-
+		rslt <- (kr && ar)
+		close(rslt)
 	case !flt_authors && !flt_ids && flt_kinds && flt_tags:
 		var kr, tr bool
 
@@ -292,21 +293,23 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 				continue
 			}
 		}
-		return kr && tr
-
+		rslt <- (kr && tr)
+		close(rslt)
 	case !flt_authors && !flt_ids && !flt_kinds && flt_tags:
 		for tkey, tval := range filter {
 			switch tkey {
 			case "#e":
 				for _, tag := range tval.([]interface{}) {
 					if tag.(string) == e.ID {
-						return true
+						rslt <- true
+						close(rslt)
 					}
 				}
 			case "#p":
 				for _, tag := range tval.([]interface{}) {
 					if tag.(string) == e.PubKey {
-						return true
+						rslt <- true
+						close(rslt)
 					}
 				}
 			case "#d":
@@ -317,10 +320,12 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
 		}
 
 	default:
-		return false
+		rslt <- false
+		close(rslt)
 	}
 
-	return false
+	rslt <- false
+	close(rslt)
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,
