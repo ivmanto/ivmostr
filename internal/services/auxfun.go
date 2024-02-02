@@ -152,7 +152,12 @@ func initCloudLogger(project_id, log_name string) *logging.Logger {
 // Checking if the specific event `e` matches atleast one of the filters of customers subscription;
 func filterMatch() {
 
+	log.SetLevel(log.DebugLevel)
+	log.Debug("... Spining up filterMatch ...")
+
 	for pair := range chEM {
+
+		log.Debugf("[filterMatch] a new pair arrived in the chEM channel as event: [%v] and client: [%v]", pair.event, pair.client)
 
 		evnt := pair.event
 		clnt := pair.client
