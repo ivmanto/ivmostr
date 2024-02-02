@@ -149,6 +149,9 @@ func filterMatch(e *gn.Event, filters []map[string]interface{}) bool {
 	for _, filter := range filters {
 		if tools.FilterMatchSingle(e, filter) {
 			return true
+		} else {
+			// [ ]: TO REMOVE this else clause after debug. NO required
+			log.Debugf("        *** Filter [%v] does not match the event [%v]!", filter, *e)
 		}
 	}
 	return false
