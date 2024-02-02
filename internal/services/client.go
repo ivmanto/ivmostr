@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -921,11 +922,12 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				_auth, ok := auth.(string)
 				if ok {
 					// nip-01: `The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.`
-					_auth = strings.ToLower(_auth)
-					if len(_auth) != 64 {
-						c.lgr.Errorf("Wrong author value! It must be 64 chars long. Skiping this value.")
+					_, errhx := strconv.ParseUint(_auth, 16, 64)
+					if len(_auth) != 64 || errhx != nil {
+						c.lgr.Errorf("Wrong author value! It must be 64 chars long lowcase hex value. Skiping this value.")
 						continue
 					}
+					_auth = strings.ToLower(_auth)
 					_authors = append(_authors, _auth)
 				}
 			}
