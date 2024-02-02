@@ -913,8 +913,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Authors are not a list")
 			}
 
-			if len(_authors) >= 30 {
-				_authors = _authors[:29]
+			if len(_authors) > 10 {
+				_authors = _authors[:10]
 			}
 
 			for _, auth := range authors {
@@ -935,8 +935,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
 			}
 
-			if len(kinds) >= 30 {
-				kinds = kinds[:29]
+			if len(kinds) > 3 {
+				kinds = kinds[:3]
 			}
 
 			for _, kind := range kinds {
