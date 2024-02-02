@@ -157,13 +157,15 @@ func filterMatch() {
 
 	for pair := range chEM {
 
-		log.Debugf("[filterMatch] a new pair arrived in the chEM channel as event: [%v] and client: [%v]", pair.event, pair.client)
+		log.Debugf("[filterMatch] a new pair arrived in the chEM channel as event: [%v] and client: [%v]", *pair.event, pair.client)
 
 		evnt := pair.event
 		clnt := pair.client
 		filters := pair.client.GetFilters()
 
 		for _, filter := range filters {
+
+			log.Debugf("[filterMatch] processing filter [%v]", filter)
 
 			result := make(chan bool)
 			go filterMatchSingle(evnt, filter, result)
