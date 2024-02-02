@@ -344,18 +344,19 @@ func (s *Session) NewEventBroadcaster() {
 				}
 			}
 
-			if filterMatch(e, client.GetFilters()) {
-
-				// Sending the event to the client
-				client.msgwt <- []interface{}{e}
-
-				// Updating the metrics channel
-				metrics.ChBroadcastEvent <- 1
-
-				continue
+			ecp := eventClientPair{
+				event:  e,
+				client: client,
 			}
+
+			go filterMatch()
+			chEM <- ecp
+
+			// next subscribed client
 			continue
+
 		}
+		// next event from the channel
 		continue
 	}
 }
