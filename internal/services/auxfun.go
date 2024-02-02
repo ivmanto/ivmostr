@@ -152,12 +152,13 @@ func initCloudLogger(project_id, log_name string) *logging.Logger {
 // Checking if the specific event `e` matches atleast one of the filters of customers subscription;
 func filterMatch() {
 
-	log.SetLevel(log.DebugLevel)
-	log.Debug("... Spining up filterMatch ...")
+	fmlgr := log.New()
+	fmlgr.SetLevel(log.DebugLevel)
+	fmlgr.Debug("... Spining up filterMatch ...")
 
 	for pair := range chEM {
 
-		log.Debugf("[filterMatch] a new pair arrived in the chEM channel as event: [%v] and client: [%v]", *pair.event, pair.client)
+		fmlgr.Debugf("[filterMatch] a new pair arrived in the chEM channel as event: [%v] and client: [%v]", *pair.event, pair.client)
 
 		evnt := pair.event
 		clnt := pair.client
@@ -165,7 +166,7 @@ func filterMatch() {
 
 		for _, filter := range filters {
 
-			log.Debugf("[filterMatch] processing filter [%v]", filter)
+			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
 
 			result := make(chan bool)
 			go filterMatchSingle(evnt, filter, result)
@@ -179,7 +180,7 @@ func filterMatch() {
 
 			} else {
 				// [ ]: TO REMOVE this else clause after debug. NO required
-				log.Debugf("        *** Filter [%v] does not match the event [%v]!", filter, *evnt)
+				fmlgr.Debugf("        *** Filter [%v] does not match the event [%v]!", filter, *evnt)
 			}
 		}
 	}

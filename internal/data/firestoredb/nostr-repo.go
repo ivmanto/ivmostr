@@ -584,7 +584,6 @@ func (r *nostrRepo) GetEventsBtAuthorsAndKinds(authors []string, kinds []int, li
 	var (
 		events []*gn.Event
 		query  *firestore.DocumentIterator
-		ecnt   int
 	)
 
 	if len(kinds) > 30 {
@@ -613,11 +612,10 @@ func (r *nostrRepo) GetEventsBtAuthorsAndKinds(authors []string, kinds []int, li
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done || ecnt > 3 {
+			if err == iterator.Done {
 				break
 			}
 			r.rlgr.Errorf("[GetEventsBtAuthorsAndKinds] ERROR raised while reading a doc from the DB: %v", err)
-			ecnt++
 			continue
 		}
 

@@ -64,6 +64,13 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	relay_access = cfg.Relay_access
 
+	session.slgr.SetLevel(log.DebugLevel)
+
+	session.slgr.SetFormatter(&log.JSONFormatter{
+		DisableTimestamp: true,
+	})
+
+	//)
 	td, err := repo.TotalDocs2()
 	if err != nil {
 		session.slgr.Errorf("error getting total number of docs: %v ", err)
@@ -356,6 +363,7 @@ func (s *Session) NewEventBroadcaster() {
 			}
 
 			chEM <- ecp
+			s.slgr.Debugf("[NewEventBroadcaster] sent ecp [%v] to filterMatch channel chEM.", ecp)
 
 			// next subscribed client
 			continue
