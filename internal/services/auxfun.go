@@ -16,11 +16,6 @@ import (
 	gn "github.com/studiokaiji/go-nostr"
 )
 
-type eventClientPair struct {
-	event  *gn.Event
-	client *Client
-}
-
 // mapToEvent converts a map[string]interface{} to a gn.Event
 func mapToEvent(m map[string]interface{}) (*gn.Event, error) {
 	var e gn.Event
@@ -167,7 +162,7 @@ func filterMatch() {
 		filters := pair.client.GetFilters()
 
 		var (
-			result chan bool
+			result = make(chan bool)
 			fltr   map[string]interface{}
 			wg     sync.WaitGroup
 		)
@@ -177,7 +172,6 @@ func filterMatch() {
 			wg.Add(1)
 			fltr = filter
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
-			result = make(chan bool)
 
 			go filterMatchSingle(evnt, filter, result)
 		}
@@ -193,6 +187,7 @@ func filterMatch() {
 			fmlgr.Debugf("*** Filter [%v] does not match the event [%v]!", fltr, *evnt)
 		}
 		wg.Wait()
+		close(result)
 	}
 }
 
@@ -229,88 +224,58 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 	// All conditions of a filter that are specified must match for an event for it to pass the filter, i.e., **multiple conditions are interpreted as `&&` conditions**.
 
 	// [ ]: Refactor this to work with mixed filters - means when there is i.e. list of kinds [...] + until or since clause - then the filetr should run in sequens / nested format
-	var (
-		flt_authors, flt_ids, flt_kinds, flt_tags, flt_since, flt_until bool
-		_since, _until                                                  float64
-		since, until                                                    gn.Timestamp
-	)
+	filterState := parseFilter(filter)
 
-	_, flt_authors = filter["authors"].([]interface{})
-	_, flt_ids = filter["ids"].([]interface{})
-	_, flt_kinds = filter["kinds"].([]interface{})
-
-	for key, val := range filter {
-		if strings.HasPrefix(key, "#") {
-			_, flt_tags = val.([]interface{})
-			break
-		}
-	}
-
-	// =================================== SINCE - UNTIL ===============================================
-	if _since, flt_since = filter["since"].(float64); flt_since {
-		since = gn.Timestamp(int64(_since))
-	}
-
-	if _until, flt_until = filter["until"].(float64); flt_until {
-		until = gn.Timestamp(int64(_until))
-	}
-
-	switch {
+	switch filterState.fltState {
 	// [x]: authors
-	case flt_authors && !flt_ids && !flt_kinds && !flt_tags && !flt_since && !flt_until:
+	case fcAuthors:
 		for _, author := range filter["authors"].([]interface{}) {
 			if author.(string) == e.PubKey {
 				rslt <- true
-				close(rslt)
 				return
 			}
 		}
 
 	// [x]: ids
-	case !flt_authors && flt_ids && !flt_kinds && !flt_tags && !flt_since && !flt_until:
+	case fcIds:
 		for _, id := range filter["ids"].([]interface{}) {
 			if id.(string) == e.ID {
 				rslt <- true
-				close(rslt)
 				return
 			}
 		}
 
 	// [x]: kinds
-	case !flt_authors && !flt_ids && flt_kinds && !flt_tags && !flt_since && !flt_until:
+	case fcKinds:
 		for _, kind := range filter["kinds"].([]interface{}) {
 			if kind.(float64) == float64(e.Kind) {
 				rslt <- true
-				close(rslt)
 				return
 			}
 		}
 
 	// [x]: since
-	case !flt_authors && !flt_ids && !flt_kinds && !flt_tags && flt_since && !flt_until:
-		if e.CreatedAt >= gn.Timestamp(since) {
+	case fcSince:
+		if e.CreatedAt >= filterState.since {
 			rslt <- true
-			close(rslt)
 			return
 		}
 
 	// [x]: until
-	case !flt_authors && !flt_ids && !flt_kinds && !flt_tags && !flt_since && flt_until:
-		if e.CreatedAt <= gn.Timestamp(until) {
+	case fcUntil:
+		if e.CreatedAt <= filterState.until {
 			rslt <- true
-			close(rslt)
 			return
 		}
 
 	// [ ]: tags (implemented ONLY #e and #p)
-	case !flt_authors && !flt_ids && !flt_kinds && flt_tags && !flt_since && flt_until:
+	case fcTags:
 		for tkey, tval := range filter {
 			switch tkey {
 			case "#e":
 				for _, tag := range tval.([]interface{}) {
 					if tag.(string) == e.ID {
 						rslt <- true
-						close(rslt)
 						return
 					}
 				}
@@ -318,7 +283,6 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 				for _, tag := range tval.([]interface{}) {
 					if tag.(string) == e.PubKey {
 						rslt <- true
-						close(rslt)
 						return
 					}
 				}
@@ -330,7 +294,7 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 		}
 
 	// [x]: authors && kinds
-	case flt_authors && !flt_ids && flt_kinds && !flt_tags && !flt_since && flt_until:
+	case fcAuthorsKinds:
 		var kr, ar bool
 
 		for _, kind := range filter["kinds"].([]interface{}) {
@@ -348,11 +312,10 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 		}
 
 		rslt <- (kr && ar)
-		close(rslt)
 		return
 
 	// [x]: kinds && tags
-	case !flt_authors && !flt_ids && flt_kinds && flt_tags && !flt_since && flt_until:
+	case fcKindsTags:
 		var kr, tr bool
 
 		for _, kind := range filter["kinds"].([]interface{}) {
@@ -382,18 +345,15 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 			}
 		}
 		rslt <- (kr && tr)
-		close(rslt)
 		return
 
 	default:
 		log.Debugf("*** Filter combination [%v] not implemented", filter)
 		rslt <- false
-		close(rslt)
 		return
 	}
 
 	rslt <- false
-	close(rslt)
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,
