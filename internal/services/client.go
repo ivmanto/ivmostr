@@ -619,7 +619,7 @@ func (c *Client) confirmURLDomainMatch(relayURL string) bool {
 }
 
 // *****************************************************************************
-// 		Subscription Supplier method for initial subs load
+// 		Subscription Supplier method for the initial subscriptions load
 // *****************************************************************************
 
 func (c *Client) SubscriptionSuplier() error {
