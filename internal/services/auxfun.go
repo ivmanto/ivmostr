@@ -179,7 +179,6 @@ func filterMatch() {
 
 		wg.Wait()
 		closeResult <- struct{}{}
-		close(result)
 	}
 }
 
@@ -239,7 +238,6 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 		for _, author := range filter["authors"].([]interface{}) {
 			if author.(string) == e.PubKey {
 				rslt <- true
-				return
 			}
 		}
 
@@ -248,7 +246,6 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 		for _, id := range filter["ids"].([]interface{}) {
 			if id.(string) == e.ID {
 				rslt <- true
-				return
 			}
 		}
 
@@ -257,7 +254,6 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 		for _, kind := range filter["kinds"].([]interface{}) {
 			if kind.(float64) == float64(e.Kind) {
 				rslt <- true
-				return
 			}
 		}
 
@@ -265,14 +261,12 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 	case fcSince:
 		if e.CreatedAt >= filterState.since {
 			rslt <- true
-			return
 		}
 
 	// [x]: until
 	case fcUntil:
 		if e.CreatedAt <= filterState.until {
 			rslt <- true
-			return
 		}
 
 	// [ ]: tags (implemented ONLY #e and #p)
@@ -283,14 +277,12 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 				for _, tag := range tval.([]interface{}) {
 					if tag.(string) == e.ID {
 						rslt <- true
-						return
 					}
 				}
 			case "#p":
 				for _, tag := range tval.([]interface{}) {
 					if tag.(string) == e.PubKey {
 						rslt <- true
-						return
 					}
 				}
 			case "#d":
@@ -319,7 +311,6 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 		}
 
 		rslt <- (kr && ar)
-		return
 
 	// [x]: kinds && tags
 	case fcKindsTags:
@@ -352,15 +343,14 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 			}
 		}
 		rslt <- (kr && tr)
-		return
 
 	default:
 		log.Debugf("*** Filter combination [%v] not implemented", filter)
 		rslt <- false
-		return
 	}
 
-	rslt <- false
+	close(rslt)
+
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,
@@ -419,7 +409,7 @@ func validateSubsFilters(filter map[string]interface{}) bool {
 
 	kinds, ok := filter["kinds"]
 	if ok {
-		ka, ok := kinds.([]float64)
+		ka, ok := kinds.([]interface{})
 		if len(ka) < 1 || !ok {
 			return false
 		}

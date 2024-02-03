@@ -23,7 +23,7 @@ import (
 var (
 	NewEvent      = make(chan *gn.Event, 100)
 	Exit          = make(chan struct{})
-	chEM          = make(chan eventClientPair, 100)
+	chEM          = make(chan eventClientPair, 300)
 	monitorTicker = time.NewTicker(time.Minute * 10)
 	monitorClose  = make(chan struct{})
 	relay_access  string
@@ -363,7 +363,7 @@ func (s *Session) NewEventBroadcaster() {
 			}
 
 			chEM <- ecp
-			s.slgr.Debugf("[NewEventBroadcaster] sent ecp [%v] to filterMatch channel chEM.", ecp)
+			s.slgr.Debugf("[NewEventBroadcaster] sent ecp client [%v] to filterMatch channel chEM.", ecp.client.IP)
 
 			// next subscribed client
 			continue
