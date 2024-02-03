@@ -162,33 +162,38 @@ func filterMatch() {
 		filters := pair.client.GetFilters()
 
 		var (
-			result = make(chan bool)
-			fltr   map[string]interface{}
-			wg     sync.WaitGroup
+			result      = make(chan bool)
+			closeResult = make(chan struct{})
+			wg          sync.WaitGroup
 		)
+
+		go monitorResults(result, closeResult, clnt, evnt)
 
 		for _, filter := range filters {
 
 			wg.Add(1)
-			fltr = filter
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
 
 			go filterMatchSingle(evnt, filter, result)
 		}
 
-		for match := range result {
+		wg.Wait()
+		closeResult <- struct{}{}
+		close(result)
+	}
+}
+
+func monitorResults(result <-chan bool, closeResult <-chan struct{}, clnt *Client, evnt *gn.Event) {
+	for match := range result {
+		select {
+		case <-closeResult:
+			break
+		default:
 			if match {
 				clnt.msgwt <- []interface{}{*evnt}
 				// Updating the metrics channel
 				metrics.ChBroadcastEvent <- 1
-
-			} else {
-				// [ ]: TO REMOVE this else clause after debug. NO required
-				fmlgr.Debugf("*** Filter [%v] does not match the event [%v]!", fltr, *evnt)
 			}
-			wg.Wait()
-			close(result)
-			break
 		}
 	}
 }
