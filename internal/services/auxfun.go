@@ -406,7 +406,7 @@ func validateSubsFilters(filter map[string]interface{}) bool {
 
 	kinds, ok := filter["kinds"]
 	if ok {
-		ka, ok := kinds.([]int)
+		ka, ok := kinds.([]float64)
 		if len(ka) < 1 || !ok {
 			return false
 		}
