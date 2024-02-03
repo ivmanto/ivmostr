@@ -404,13 +404,12 @@ func validateSubsFilters(filter map[string]interface{}) bool {
 		}
 	}
 
-	kinds, ok := filter["kinds"].([]int)
+	kinds, ok := filter["kinds"]
 	if ok {
-		if len(kinds) < 1 {
+		ka, ok := kinds.([]int)
+		if len(ka) < 1 || !ok {
 			return false
 		}
-	} else {
-		return false
 	}
 
 	return true
