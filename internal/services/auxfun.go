@@ -176,18 +176,20 @@ func filterMatch() {
 			go filterMatchSingle(evnt, filter, result)
 		}
 
-		match := <-result
-		if match {
-			clnt.msgwt <- []interface{}{*evnt}
-			// Updating the metrics channel
-			metrics.ChBroadcastEvent <- 1
+		for match := range result {
+			if match {
+				clnt.msgwt <- []interface{}{*evnt}
+				// Updating the metrics channel
+				metrics.ChBroadcastEvent <- 1
 
-		} else {
-			// [ ]: TO REMOVE this else clause after debug. NO required
-			fmlgr.Debugf("*** Filter [%v] does not match the event [%v]!", fltr, *evnt)
+			} else {
+				// [ ]: TO REMOVE this else clause after debug. NO required
+				fmlgr.Debugf("*** Filter [%v] does not match the event [%v]!", fltr, *evnt)
+			}
+			wg.Wait()
+			close(result)
+			break
 		}
-		wg.Wait()
-		close(result)
 	}
 }
 
