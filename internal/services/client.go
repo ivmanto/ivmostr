@@ -402,7 +402,13 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 		for idx, v := range *msg {
 			if idx > 1 && idx < 5 {
 				filter = v.(map[string]interface{})
-				msgfilters = append(msgfilters, filter)
+				// [x]TODO: implement filter VERIFIER, to avoid spam filters
+				if validateSubsFilters(filter) {
+					msgfilters = append(msgfilters, filter)
+				} else {
+					c.writeCustomNotice("Error: Invalid filter!")
+					return fmt.Errorf("Error: Invalid filter provided by subscription id:[%s]", subscription_id)
+				}
 			}
 		}
 	}

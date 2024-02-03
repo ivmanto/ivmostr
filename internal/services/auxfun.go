@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/logging"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
@@ -383,4 +384,44 @@ func checkAndConvertFilterLists(fl interface{}, key string) (cclist []string) {
 		}
 	}
 	return _svlist
+}
+
+// validateSubsFilters makes validations check according to the requirements of nip-01
+func validateSubsFilters(filter map[string]interface{}) bool {
+
+	// Identiify filter's components that must be lowcase 64 chars hex values
+
+	for key := range filter {
+		if tools.Contains([]string{"authors", "ids", "#e", "#p"}, key) {
+			collection, ok := filter[key].([]string)
+			if ok {
+				if !validateAIEP(collection) {
+					return false
+				}
+			} else {
+				return false
+			}
+		}
+	}
+
+	kinds, ok := filter["kinds"].([]int)
+	if ok {
+		if len(kinds) < 1 {
+			return false
+		}
+	} else {
+		return false
+	}
+
+	return true
+}
+
+func validateAIEP(array []string) bool {
+	for _, item := range array {
+		_, errhx := strconv.ParseUint(item, 16, 64)
+		if len(item) != 64 && errhx != nil {
+			return false
+		}
+	}
+	return true
 }
