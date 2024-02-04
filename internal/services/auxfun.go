@@ -372,17 +372,21 @@ func checkAndConvertFilterLists(fl interface{}, key string) (cclist []string) {
 // validateSubsFilters makes validations check according to the requirements of nip-01
 func validateSubsFilters(filter map[string]interface{}) bool {
 
+	var lgr = log.New()
+	lgr.Level = log.DebugLevel
+
 	// Identiify filter's components that must be lowcase 64 chars hex values
 
 	for key := range filter {
 		if tools.Contains([]string{"authors", "ids", "#e", "#p"}, key) {
 			collection, ok := filter[key].([]string)
-			log.Debugf("[validateSubsFilters] is filter slice of string: %v, Type: %T", ok, filter[key])
 			if ok {
 				if !validateAIEP(collection) {
+					lgr.Debugf("[validateSubsFilters] validateAIEP returned false.")
 					return false
 				}
 			} else {
+				lgr.Debugf("[validateSubsFilters] slice type:%T", filter[key])
 				return false
 			}
 		}
@@ -392,6 +396,7 @@ func validateSubsFilters(filter map[string]interface{}) bool {
 	if ok {
 		ka, ok := kinds.([]interface{})
 		if len(ka) < 1 || !ok {
+			lgr.Debugf("[validateSubsFilters] filter kinds is not valid. value is type:%T length: %d", filter["kinds"], len(ka))
 			return false
 		}
 	}
