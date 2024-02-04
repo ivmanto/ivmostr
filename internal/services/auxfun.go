@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/logging"
@@ -149,7 +148,7 @@ func initCloudLogger(project_id, log_name string) *logging.Logger {
 // Checking if the specific event `e` matches atleast one of the filters of customers subscription;
 func filterMatch() {
 
-	fmlgr := log.New()
+	var fmlgr = log.New()
 	fmlgr.SetLevel(log.DebugLevel)
 	fmlgr.Debug("... Spining up filterMatch ...")
 
@@ -157,45 +156,12 @@ func filterMatch() {
 
 		fmlgr.Debugf("[filterMatch] a new pair arrived in the chEM channel as event: [%v] and client: [%v]", *pair.event, pair.client)
 
-		evnt := pair.event
-		clnt := pair.client
 		filters := pair.client.GetFilters()
 
-		var (
-			result      = make(chan bool)
-			closeResult = make(chan struct{})
-			wg          sync.WaitGroup
-		)
-
-		go monitorResults(result, closeResult, clnt, evnt)
-
 		for _, filter := range filters {
-
-			wg.Add(1)
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
+			go filterMatchSingle(pair.event, pair.client, filter)
 
-			go func(evnt *gn.Event, filter map[string]interface{}, result chan bool) {
-				defer wg.Done()
-				filterMatchSingle(evnt, filter, result)
-			}(evnt, filter, result)
-		}
-
-		wg.Wait()
-		closeResult <- struct{}{}
-	}
-}
-
-func monitorResults(result <-chan bool, closeResult <-chan struct{}, clnt *Client, evnt *gn.Event) {
-	for match := range result {
-		select {
-		case <-closeResult:
-			break
-		default:
-			if match {
-				clnt.msgwt <- []interface{}{*evnt}
-				// Updating the metrics channel
-				metrics.ChBroadcastEvent <- 1
-			}
 		}
 	}
 }
@@ -217,7 +183,7 @@ func monitorResults(result <-chan bool, closeResult <-chan struct{}, clnt *Clien
 // The limit property of a filter is only valid for the initial query and MUST be ignored afterwards. When limit: n is present it is assumed that the events returned in the initial query will be the last n events ordered by the created_at. It is safe to return less events than limit specifies, but it is expected that relays do not return (much) more events than requested so clients don't get unnecessarily overwhelmed by data.
 
 // filterMatchSingle verfies if an Event `e` attributes match a specific subscription filter values.
-func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan<- bool) {
+func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{}) {
 
 	//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
 	//{
@@ -240,7 +206,8 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan<- b
 	case fcAuthors:
 		for _, author := range filter["authors"].([]interface{}) {
 			if author.(string) == e.PubKey {
-				rslt <- true
+				// true -> RESULT
+				goto RESULT
 			}
 		}
 
@@ -248,7 +215,7 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan<- b
 	case fcIds:
 		for _, id := range filter["ids"].([]interface{}) {
 			if id.(string) == e.ID {
-				rslt <- true
+				goto RESULT
 			}
 		}
 
@@ -256,20 +223,20 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan<- b
 	case fcKinds:
 		for _, kind := range filter["kinds"].([]interface{}) {
 			if kind.(float64) == float64(e.Kind) {
-				rslt <- true
+				goto RESULT
 			}
 		}
 
 	// [x]: since
 	case fcSince:
 		if e.CreatedAt >= filterState.since {
-			rslt <- true
+			goto RESULT
 		}
 
 	// [x]: until
 	case fcUntil:
 		if e.CreatedAt <= filterState.until {
-			rslt <- true
+			goto RESULT
 		}
 
 	// [ ]: tags (implemented ONLY #e and #p)
@@ -279,13 +246,13 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan<- b
 			case "#e":
 				for _, tag := range tval.([]interface{}) {
 					if tag.(string) == e.ID {
-						rslt <- true
+						goto RESULT
 					}
 				}
 			case "#p":
 				for _, tag := range tval.([]interface{}) {
 					if tag.(string) == e.PubKey {
-						rslt <- true
+						goto RESULT
 					}
 				}
 			case "#d":
@@ -313,7 +280,11 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan<- b
 			}
 		}
 
-		rslt <- (kr && ar)
+		if kr && ar {
+			goto RESULT
+		} else {
+			return
+		}
 
 	// [x]: kinds && tags
 	case fcKindsTags:
@@ -345,14 +316,21 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan<- b
 				continue
 			}
 		}
-		rslt <- (kr && tr)
+		if kr && tr {
+			goto RESULT
+		} else {
+			return
+		}
 
 	default:
 		log.Debugf("*** Filter combination [%v] not implemented", filter)
-		rslt <- false
+		return
 	}
 
-	close(rslt)
+RESULT:
+	client.msgwt <- []interface{}{*e}
+	// // Updating the metrics channel
+	metrics.ChBroadcastEvent <- 1
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,
