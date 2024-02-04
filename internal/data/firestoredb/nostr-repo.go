@@ -8,7 +8,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
-	gn "github.com/nbd-wtf/go-nostr"
+	gn "github.com/studiokaiji/go-nostr"
 	"google.golang.org/api/iterator"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
@@ -184,32 +184,6 @@ func (r *nostrRepo) TotalDocs2() (int, error) {
 	countValue := count.(*firestorepb.Value)
 
 	return int(countValue.GetIntegerValue()), nil
-
-}
-
-func (r *nostrRepo) TotalDocs() (int, error) {
-
-	// [ ]: review ========= client per job ============
-	fsclient, err := r.clients.GetClient()
-	if err != nil {
-		return 0, fmt.Errorf("unable to get firestore client. error: %v", err)
-	}
-	// ==================== end of client ================
-
-	// Calculate the total number of documents available in the collection r.events_collection
-	var total int
-	iter := fsclient.Collection(r.events_collection).Documents(*r.ctx)
-	for {
-		_, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return 0, fmt.Errorf("unable to get total number of documents from repository. error: %v", err)
-		}
-		total++
-	}
-	return total, nil
 }
 
 // GetEventsByKinds - returns an array of events from a specific Kind observing the limit and time frames
@@ -613,11 +587,11 @@ func (r *nostrRepo) GetEventsBtAuthorsAndKinds(authors []string, kinds []int, li
 		ecnt   int
 	)
 
-	if len(kinds) > 30 {
-		kinds = kinds[:30]
+	if len(kinds) > 3 {
+		kinds = kinds[:3]
 	}
-	if len(authors) > 30 {
-		authors = authors[:30]
+	if len(authors) > 10 {
+		authors = authors[:10]
 	}
 
 	switch {
@@ -639,7 +613,7 @@ func (r *nostrRepo) GetEventsBtAuthorsAndKinds(authors []string, kinds []int, li
 	for {
 		doc, err := query.Next()
 		if err != nil {
-			if err == iterator.Done || ecnt > 3 {
+			if err == iterator.Done || ecnt > 1 {
 				break
 			}
 			r.rlgr.Errorf("[GetEventsBtAuthorsAndKinds] ERROR raised while reading a doc from the DB: %v", err)
@@ -665,6 +639,105 @@ func (r *nostrRepo) GetEventsBtAuthorsAndKinds(authors []string, kinds []int, li
 	}
 
 	return events, nil
+}
+
+func (r *nostrRepo) GetHashtag_E_Events(hashtags []string, limit int, since, until int64) ([]*gn.Event, error) {
+
+	ts := time.Now().UnixMilli()
+
+	// [ ]: review ========= client per job ============
+	fsclient, errc := r.clients.GetClient()
+	if errc != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", errc)
+	}
+	// ==================== end of client ================
+
+	var (
+		events []*gn.Event
+		query  *firestore.DocumentIterator
+		ecnt   int
+	)
+
+	switch {
+	case since == 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("TagsMap", "!=", nil).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(1000).Documents(*r.ctx)
+
+	case since > 0 && until == 0:
+		query = fsclient.Collection(r.events_collection).Where("TagsMap", "!=", nil).Where("CreatedAt", ">", since).OrderBy("CreatedAt", firestore.Desc).Limit(1000).Documents(*r.ctx)
+
+	case since > 0 && until > 0:
+		query = fsclient.Collection(r.events_collection).Where("TagsMap", "!=", nil).Where("CreatedAt", ">", since).Where("CreatedAt", "<", until).OrderBy("CreatedAt", firestore.Desc).Limit(1000).Documents(*r.ctx)
+
+	default:
+		// when both since and until are 0s.
+		query = fsclient.Collection(r.events_collection).Where("TagsMap", "!=", nil).OrderBy("CreatedAt", firestore.Desc).Limit(1000).Documents(*r.ctx)
+	}
+
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done || ecnt > 2 {
+				break
+			}
+			r.rlgr.Errorf("[GetHashtag_E_Events] ERROR raised while reading a doc from the DB: %v", err)
+			ecnt++
+			continue
+		}
+
+		tagsMap := doc.Data()["TagsMap"].(map[string]interface{})
+		filteredTagsMap := make(map[string]interface{})
+
+		for key, value := range tagsMap {
+			if key == "#e" && containsHashtag(value, hashtags) {
+				filteredTagsMap[key] = value
+			}
+		}
+
+		if len(filteredTagsMap) > 0 {
+			e, err := r.transformTagMapIntoTAGS(doc)
+			if err != nil {
+				r.rlgr.Errorf("[GetEventsSinceUntil] ERROR: %v raised while converting DB doc ID: %v into nostr event", err, doc.Ref.ID)
+				continue
+			}
+			events = append(events, e)
+		}
+	}
+
+	rsl := fmt.Sprintf(`{"events": %d, "filter_": "hashTag_E", "limit": %d, "since": %d, "until": %d,"took": %d}`, len(events), limit, since, until, time.Now().UnixMilli()-ts)
+
+	r.rlgr.Debugf("%v", rsl)
+
+	if len(events) == 0 {
+		return nil, fmt.Errorf("[GetHashtag_E_Events] no events found for the provided filter")
+	}
+
+	return events, nil
+}
+
+// Auxilary function to identify the serach values from the filter
+func containsHashtag(value interface{}, hashtags []string) bool {
+	switch v := value.(type) {
+	case string:
+		return containsString(hashtags, v)
+	case []interface{}:
+		for _, s := range v {
+			if containsString(hashtags, s.(string)) {
+				return true
+			}
+		}
+	default:
+		// Handle other potential value types as needed
+	}
+	return false
+}
+
+func containsString(arr []string, str string) bool {
+	for _, s := range arr {
+		if s == str {
+			return true
+		}
+	}
+	return false
 }
 
 // DeleteEvent deletes an event identified by its id

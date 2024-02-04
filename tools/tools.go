@@ -15,8 +15,8 @@ import (
 	"strings"
 	"sync"
 
-	gn "github.com/nbd-wtf/go-nostr"
 	log "github.com/sirupsen/logrus"
+	gn "github.com/studiokaiji/go-nostr"
 )
 
 var (
@@ -28,16 +28,19 @@ func init() {
 }
 
 type ipCount struct {
-	ipcount map[string]int
-	mutex   *sync.Mutex
+	ipcount    map[string]int
+	ipTtlCount map[string]int
+	mutex      *sync.Mutex
 }
 
 func (i *ipCount) Add(ip string) {
 	i.mutex.Lock()
 	i.ipcount[ip]++
+	i.ipTtlCount[ip]++
 	i.mutex.Unlock()
 }
 
+// ipcount keeps only the ACTIVE connected clients
 func (i *ipCount) Remove(ip string) {
 	i.mutex.Lock()
 	i.ipcount[ip]--
@@ -47,108 +50,53 @@ func (i *ipCount) Remove(ip string) {
 	i.mutex.Unlock()
 }
 
+// Returns the number of total active connected clients
 func (i *ipCount) Len() int {
 	return len(i.ipcount)
 }
 
+// Returns the total active connections from an IP.
 func (i *ipCount) IPConns(ip string) int {
+	i.mutex.Lock()
+	defer i.mutex.Unlock()
 	return i.ipcount[ip]
+}
+
+// Returns the number of total connections made from the IP (since the service restart)
+func (i *ipCount) IPConnsTotal(ip string) int {
+	i.mutex.Lock()
+	defer i.mutex.Unlock()
+	return i.ipTtlCount[ip]
+}
+
+// Returns the number of Total distinct ip connections ()
+func (i *ipCount) TotalConns() int {
+	i.mutex.Lock()
+	defer i.mutex.Unlock()
+	return len(i.ipTtlCount)
+}
+
+// Top demanding (in terms of number of connections) client's IP
+func (i *ipCount) TopIP() (ip string, max int) {
+	i.mutex.Lock()
+	defer i.mutex.Unlock()
+
+	for k, v := range i.ipTtlCount {
+		if v > max {
+			max = v
+			ip = k
+		}
+	}
+	return ip, max
 }
 
 func NewIPCount() *ipCount {
 	return &ipCount{
-		ipcount: make(map[string]int),
-		mutex:   &sync.Mutex{},
+		ipcount:    make(map[string]int),
+		ipTtlCount: make(map[string]int),
+		mutex:      &sync.Mutex{},
 	}
 }
-
-// Filter attributes containing lists (ids, authors, kinds and tag filters like #e) are JSON arrays with one or more values.
-// [x] At least one of the arrays' values must match the relevant field in an event for the condition to be considered a match.
-// [ ] For scalar event attributes such as authors and kind, the attribute from the event must be contained in the filter list.
-// [ ] In the case of tag attributes such as #e, for which an event may have multiple values, the event and filter condition values must have at least one item in common.
-
-// The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.
-
-// The since and until properties can be used to specify the time range of events returned in the subscription. If a filter includes the since property, events with created_at greater than or equal to since are considered to match the filter. The until property is similar except that created_at must be less than or equal to until. In short, an event matches a filter if since <= created_at <= until holds.
-
-// All conditions of a filter that are specified must match for an event for it to pass the filter, i.e., multiple conditions are interpreted as && conditions.
-
-// A REQ message may contain multiple filters. In this case, events that match any of the filters are to be returned, i.e., multiple filters are to be interpreted as || conditions.
-
-// The limit property of a filter is only valid for the initial query and MUST be ignored afterwards. When limit: n is present it is assumed that the events returned in the initial query will be the last n events ordered by the created_at. It is safe to return less events than limit specifies, but it is expected that relays do not return (much) more events than requested so clients don't get unnecessarily overwhelmed by data.
-func FilterMatchSingle(e *gn.Event, filter map[string]interface{}) bool {
-
-	//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
-	//{
-	//  "ids": <a list of event ids>,
-	//  "authors": <a list of lowercase pubkeys, the pubkey of an event must be one of these>,
-	//  "kinds": <a list of a kind numbers>,
-	//  "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
-	//  "since": <an integer unix timestamp in seconds, events must be newer than this to pass>,
-	//  "until": <an integer unix timestamp in seconds, events must be older than this to pass>,
-	//  "limit": <maximum number of events relays SHOULD return in the initial query>
-	//}
-
-	// [ ]: Refactor this to work with mixed filters - means when there is i.e. list of kinds [...] + until or since clause - then the filetr should run in sequens / nested format
-	for k, v := range filter {
-		switch k {
-		case "ids":
-			ids, ok := v.([]interface{})
-			if !ok {
-				log.Printf("ids value %v is not `[]interface{}`\n", v)
-				return false
-			}
-			for _, id := range ids {
-				if id.(string) == e.ID {
-					return true
-				}
-			}
-		case "authors":
-			authors, ok := v.([]interface{})
-			if !ok {
-				log.Printf("authors value %v is not `[]interface{}`\n", v)
-				return false
-			}
-			for _, author := range authors {
-				if author.(string) == e.PubKey {
-					return true
-				}
-			}
-		case "kinds":
-			kinds, ok := v.([]interface{})
-			if !ok {
-				log.Printf("kinds value %v is not `[]interface{}`\n", v)
-				return false
-			}
-			for _, kind := range kinds {
-				if kind.(float64) == float64(e.Kind) {
-					return true
-				}
-			}
-		case "since":
-			since, err := ConvertToTS(v)
-			if err != nil {
-				log.Printf("Error %v converting the since value\n", err)
-				return false
-			}
-			if since <= e.CreatedAt {
-				return true
-			}
-		case "until":
-			until, err := ConvertToTS(v)
-			if err != nil {
-				log.Printf("Error %v converting the until value\n", err)
-				return false
-			}
-			if until >= e.CreatedAt {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
 func scientificNotationToUInt(scientificNotation string) (uint, error) {
 	flt, _, err := big.ParseFloat(scientificNotation, 10, 0, big.ToNearestEven)
 	if err != nil {

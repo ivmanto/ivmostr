@@ -38,5 +38,7 @@ func (ah *ApiHandler) serverinfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ah *ApiHandler) ipcount(w http.ResponseWriter, r *http.Request) {
-	_, _ = w.Write([]byte(fmt.Sprintf("{\"IPCount\":%v}", tools.GetIPCount())))
+	ipcount := tools.GetIPCount()
+	ip, max := tools.IPCount.TopIP()
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"Active_IP_Connections\": %v,\"Max_connections_from_[%s]\": %v}", ipcount, ip, max)))
 }

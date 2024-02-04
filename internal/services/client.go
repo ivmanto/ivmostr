@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,9 +16,10 @@ import (
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	"github.com/gorilla/websocket"
-	gn "github.com/nbd-wtf/go-nostr"
 	log "github.com/sirupsen/logrus"
+	gn "github.com/studiokaiji/go-nostr"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -65,7 +67,7 @@ func (c *Client) ReceiveMsg() error {
 	defer cancel()
 
 	// [ ]: to be tested if it is filtering logs corectly
-	c.lgr.Level = log.DebugLevel
+	c.lgr.Level = log.ErrorLevel
 
 	wg.Add(1)
 	go func() {
@@ -353,6 +355,8 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		return err
 	}
+	// Update metrics tracking channel for stored events
+	metrics.ChStoreEvent <- 1
 
 	// The customer name is required in NewEventBroadcaster method in order to skip the broadcast process for the customer that brought the event on the relay.
 	e.SetExtra("id", float64(c.id))
@@ -398,7 +402,14 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 		for idx, v := range *msg {
 			if idx > 1 && idx < 5 {
 				filter = v.(map[string]interface{})
-				msgfilters = append(msgfilters, filter)
+				// [x]TODO: implement filter VERIFIER, to avoid spam filters
+				if validateSubsFilters(filter) {
+					msgfilters = append(msgfilters, filter)
+				} else {
+					c.writeCustomNotice("Error: Invalid filter!")
+					c.lgr.Debugf("Error: Invalid filter [%s] provided by subscription id:[%s]", filter, subscription_id)
+					return fmt.Errorf("ERROR: Invalid filter provided!")
+				}
 			}
 		}
 	}
@@ -416,6 +427,8 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
+		metrics.ChUpdateSubscription <- 1
+		metrics.ChNrOfSubsFilters <- len(msgfilters)
 
 		err := c.SubscriptionSuplier()
 		if err != nil {
@@ -429,7 +442,9 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	c.Filetrs = append(c.Filetrs, msgfilters...)
 
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
-	log.Printf("NEW: subscription id: %s from [%s] with filter %v", c.IP, c.Subscription_id, msgfilters)
+	log.Printf("NEW: subscription id: %s from [%s] with filter %v", c.Subscription_id, c.IP, msgfilters)
+	metrics.ChNewSubscription <- 1
+	metrics.ChNrOfSubsFilters <- len(c.Filetrs)
 
 	err := c.SubscriptionSuplier()
 	if err != nil {
@@ -604,7 +619,7 @@ func (c *Client) confirmURLDomainMatch(relayURL string) bool {
 }
 
 // *****************************************************************************
-// 		Subscription Supplier method for initial subs load
+// 		Subscription Supplier method for the initial subscriptions load
 // *****************************************************************************
 
 func (c *Client) SubscriptionSuplier() error {
@@ -655,7 +670,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 	return func() error {
 		// [ ]: de-compose the filter
 		// ===================================== FILTER TEMPLATE ============================================
-
+		//
 		//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
 		//{
 		//  "ids": <a list of event ids>,
@@ -666,6 +681,31 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		//  "until": <an integer unix timestamp in seconds, events must be older than this to pass>,
 		//  "limit": <maximum number of events relays SHOULD return in the initial query>
 		//}
+		//
+		//
+		// [x]:
+		// Upon receiving a `REQ` message, the relay SHOULD query its internal database and return events that match the filter, then store that filter and send again all future events it receives to that same websocket until the websocket is closed. The `CLOSE` event is received with the same `<subscription_id>` or a new `REQ` is sent using the same `<subscription_id>`, in which case relay MUST overwrite the previous subscription.
+		//
+		// [!]: Note! An extended implementation will overwrite an existing subscrption if new subscrption with different id is received through the current websocket connection.
+		//
+		// [ ]:
+		// Filter attributes containing lists (`ids`, `authors`, `kinds` and tag filters like `#e`) are JSON arrays with one or more values. At least one of the arrays' values must match the relevant field in an event for the condition to be considered a match. For scalar event attributes such as `authors` and `kind`, the attribute from the event must be contained in the filter list. In the case of tag attributes such as `#e`, for which an event may have multiple values, the event and filter condition values must have at least one item in common.
+		//
+		// [x]:
+		// The `ids`, `authors`, `#e` and `#p` filter lists MUST contain exact 64-character lowercase hex values.
+		//
+		// [x]:
+		// The `since` and `until` properties can be used to specify the time range of events returned in the subscription. If a filter includes the `since` property, events with `created_at` greater than or equal to `since` are considered to match the filter. The `until` property is similar except that `created_at` must be less than or equal to `until`. In short, an event matches a filter if `since <= created_at <= until` holds.
+		//
+		// [x]:
+		// All conditions of a filter that are specified must match for an event for it to pass the filter, i.e., **multiple conditions are interpreted as `&&` conditions**.
+		//
+		// [x]:
+		// A `REQ` message may contain multiple filters. In this case, events that match any of the filters are to be returned, i.e., multiple filters are to be interpreted as `||` conditions.
+		//
+		// [x]:
+		// The `limit` property of a filter is only valid for the initial query and MUST be ignored afterwards. When `limit: n` is present it is assumed that the events returned in the initial query will be the last `n` events ordered by the `created_at`. It is safe to return less events than `limit` specifies, but it is expected that relays do not return (much) more events than requested so clients don't get unnecessarily overwhelmed by data.
+		//
 		//==================================================================================================
 
 		var (
@@ -724,32 +764,9 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		case flt_authors && !flt_ids && !flt_kinds && !flt_tags:
 			// ONLY "authors" list ...
 
-			var (
-				authors  []interface{}
-				_authors []string
-			)
-
-			authors, ok := filter["authors"].([]interface{})
-			if !ok {
-				return fmt.Errorf("Wrong filter format used! Authors are not a list")
-			}
-
-			// limit of the number of elements comes from Firestore query limit for the IN clause
-			if len(_authors) >= 30 {
-				_authors = _authors[:29]
-			}
-
-			for _, auth := range authors {
-				_auth, ok := auth.(string)
-				if ok {
-					// nip-01: `The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.`
-					_auth = strings.ToLower(_auth)
-					if len(_auth) != 64 {
-						c.lgr.Errorf("Wrong author value! It must be 64 chars long. Skiping this value.")
-						continue
-					}
-					_authors = append(_authors, _auth)
-				}
+			_authors := checkAndConvertFilterLists(filter["authors"], "authors")
+			if len(_authors) == 0 {
+				return fmt.Errorf("Wrong filter list provided!")
 			}
 
 			_events, err = c.repo.GetEventsByAuthors(_authors, max_events, _since, _until)
@@ -765,29 +782,9 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		case flt_ids && !flt_authors && !flt_kinds && !flt_tags:
 			// ONLY "ids" list...
 
-			var (
-				ids  []interface{}
-				_ids []string
-			)
-
-			ids, ok := filter["ids"].([]interface{})
-			if !ok {
-				return fmt.Errorf("Wrong filter format used! Ids are not a list")
-			}
-
-			if len(_ids) >= 30 {
-				_ids = _ids[:29]
-			}
-
-			for _, id := range ids {
-				_id, ok := id.(string)
-				if ok {
-					if len(_id) != 64 {
-						c.lgr.Errorf("Wrong ID value! It must be 64 chars long. Skiping this value.")
-						continue
-					}
-					_ids = append(_ids, _id)
-				}
+			_ids := checkAndConvertFilterLists(filter["ids"], "ids")
+			if len(_ids) == 0 {
+				return fmt.Errorf("Wrong filter list provided!")
 			}
 
 			_events, err = c.repo.GetEventsByIds(_ids, max_events, _since, _until)
@@ -813,8 +810,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
 			}
 
-			if len(kinds) >= 30 {
-				kinds = kinds[:29]
+			if len(kinds) > 30 {
+				kinds = kinds[:30]
 			}
 
 			for _, kind := range kinds {
@@ -836,8 +833,39 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 
 		case flt_tags && !flt_authors && !flt_ids && !flt_kinds:
 			// [ ]: implement tags: "#<single-letter (a-zA-Z)>": <a list of tag values, for #e — a list of event ids, for #p — a list of event pubkeys etc>,
-			// case filter["#e"]: ...
-			// case filter["#p"]: ...
+			// sample filter: {"#e":["4dcbcee477c49d851209206a7ec945d1c3584c4411954de689030ec000f2c256","b4d6926dd0428f0bd36012f0721a70b4c38140d141bfa5efc2167b551a0d9ff2","25e5c82273a271cb1a840d0060391a0bf4965cafeb029d5ab55350b418953fbb"],"kinds":[42],"since":1706573150}
+			var tagflts = map[string]interface{}{}
+
+			for key, val := range filter {
+				if strings.HasPrefix(key, "#") {
+					tagflts[key] = val
+				}
+			}
+
+			for tkey, tval := range tagflts {
+				switch tkey {
+				case "#e":
+					_events_ids := checkAndConvertFilterLists(tval, tkey)
+					if len(_events_ids) == 0 {
+						return fmt.Errorf("Wrong filter list provided!")
+					}
+					_events, err = c.repo.GetHashtag_E_Events(_events_ids, max_events, _since, _until)
+					if err != nil {
+						c.lgr.Errorf("ERROR: %v from client %v subscription %v filter [kinds]: %v", err, c.IP, c.Subscription_id, filter)
+						return err
+					}
+
+					for _, ev := range _events {
+						events = append(events, *ev)
+					}
+
+				case "#p":
+					// [ ]: to be implemented later on
+
+				case "#d":
+					//[ ]: to be implemented later on
+				}
+			}
 
 		case flt_limit && !flt_tags && !flt_authors && !flt_ids && !flt_kinds:
 			// ANY EVENT from the last N (limit) events arrived
@@ -893,19 +921,20 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Authors are not a list")
 			}
 
-			if len(_authors) >= 30 {
-				_authors = _authors[:29]
+			if len(_authors) > 10 {
+				_authors = _authors[:10]
 			}
 
 			for _, auth := range authors {
 				_auth, ok := auth.(string)
 				if ok {
 					// nip-01: `The ids, authors, #e and #p filter lists MUST contain exact 64-character lowercase hex values.`
-					_auth = strings.ToLower(_auth)
-					if len(_auth) != 64 {
-						c.lgr.Errorf("Wrong author value! It must be 64 chars long. Skiping this value.")
+					_, errhx := strconv.ParseUint(_auth, 16, 64)
+					if len(_auth) != 64 || errhx != nil {
+						c.lgr.Errorf("Wrong author value! It must be 64 chars long lowcase hex value. Skiping this value.")
 						continue
 					}
+					_auth = strings.ToLower(_auth)
 					_authors = append(_authors, _auth)
 				}
 			}
@@ -915,8 +944,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 				return fmt.Errorf("Wrong filter format used! Kinds are not a list")
 			}
 
-			if len(kinds) >= 30 {
-				kinds = kinds[:29]
+			if len(kinds) > 3 {
+				kinds = kinds[:3]
 			}
 
 			for _, kind := range kinds {

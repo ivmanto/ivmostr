@@ -14,14 +14,16 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	"github.com/gorilla/websocket"
-	gn "github.com/nbd-wtf/go-nostr"
 	log "github.com/sirupsen/logrus"
+	gn "github.com/studiokaiji/go-nostr"
 )
 
 var (
 	NewEvent      = make(chan *gn.Event, 100)
 	Exit          = make(chan struct{})
+	chEM          = make(chan eventClientPair, 300)
 	monitorTicker = time.NewTicker(time.Minute * 10)
 	monitorClose  = make(chan struct{})
 	relay_access  string
@@ -62,6 +64,13 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	relay_access = cfg.Relay_access
 
+	session.slgr.SetLevel(log.ErrorLevel)
+
+	session.slgr.SetFormatter(&log.JSONFormatter{
+		DisableTimestamp: true,
+	})
+
+	//)
 	td, err := repo.TotalDocs2()
 	if err != nil {
 		session.slgr.Errorf("error getting total number of docs: %v ", err)
@@ -77,6 +86,11 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	// * SubscriptionID per each registred client
 	// * Filters per SubscriptionID
 	go session.Monitor()
+
+	// The filterMatch routine will be addressed by the NewEventBroadcaster
+	// to supply the subscribed customers with the new arriving Events that
+	// match the respective clients' filters.
+	go filterMatch()
 
 	return &session
 }
@@ -123,7 +137,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	client.read_events = 0
 	client.lgr = &log.Logger{
 		Out:   os.Stdout,
-		Level: log.DebugLevel,
+		Level: log.ErrorLevel,
 		Formatter: &log.JSONFormatter{
 			DisableTimestamp:  true,
 			DisableHTMLEscape: true,
@@ -152,7 +166,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	switch relay_access {
 	case "public":
 
-		lep.Payload = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, s.Clients.Len(), time.Now().Unix())
+		lep.Payload = fmt.Sprintf(`{"client":%d, "IP":"%s", "name": "%s", "active_clients_connected":%d, "ts":%d}`, client.id, client.IP, client.name, s.ldg.Len(), time.Now().Unix())
 		s.clgr.Log(lep)
 
 	case "authenticated":
@@ -310,7 +324,7 @@ func (s *Session) NewEventBroadcaster() {
 		log.Printf(" ...-= starting new event braodcasting =-...")
 
 		// 22242 is auth event - not to be stored or published
-		if e.Kind != 22242 {
+		if e.Kind == 22242 {
 			continue
 		}
 
@@ -322,9 +336,7 @@ func (s *Session) NewEventBroadcaster() {
 
 			if client.Subscription_id == "" || len(client.Filetrs) == 0 {
 				if time.Now().Unix()-client.CreatedAt > 300 {
-					s.mu.Lock()
 					s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
-					s.mu.Unlock()
 					tools.IPCount.Remove(client.IP)
 				}
 				continue
@@ -345,12 +357,19 @@ func (s *Session) NewEventBroadcaster() {
 				}
 			}
 
-			if filterMatch(e, client.GetFilters()) {
-				client.msgwt <- []interface{}{e}
-				continue
+			ecp := eventClientPair{
+				event:  e,
+				client: client,
 			}
+
+			chEM <- ecp
+			s.slgr.Debugf("[NewEventBroadcaster] sent ecp client [%v] to filterMatch channel chEM.", ecp.client.IP)
+
+			// next subscribed client
 			continue
+
 		}
+		// next event from the channel
 		continue
 	}
 }
@@ -367,6 +386,7 @@ func (s *Session) Monitor() {
 		case <-monitorTicker.C:
 			s.slgr.Println("... ================ ...")
 			go s.sessionState()
+			go getMaxConnIP()
 			s.slgr.Println("... running session state ...")
 		case <-monitorClose:
 			break
@@ -412,7 +432,6 @@ func (s *Session) sessionState() {
 
 	s.slgr.Infof("[session state] total consistant clients:%v", clnt_count)
 	s.slgr.Info("... session state complete ...")
-
 }
 
 // Close should ensure proper session closure and
@@ -422,4 +441,12 @@ func (s *Session) Close() bool {
 	<-Exit
 	//[ ]TODO: release resources and gracefully close the session
 	return true
+}
+
+func getMaxConnIP() {
+
+	tip, max := tools.IPCount.TopIP()
+	var tdip = make(map[string]int, 1)
+	tdip[tip] = max
+	metrics.ChTopDemandingIP <- tdip
 }
