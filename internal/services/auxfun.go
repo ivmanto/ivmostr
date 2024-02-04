@@ -379,7 +379,7 @@ func validateSubsFilters(filter map[string]interface{}) bool {
 
 	for key := range filter {
 		if tools.Contains([]string{"authors", "ids", "#e", "#p"}, key) {
-			collection, ok := filter[key].([]string)
+			collection, ok := filter[key].([]interface{})
 			if ok {
 				if !validateAIEP(collection) {
 					lgr.Debugf("[validateSubsFilters] validateAIEP returned false.")
@@ -406,10 +406,14 @@ func validateSubsFilters(filter map[string]interface{}) bool {
 
 // validateAIEP - validates string arrays if all elements are
 // 64 char length strings representing HEX values
-func validateAIEP(array []string) bool {
+func validateAIEP(array []interface{}) bool {
 	for _, item := range array {
-		_, errhx := strconv.ParseUint(item, 16, 64)
-		if len(item) != 64 && errhx != nil {
+		_item, ok := item.(string)
+		if !ok {
+			_item = fmt.Sprintf("%v", item)
+		}
+		_, errhx := strconv.ParseUint(_item, 16, 64)
+		if len(_item) != 64 && errhx != nil {
 			return false
 		}
 	}
