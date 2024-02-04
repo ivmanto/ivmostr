@@ -174,7 +174,10 @@ func filterMatch() {
 			wg.Add(1)
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
 
-			go filterMatchSingle(evnt, filter, result)
+			go func(evnt *gn.Event, filter map[string]interface{}, result chan bool) {
+				defer wg.Done()
+				filterMatchSingle(evnt, filter, result)
+			}(evnt, filter, result)
 		}
 
 		wg.Wait()
@@ -214,7 +217,7 @@ func monitorResults(result <-chan bool, closeResult <-chan struct{}, clnt *Clien
 // The limit property of a filter is only valid for the initial query and MUST be ignored afterwards. When limit: n is present it is assumed that the events returned in the initial query will be the last n events ordered by the created_at. It is safe to return less events than limit specifies, but it is expected that relays do not return (much) more events than requested so clients don't get unnecessarily overwhelmed by data.
 
 // filterMatchSingle verfies if an Event `e` attributes match a specific subscription filter values.
-func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan bool) {
+func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan<- bool) {
 
 	//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
 	//{
@@ -350,7 +353,6 @@ func filterMatchSingle(e *gn.Event, filter map[string]interface{}, rslt chan boo
 	}
 
 	close(rslt)
-
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,
