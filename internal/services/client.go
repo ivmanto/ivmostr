@@ -67,7 +67,7 @@ func (c *Client) ReceiveMsg() error {
 	defer cancel()
 
 	// [ ]: to be tested if it is filtering logs corectly
-	c.lgr.Level = log.DebugLevel
+	c.lgr.Level = log.ErrorLevel
 
 	wg.Add(1)
 	go func() {

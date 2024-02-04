@@ -149,7 +149,7 @@ func initCloudLogger(project_id, log_name string) *logging.Logger {
 func filterMatch() {
 
 	var fmlgr = log.New()
-	fmlgr.SetLevel(log.DebugLevel)
+	fmlgr.SetLevel(log.ErrorLevel)
 	fmlgr.Debug("... Spining up filterMatch ...")
 
 	for pair := range chEM {
@@ -373,7 +373,7 @@ func checkAndConvertFilterLists(fl interface{}, key string) (cclist []string) {
 func validateSubsFilters(filter map[string]interface{}) bool {
 
 	var lgr = log.New()
-	lgr.Level = log.DebugLevel
+	lgr.Level = log.ErrorLevel
 
 	// Identiify filter's components that must be lowcase 64 chars hex values
 
