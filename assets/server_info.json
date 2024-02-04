@@ -5,7 +5,7 @@
     "contact": "office@ivmanto.com",
     "supported_nips": [1,2,3,4,11,42],
     "software": "TBD",
-    "version": "0.0.6",
+    "version": "0.0.12",
     "limitation": {
         "max_message_length": 16384,
         "max_subscriptions": 20,
