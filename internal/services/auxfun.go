@@ -377,6 +377,7 @@ func validateSubsFilters(filter map[string]interface{}) bool {
 	for key := range filter {
 		if tools.Contains([]string{"authors", "ids", "#e", "#p"}, key) {
 			collection, ok := filter[key].([]string)
+			log.Debugf("[validateSubsFilters] is filter slice of string: %v, Type: %T", ok, filter[key])
 			if ok {
 				if !validateAIEP(collection) {
 					return false

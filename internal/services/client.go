@@ -407,7 +407,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 					msgfilters = append(msgfilters, filter)
 				} else {
 					c.writeCustomNotice("Error: Invalid filter!")
-					c.lgr.Debugf("Error: Invalid filter [%v] provided by subscription id:[%s]", filter, subscription_id)
+					c.lgr.Debugf("Error: Invalid filter [%s] provided by subscription id:[%s]", filter, subscription_id)
 					return fmt.Errorf("ERROR: Invalid filter provided!")
 				}
 			}
