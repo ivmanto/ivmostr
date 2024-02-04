@@ -47,11 +47,10 @@ func main() {
 		*cfgfn = "../../configs/config_debug.yaml"
 	}
 
-	// initializing the web application as a handler
+	// set default values
 	var (
-		// db *sql.DB     = &sql.DB{}
-		pool_max_workers int = 128
-		pool_queue       int = 1
+		pool_max_workers int = 1024
+		pool_queue       int = 4
 	)
 
 	// Load the configuration file
