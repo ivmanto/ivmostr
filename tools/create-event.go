@@ -48,6 +48,7 @@ func PrintNewEvent() {
 	publicKeyNoSpaces := strings.Replace(pk, " ", "", -1)
 	publicKeyNoCaps := strings.ToLower(publicKeyNoSpaces)
 	publicKeyHex := hex.EncodeToString([]byte(publicKeyNoCaps))
+	//hex.DecodeString(publicKeyHex))
 	fmt.Println(publicKeyHex)
 
 	e := CreateMetadataEvent()
