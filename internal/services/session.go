@@ -65,7 +65,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 
 	relay_access = cfg.Relay_access
 
-	session.slgr.SetLevel(log.ErrorLevel)
+	session.slgr.SetLevel(log.DebugLevel)
 
 	session.slgr.SetFormatter(&log.JSONFormatter{
 		DisableTimestamp: true,
