@@ -47,5 +47,10 @@ func (ah *ApiHandler) ipcount(w http.ResponseWriter, r *http.Request) {
 func (ah *ApiHandler) filters(w http.ResponseWriter, r *http.Request) {
 
 	flt := tools.TAlaf.GetFiltersList()
-	_, _ = w.Write([]byte(fmt.Sprintf("{\"Active_Filters\": \"%s\"}", flt)))
+	var fltprt string
+
+	for _, v := range flt {
+		fltprt = fltprt + v + ", \n"
+	}
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"Active_Filters\": %v}", fltprt)))
 }

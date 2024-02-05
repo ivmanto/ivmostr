@@ -424,7 +424,7 @@ func validateAIEP(array []interface{}) bool {
 		if !ok {
 			_item = fmt.Sprintf("%v", item)
 		}
-		//_, errhx := strconv.ParseUint(_item, 16, 64)
+
 		_, errhx := hex.DecodeString(_item)
 		if len(_item) != 64 || errhx != nil {
 			return false
