@@ -388,7 +388,7 @@ func (s *Session) Monitor() {
 		case <-monitorTicker.C:
 			s.slgr.Infof("... ================ ...")
 
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 
 			go func(ctx context.Context) {
 				select {
