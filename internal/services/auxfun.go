@@ -149,11 +149,8 @@ func initCloudLogger(project_id, log_name string) *logging.Logger {
 func filterMatch() {
 
 	var fmlgr = log.New()
-	fmlgr.SetLevel(log.ErrorLevel)
+	fmlgr.SetLevel(log.DebugLevel)
 	fmlgr.Debug("... Spining up filterMatch ...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
 	for pair := range chEM {
 
@@ -164,6 +161,8 @@ func filterMatch() {
 		for _, filter := range filters {
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
 
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
 			go func(ctx context.Context, event *gn.Event, client *Client, filter map[string]interface{}) {
 				select {
 				case <-ctx.Done():
@@ -171,6 +170,7 @@ func filterMatch() {
 					return
 				default:
 					filterMatchSingle(event, client, filter)
+					cancel()
 				}
 			}(ctx, pair.event, pair.client, filter)
 		}

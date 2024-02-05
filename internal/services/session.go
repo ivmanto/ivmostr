@@ -323,7 +323,7 @@ func (s *Session) NewEventBroadcaster() {
 
 	for e := range NewEvent {
 
-		log.Printf(" ...-= starting new event braodcasting =-...")
+		s.slgr.Debugf(" ...-= starting new event braodcasting =-...")
 
 		// 22242 is auth event - not to be stored or published
 		if e.Kind == 22242 {
@@ -369,7 +369,6 @@ func (s *Session) NewEventBroadcaster() {
 
 			// next subscribed client
 			continue
-
 		}
 		// next event from the channel
 		continue
@@ -384,17 +383,19 @@ func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 // the session state in terms of clients and their activities.
 func (s *Session) Monitor() {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer cancel()
-
 	for {
 		select {
 		case <-monitorTicker.C:
 			s.slgr.Println("... ================ ...")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
 			go func(ctx context.Context) {
 				select {
 				case <-ctx.Done():
-					s.slgr.Debugf("[Monitor] Gracefully shutting down.")
+					s.slgr.Debugf("[Monitor] Gracefully shutting down session state.")
+					return
 				default:
 					s.sessionState()
 				}
@@ -402,7 +403,8 @@ func (s *Session) Monitor() {
 			go func(ctx context.Context) {
 				select {
 				case <-ctx.Done():
-					s.slgr.Debugf("[Monitor] Gracefully shutting down.")
+					s.slgr.Debugf("[Monitor] Gracefully shutting down maxConnIP.")
+					return
 				default:
 					getMaxConnIP()
 				}
