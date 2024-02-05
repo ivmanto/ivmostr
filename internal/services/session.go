@@ -386,10 +386,9 @@ func (s *Session) Monitor() {
 	for {
 		select {
 		case <-monitorTicker.C:
-			s.slgr.Println("... ================ ...")
+			s.slgr.Infof("... ================ ...")
 
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-			defer cancel()
 
 			go func(ctx context.Context) {
 				select {
@@ -398,6 +397,7 @@ func (s *Session) Monitor() {
 					return
 				default:
 					s.sessionState()
+					cancel()
 				}
 			}(ctx)
 			go func(ctx context.Context) {
@@ -407,10 +407,11 @@ func (s *Session) Monitor() {
 					return
 				default:
 					getMaxConnIP()
+					cancel()
 				}
 			}(ctx)
 
-			s.slgr.Println("... running session state ...")
+			s.slgr.Infof("... running session state ...")
 		case <-monitorClose:
 			break
 		}
