@@ -24,6 +24,7 @@ func (ah *ApiHandler) Router() chi.Router {
 		// r.Post("/send", rh.home)
 		r.Get("/nip11", ah.serverinfo)
 		r.Get("/ipcount", ah.ipcount)
+		r.Get("/filters", ah.filters)
 	})
 
 	return rtr
@@ -41,4 +42,10 @@ func (ah *ApiHandler) ipcount(w http.ResponseWriter, r *http.Request) {
 	ipcount := tools.GetIPCount()
 	ip, max := tools.IPCount.TopIP()
 	_, _ = w.Write([]byte(fmt.Sprintf("{\"Active_IP_Connections\": %v,\"Max_connections_from_[%s]\": %v}", ipcount, ip, max)))
+}
+
+func (ah *ApiHandler) filters(w http.ResponseWriter, r *http.Request) {
+
+	flt := tools.TAlaf.GetFiltersList()
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"Active_Filters\": \"%s\"}", flt)))
 }

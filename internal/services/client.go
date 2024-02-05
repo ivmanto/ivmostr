@@ -539,7 +539,7 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 }
 
 // ****************************** Auxilary methods ***********************************************
-
+//
 // Protocol definition: ["OK", <event_id>, <true|false>, <message>], used to indicate acceptance or denial of an EVENT message.
 //
 // [x] `OK` messages MUST be sent in response to `EVENT` messages received from clients;

@@ -421,7 +421,10 @@ func (s *Session) Monitor() {
 // sessionState will get the list of registred clients with their attributes
 func (s *Session) sessionState() {
 
-	clnt_count := 0
+	var (
+		clnt_count = 0
+		laf        = make(map[string]interface{})
+	)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -443,6 +446,8 @@ func (s *Session) sessionState() {
 			continue
 		}
 
+		laf[key] = client.GetFilters()
+
 		s.slgr.WithFields(log.Fields{
 			"clientID":   client.id,
 			"clientName": client.name,
@@ -453,6 +458,8 @@ func (s *Session) sessionState() {
 		clnt_count++
 		continue
 	}
+
+	tools.PullLAF(laf)
 
 	s.slgr.Infof("[session state] total consistant clients:%v", clnt_count)
 	s.slgr.Info("... session state complete ...")
