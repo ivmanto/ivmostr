@@ -152,6 +152,9 @@ func filterMatch() {
 	fmlgr.SetLevel(log.ErrorLevel)
 	fmlgr.Debug("... Spining up filterMatch ...")
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	for pair := range chEM {
 
 		fmlgr.Debugf("[filterMatch] a new pair arrived in the chEM channel as event: [%v] and client: [%v]", *pair.event, pair.client)
@@ -160,8 +163,16 @@ func filterMatch() {
 
 		for _, filter := range filters {
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
-			go filterMatchSingle(pair.event, pair.client, filter)
 
+			go func(ctx context.Context, event *gn.Event, client *Client, filter map[string]interface{}) {
+				select {
+				case <-ctx.Done():
+					fmlgr.Debugf("[filterMatch] Gracefully shutting down")
+					return
+				default:
+					filterMatchSingle(event, client, filter)
+				}
+			}(ctx, pair.event, pair.client, filter)
 		}
 	}
 }

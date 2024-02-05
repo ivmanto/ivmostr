@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -87,8 +88,9 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	// * Filters per SubscriptionID
 	go session.Monitor()
 
+	// [x]: Filter match
 	// The filterMatch routine will be addressed by the NewEventBroadcaster
-	// to supply the subscribed customers with the new arriving Events that
+	// to supply the subscribed clients with the new arriving Events that
 	// match the respective clients' filters.
 	go filterMatch()
 
@@ -381,12 +383,31 @@ func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 // Monitor is to run in yet another go-routine and show
 // the session state in terms of clients and their activities.
 func (s *Session) Monitor() {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
 	for {
 		select {
 		case <-monitorTicker.C:
 			s.slgr.Println("... ================ ...")
-			go s.sessionState()
-			go getMaxConnIP()
+			go func(ctx context.Context) {
+				select {
+				case <-ctx.Done():
+					s.slgr.Debugf("[Monitor] Gracefully shutting down.")
+				default:
+					s.sessionState()
+				}
+			}(ctx)
+			go func(ctx context.Context) {
+				select {
+				case <-ctx.Done():
+					s.slgr.Debugf("[Monitor] Gracefully shutting down.")
+				default:
+					getMaxConnIP()
+				}
+			}(ctx)
+
 			s.slgr.Println("... running session state ...")
 		case <-monitorClose:
 			break
