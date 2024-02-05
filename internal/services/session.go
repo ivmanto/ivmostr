@@ -152,9 +152,9 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		client.id = s.seq
 		s.seq++
 		client.name = s.randName()
-		key := fmt.Sprintf("%s:%s", client.name, client.IP)
+		// key := fmt.Sprintf("%s:%s", client.name, client.IP)
 
-		ok, clnt := s.ldg.Add(key, client)
+		ok, clnt := s.ldg.Add(client.IP, client)
 		if !ok {
 			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
 			return nil
