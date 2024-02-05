@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -57,8 +58,13 @@ func (l alaf) GetFiltersList() []string {
 	for _, v := range l {
 		for _, lf := range v.llaf {
 			for _, flt := range lf.([]map[string]interface{}) {
-				sflt := fmt.Sprintf("%s", flt)
-				filters = append(filters, sflt)
+
+				bflt, err := json.Marshal(flt)
+				if err != nil {
+					fmt.Printf("Error: while marshal filter: %v", err)
+					continue
+				}
+				filters = append(filters, string(bflt))
 			}
 		}
 	}
