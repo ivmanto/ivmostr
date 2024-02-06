@@ -102,11 +102,16 @@ func (h *WSHandler) healthcheck(w http.ResponseWriter, r *http.Request) {
 // and contions to the websocket server
 func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 
-	org := r.Header.Get("Origin")
-	hst := tools.DiscoverHost(r)
-	ip := tools.GetIP(r)
+	var (
+		org   = r.Header.Get("Origin")
+		hst   = tools.DiscoverHost(r)
+		ip    = tools.GetIP(r)
+		wlstd = false
+	)
 
-	wlstd := tools.Contains(*h.wlst, ip)
+	if h.wlst != nil {
+		wlstd = tools.Contains(*h.wlst, ip)
+	}
 
 	if session.IsRegistered(ip) && !wlstd {
 		h.hlgr.Infof("WSU-REQ: DUPLICATED request arived from already connected ip: %v, Host: %v, Origin: %v", ip, hst, org)
