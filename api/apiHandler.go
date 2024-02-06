@@ -60,5 +60,5 @@ func (ah *ApiHandler) CNrFilters(w http.ResponseWriter, r *http.Request) {
 	for key, v := range cnrflt {
 		cnrfltprt = cnrfltprt + key + ": " + fmt.Sprintf("%d ", v) + ", \n"
 	}
-
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"Nr_of_filters_per_client\": %v}", cnrfltprt)))
 }
