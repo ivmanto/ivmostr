@@ -27,7 +27,7 @@ type laf struct {
 	ts   int64
 }
 
-// PullLAF ()
+// PullLAF to be called out from the session state
 func PullLAF(sslaf map[string]interface{}) {
 	lafinst := laf{
 		llaf: sslaf,
@@ -36,7 +36,7 @@ func PullLAF(sslaf map[string]interface{}) {
 	TAlaf = append(TAlaf, lafinst)
 }
 
-// GetDistinctingClients ()
+// GetDistinctClients ()
 func (l alaf) GetDistinctClients() []string {
 
 	var clients []string
@@ -48,6 +48,24 @@ func (l alaf) GetDistinctClients() []string {
 			}
 		}
 	}
+	return clients
+}
+
+// GetDistinctClientsAndNrOfFilters ()
+func (l alaf) GetDistinctClientsAndNrOfFilters() map[string]int {
+
+	var clients = make(map[string]int)
+
+	for idx, v := range l {
+		// take the last state only
+		if idx != len(l)-1 {
+			continue
+		}
+		for k, intf := range v.llaf {
+			flt_len := len(intf.([]map[string]interface{}))
+			clients[k] += flt_len
+		}
+	}
 
 	return clients
 }
@@ -55,7 +73,11 @@ func (l alaf) GetDistinctClients() []string {
 // GetFiltersList ()
 func (l alaf) GetFiltersList() []string {
 	var filters []string
-	for _, v := range l {
+	for idx, v := range l {
+		// take the last state only
+		if idx != len(l)-1 {
+			continue
+		}
 		for _, lf := range v.llaf {
 			for _, flt := range lf.([]map[string]interface{}) {
 

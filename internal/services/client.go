@@ -66,7 +66,6 @@ func (c *Client) ReceiveMsg() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// [ ]: to be tested if it is filtering logs corectly
 	c.lgr.Level = log.ErrorLevel
 
 	wg.Add(1)
@@ -278,7 +277,8 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 
 	case "CLOSE":
 		err = c.handlerCloseSubsMsgs(&jmsg)
-
+		// independently of the result the clients connection must be closed
+		c.errFM <- fmt.Errorf("Closing client connection on its request to close subscription")
 	case "AUTH":
 		err = c.handlerAuthMsgs(&jmsg)
 

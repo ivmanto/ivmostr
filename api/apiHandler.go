@@ -25,6 +25,7 @@ func (ah *ApiHandler) Router() chi.Router {
 		r.Get("/nip11", ah.serverinfo)
 		r.Get("/ipcount", ah.ipcount)
 		r.Get("/filters", ah.filters)
+		r.Get("/cnrfilters", ah.CNrFilters)
 	})
 
 	return rtr
@@ -45,12 +46,19 @@ func (ah *ApiHandler) ipcount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ah *ApiHandler) filters(w http.ResponseWriter, r *http.Request) {
-
 	flt := tools.TAlaf.GetFiltersList()
 	var fltprt string
-
 	for _, v := range flt {
 		fltprt = fltprt + v + ", \n"
 	}
 	_, _ = w.Write([]byte(fmt.Sprintf("{\"Active_Filters\": %v}", fltprt)))
+}
+
+func (ah *ApiHandler) CNrFilters(w http.ResponseWriter, r *http.Request) {
+	cnrflt := tools.TAlaf.GetDistinctClientsAndNrOfFilters()
+	var cnrfltprt string
+	for key, v := range cnrflt {
+		cnrfltprt = cnrfltprt + key + ": " + fmt.Sprintf("%d ", v) + ", \n"
+	}
+
 }

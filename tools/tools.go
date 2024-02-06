@@ -202,7 +202,3 @@ func ConvertStructToByte(e any) ([]byte, error) {
 func GetIPCount() int {
 	return IPCount.Len()
 }
-
-func GetListOfActiveFilters() {
-
-}
