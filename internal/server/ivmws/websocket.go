@@ -26,12 +26,21 @@ var (
 
 type WSHandler struct {
 	repo           nostr.NostrRepo
+	lists          nostr.ListRepo
 	cfg            *config.ServiceConfig
 	trustedOrigins []string
 	hlgr           *log.Logger
+	wlst           *[]string
+	blst           *[]string
 }
 
-func NewWSHandler(repo nostr.NostrRepo, cfg *config.ServiceConfig) *WSHandler {
+func NewWSHandler(
+	repo nostr.NostrRepo,
+	lists nostr.ListRepo,
+	cfg *config.ServiceConfig,
+	wlst, blst *[]string,
+
+) *WSHandler {
 
 	trustedOrigins := cfg.TrustedOrigins
 	if len(trustedOrigins) == 0 {
@@ -42,6 +51,7 @@ func NewWSHandler(repo nostr.NostrRepo, cfg *config.ServiceConfig) *WSHandler {
 
 	hndlr := WSHandler{
 		repo:           repo,
+		lists:          lists,
 		cfg:            cfg,
 		trustedOrigins: trustedOrigins,
 		hlgr:           lgr,
@@ -62,7 +72,7 @@ func NewWSHandler(repo nostr.NostrRepo, cfg *config.ServiceConfig) *WSHandler {
 
 	// The same as above is valid for websocket connections pool.
 	wspool = services.NewConnectionPool(cfg.PoolMaxWorkers)
-	session = services.NewSession(pool, repo, cfg, clpool, wspool)
+	session = services.NewSession(pool, repo, lists, cfg, clpool, wspool)
 
 	return &hndlr
 }
@@ -96,7 +106,9 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	hst := tools.DiscoverHost(r)
 	ip := tools.GetIP(r)
 
-	if session.IsRegistered(ip) {
+	wlstd := tools.Contains(*h.wlst, ip)
+
+	if session.IsRegistered(ip) && !wlstd {
 		h.hlgr.Infof("WSU-REQ: DUPLICATED request arived from already connected ip: %v, Host: %v, Origin: %v", ip, hst, org)
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = w.Write([]byte("Already connected"))

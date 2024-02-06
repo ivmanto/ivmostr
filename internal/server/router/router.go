@@ -31,13 +31,15 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 )
 
 var (
-	l = log.New()
+	l          = log.New()
+	wlst, blst []string
 )
 
 // Constructing web application depenedencies in the format of handler
@@ -56,12 +58,12 @@ func (h *srvHandler) router() chi.Router {
 	rtr.Use(accessControl)
 	rtr.Use(healthcheck)
 	rtr.Use(serverinfo)
-	rtr.Use(rateLimiter(h.lists))
+	rtr.Use(rateLimiter(h.lists, wlst, blst))
 	rtr.Use(controlIPConn)
 
 	// Handle requests to the root URL "/" - nostr websocket connections
 	rtr.Route("/", func(wr chi.Router) {
-		ws := ivmws.NewWSHandler(h.repo, h.cfg)
+		ws := ivmws.NewWSHandler(h.repo, h.lists, h.cfg, &wlst, &blst)
 		wr.Mount("/", ws.Router())
 	})
 
@@ -85,8 +87,12 @@ func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceC
 		lists: lists,
 		cfg:   cfg,
 	}
-
 	l.Printf("...initializing router (http server Handler) ...")
+
+	wlst = tools.GetWhiteListedIPs(lists)
+	blst = tools.GetBlackListedIPs(lists)
+	l.Debugf("...white list: %d ...", len(wlst))
+	l.Debugf("...black list: %d ...", len(blst))
 
 	return e.router()
 }

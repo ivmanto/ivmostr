@@ -47,10 +47,11 @@ type Session struct {
 	wspool  *ConnectionPool
 	cfg     *config.ServiceConfig
 	repo    nostr.NostrRepo
+	lists   nostr.ListRepo
 }
 
 // NewSession creates a new WebSocket session at the time when the http server Handler WSHandler is created.
-func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConfig, clp *ClientsPool, wspool *ConnectionPool) *Session {
+func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceConfig, clp *ClientsPool, wspool *ConnectionPool) *Session {
 
 	session := Session{
 		Clients: clp,
@@ -59,6 +60,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 		pool:    pool,
 		wspool:  wspool,
 		repo:    repo,
+		lists:   lists,
 		cfg:     cfg,
 		ldg:     NewLedger(),
 	}
@@ -121,7 +123,6 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
 
 	client := s.Clients.Get()
-	//defer s.Clients.Put(client)
 
 	client.Conn = conn
 	client.IP = ip

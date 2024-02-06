@@ -6,10 +6,13 @@ import (
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/fspool"
+	log "github.com/sirupsen/logrus"
+	"google.golang.org/api/iterator"
 )
 
 type listRepo struct {
 	ctx        *context.Context
+	lgr        *log.Logger
 	white_coll string
 	black_coll string
 	clients    *fspool.ConnectionPool
@@ -54,9 +57,43 @@ func (w listRepo) GetWhiteLists(pbks []string) ([]*nostr.WhiteList, error) {
 	return nil, nil
 }
 
+func (w listRepo) GetWLIPS() ([]string, error) {
+
+	var wlips = []string{}
+
+	fsclient, err := w.clients.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+	defer w.clients.ReleaseClient(fsclient)
+
+	query := fsclient.Collection(w.black_coll).Where("IP", "!=", "").Documents(*w.ctx)
+
+	var blr nostr.BlackList
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done {
+				break
+			}
+			w.lgr.Errorf("[GetWLIPS] ERROR raised while reading a doc from the DB: %v", err)
+			continue
+		}
+
+		if err := doc.DataTo(&blr); err != nil {
+			w.lgr.Errorf("[GetWLIPS] ERROR raised while fitting blacklist format: %v", err)
+			continue
+		}
+
+		wlips = append(wlips, blr.IP)
+	}
+	return wlips, nil
+}
+
 func NewListRepository(ctx *context.Context, clients *fspool.ConnectionPool, wlcn, blcn string) (nostr.ListRepo, error) {
 	return &listRepo{
 		ctx:        ctx,
+		lgr:        log.StandardLogger(),
 		white_coll: wlcn,
 		black_coll: blcn,
 		clients:    clients,
@@ -104,4 +141,37 @@ func (b listRepo) GetBlackLists(ips []string) ([]*nostr.BlackList, error) {
 
 	// [ ]: (on demand) implement on demand
 	return nil, nil
+}
+
+func (b listRepo) GetBLIPS() ([]string, error) {
+
+	var blips = []string{}
+
+	fsclient, err := b.clients.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+	defer b.clients.ReleaseClient(fsclient)
+
+	query := fsclient.Collection(b.black_coll).Where("IP", "!=", "").Documents(*b.ctx)
+
+	var blr nostr.BlackList
+	for {
+		doc, err := query.Next()
+		if err != nil {
+			if err == iterator.Done {
+				break
+			}
+			b.lgr.Errorf("[GetBLIPS] ERROR raised while reading a doc from the DB: %v", err)
+			continue
+		}
+
+		if err := doc.DataTo(&blr); err != nil {
+			b.lgr.Errorf("[GetBLIPS] ERROR raised while fitting blacklist format: %v", err)
+			continue
+		}
+
+		blips = append(blips, blr.IP)
+	}
+	return blips, nil
 }

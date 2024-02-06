@@ -10,6 +10,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -46,7 +47,7 @@ func healthcheck(h http.Handler) http.Handler {
 }
 
 // Handles the rate Limit control
-func rateLimiter(lists nostr.ListRepo) func(next http.Handler) http.Handler {
+func rateLimiter(lists nostr.ListRepo, wlst, blst []string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
@@ -86,8 +87,16 @@ func rateLimiter(lists nostr.ListRepo) func(next http.Handler) http.Handler {
 			rc := &ivmws.RequestContext{IP: ip}
 
 			// whitelist IPs
-			if tools.Contains(ips, ip) {
+			wlst = append(wlst, ips...)
+			if tools.Contains(wlst, ip) {
 				next.ServeHTTP(w, r)
+				return
+			}
+
+			// blacklist IPs
+			if tools.Contains(blst, ip) {
+				w.WriteHeader(http.StatusForbidden)
+				fmt.Fprintf(w, "Forbidden")
 				return
 			}
 
@@ -98,12 +107,12 @@ func rateLimiter(lists nostr.ListRepo) func(next http.Handler) http.Handler {
 			rateLimit := ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext).RateLimit
 
 			// Check if the IP address has made too many requests recently
-			if time.Since(rateLimit.Timestamp) < time.Second*1800 {
-				if rateLimit.Requests >= 4 {
+			if time.Since(rateLimit.Timestamp) < time.Minute*180 {
+				if rateLimit.Requests >= 1 {
 					// Block the request
 					w.WriteHeader(http.StatusTooManyRequests)
 					fmt.Fprintf(w, "Too many requests! The ip will be blacklisted!")
-					fmt.Printf("[rateLimiter] Too many requests from IP address %s within 30 seconds.\n", ip)
+					log.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.\n", ip)
 
 					// [ ]: add the ip to the blacklist (once blocking of IPs from the blacklist is implemented)
 					go tools.AddToBlacklist(ip, lists)

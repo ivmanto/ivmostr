@@ -17,7 +17,9 @@ type ListRepo interface {
 	StoreWhiteList(wl *WhiteList) error
 	GetWhiteList(pbk string) (*WhiteList, error)
 	GetWhiteLists(pbks []string) ([]*WhiteList, error)
+	GetWLIPS() ([]string, error)
 	StoreBlackList(bl *BlackList) error
 	GetBlackList(ip string) (*BlackList, error)
 	GetBlackLists(ips []string) ([]*BlackList, error)
+	GetBLIPS() ([]string, error)
 }
