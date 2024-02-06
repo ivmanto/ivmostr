@@ -13,7 +13,9 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
 )
@@ -201,4 +203,16 @@ func ConvertStructToByte(e any) ([]byte, error) {
 
 func GetIPCount() int {
 	return IPCount.Len()
+}
+
+func AddToBlacklist(ip string, lst nostr.ListRepo) {
+	bld := nostr.BlackList{
+		IP:        ip,
+		CreatedAt: time.Now().Unix(),
+		ExpiresAt: time.Now().Add(168 * time.Hour).Unix(),
+	}
+	err := lst.StoreBlackList(&bld)
+	if err != nil {
+		log.Errorf("[srvHandler] error blacklisting ip: %s, Error:%v", ip, err)
+	}
 }

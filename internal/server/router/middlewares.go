@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 	"github.com/dasiyes/ivmostr-tdd/tools"
 )
@@ -45,78 +46,82 @@ func healthcheck(h http.Handler) http.Handler {
 }
 
 // Handles the rate Limit control
-func rateLimiter(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func rateLimiter(lists nostr.ListRepo) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		// Check if the request is a health-check request
-		if r.URL.Path == "/hc" || r.URL.Path == "/metrics" || strings.HasPrefix(r.URL.Path, "/v1/api") {
-			h.ServeHTTP(w, r)
-			return
-		}
-
-		ac := r.Header.Get("Accept")
-		if strings.Contains(ac, "application/nostr+json") {
-			h.ServeHTTP(w, r)
-			return
-		}
-
-		// Check if the request is a websocket request
-		uh := r.Header.Get("Upgrade")
-		ch := r.Header.Get("Connection")
-		//wsp := r.Header.Get("Sec-WebSocket-Protocol")
-
-		if strings.ToLower(uh) != "websocket" && strings.ToLower(ch) != "upgrade" {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "Bad request")
-			return
-		}
-
-		// [ ]: To review later but as of now (20231223) no-one is setting this Header properlly
-		// if !strings.Contains(wsp, "nostr") {
-		// 	w.WriteHeader(http.StatusFailedDependency)
-		// 	fmt.Fprintf(w, "Bad protocol")
-		// 	return
-		// }
-
-		// Get the current timestamp and IP address
-		currentTimestamp := time.Now()
-		ip := tools.GetIP(r)
-		rc := &ivmws.RequestContext{IP: ip}
-
-		// whitelist IPs
-		if tools.Contains(ips, ip) {
-			h.ServeHTTP(w, r)
-			return
-		}
-
-		// Create a new RequestContext
-		ctx := context.WithValue(r.Context(), ivmws.KeyRC("requestContext"), rc)
-
-		// Retrieve the RateLimit for the IP address from the context
-		rateLimit := ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext).RateLimit
-
-		// Check if the IP address has made too many requests recently
-		if time.Since(rateLimit.Timestamp) < time.Second*3 {
-			if rateLimit.Requests >= 2 {
-				// Block the request
-				w.WriteHeader(http.StatusTooManyRequests)
-				fmt.Fprintf(w, "Too many requests! If continue the ip will be blacklisted!")
-				fmt.Printf("[rateLimiter] Too many requests from IP address %s within 30 seconds.\n", ip)
-				// [ ]: add the ip to the blacklist (once blocking of IPs from the blacklist is implemented)
+			// Check if the request is a health-check request
+			if r.URL.Path == "/hc" || r.URL.Path == "/metrics" || strings.HasPrefix(r.URL.Path, "/v1/api") {
+				next.ServeHTTP(w, r)
 				return
+			}
+
+			ac := r.Header.Get("Accept")
+			if strings.Contains(ac, "application/nostr+json") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Check if the request is a websocket request
+			uh := r.Header.Get("Upgrade")
+			ch := r.Header.Get("Connection")
+			//wsp := r.Header.Get("Sec-WebSocket-Protocol")
+
+			if strings.ToLower(uh) != "websocket" && strings.ToLower(ch) != "upgrade" {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "Bad request")
+				return
+			}
+
+			// [ ]: To review later but as of now (20231223) no-one is setting this Header properlly
+			// if !strings.Contains(wsp, "nostr") {
+			// 	w.WriteHeader(http.StatusFailedDependency)
+			// 	fmt.Fprintf(w, "Bad protocol")
+			// 	return
+			// }
+
+			// Get the current timestamp and IP address
+			currentTimestamp := time.Now()
+			ip := tools.GetIP(r)
+			rc := &ivmws.RequestContext{IP: ip}
+
+			// whitelist IPs
+			if tools.Contains(ips, ip) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Create a new RequestContext
+			ctx := context.WithValue(r.Context(), ivmws.KeyRC("requestContext"), rc)
+
+			// Retrieve the RateLimit for the IP address from the context
+			rateLimit := ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext).RateLimit
+
+			// Check if the IP address has made too many requests recently
+			if time.Since(rateLimit.Timestamp) < time.Second*1800 {
+				if rateLimit.Requests >= 4 {
+					// Block the request
+					w.WriteHeader(http.StatusTooManyRequests)
+					fmt.Fprintf(w, "Too many requests! The ip will be blacklisted!")
+					fmt.Printf("[rateLimiter] Too many requests from IP address %s within 30 seconds.\n", ip)
+
+					// [ ]: add the ip to the blacklist (once blocking of IPs from the blacklist is implemented)
+					go tools.AddToBlacklist(ip, lists)
+					return
+				} else {
+					// Update the request count
+					rateLimit.Requests++
+					rateLimit.Timestamp = currentTimestamp
+				}
 			} else {
-				// Update the request count
-				rateLimit.Requests++
+				// Set the initial request count and timestamp for the IP address
+				rateLimit.Requests = 1
 				rateLimit.Timestamp = currentTimestamp
 			}
-		} else {
-			// Set the initial request count and timestamp for the IP address
-			rateLimit.Requests = 1
-			rateLimit.Timestamp = currentTimestamp
-		}
 
-		h.ServeHTTP(w, r)
-	})
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // Handles the IP address control part

@@ -42,8 +42,9 @@ var (
 
 // Constructing web application depenedencies in the format of handler
 type srvHandler struct {
-	repo nostr.NostrRepo
-	cfg  *config.ServiceConfig
+	repo  nostr.NostrRepo
+	lists nostr.ListRepo
+	cfg   *config.ServiceConfig
 	// ... add other dependencies here
 }
 
@@ -55,7 +56,7 @@ func (h *srvHandler) router() chi.Router {
 	rtr.Use(accessControl)
 	rtr.Use(healthcheck)
 	rtr.Use(serverinfo)
-	rtr.Use(rateLimiter)
+	rtr.Use(rateLimiter(h.lists))
 	rtr.Use(controlIPConn)
 
 	// Handle requests to the root URL "/" - nostr websocket connections
@@ -77,11 +78,12 @@ func (h *srvHandler) router() chi.Router {
 }
 
 // Handler to manage endpoints
-func NewHandler(repo nostr.NostrRepo, cfg *config.ServiceConfig) http.Handler {
+func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceConfig) http.Handler {
 
 	e := srvHandler{
-		repo: repo,
-		cfg:  cfg,
+		repo:  repo,
+		lists: lists,
+		cfg:   cfg,
 	}
 
 	l.Printf("...initializing router (http server Handler) ...")

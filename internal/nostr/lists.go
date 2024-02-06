@@ -10,6 +10,7 @@ type BlackList struct {
 	IP        string `json:"ip"`
 	PubKey    string `json:"pub_key"`
 	CreatedAt int64  `json:"created_at"`
+	ExpiresAt int64  `json:"expires_at"`
 }
 
 type ListRepo interface {
