@@ -19,8 +19,6 @@ func main() {
 	var (
 		debug    = flag.Bool("debug", false, "debug mode")
 		vers     = flag.Bool("version", false, "prints version")
-		workers  = flag.Int("workers", 0, "max workers count")
-		queue    = flag.Int("queue", 0, "workers task queue size")
 		cfgfn    = flag.String("config", "configs/config.yaml", "--config=<file_name> configuration file name. Default is configs/config.yaml")
 		newEvent = flag.String("newEvent", "", "prints new event on the console as configured in the tools create-event")
 	)
@@ -47,13 +45,6 @@ func main() {
 		*cfgfn = "../../configs/config_debug.yaml"
 	}
 
-	// initializing the web application as a handler
-	var (
-		// db *sql.DB     = &sql.DB{}
-		pool_max_workers int = 128
-		pool_queue       int = 1
-	)
-
 	// Load the configuration file
 	cfg, err := config.LoadConfig(*cfgfn)
 	if err != nil {
@@ -62,26 +53,14 @@ func main() {
 	}
 
 	// Initialize the websocket go-routine pool. The pool is used to handle the websocket connections
-	// The pool's parameters workers and queue size can be set either in the configuration file or as runtime flags.
-	// The priority is from the most flexible to the most rigid method: ENV_VAR (config file) > runtime flag > default value
-	if cfg.PoolMaxWorkers >= 1 {
-		pool_max_workers = cfg.PoolMaxWorkers
-	} else {
-		if *workers > 0 {
-			pool_max_workers = *workers
-		}
-		// if not set in config file, setting it up for cfg object
-		cfg.PoolMaxWorkers = pool_max_workers
+	// The pool's parameters workers and queue size can be set either in the configuration file or env vars.
+	// Ensure default values
+	if cfg.PoolMaxWorkers < 2 {
+		cfg.PoolMaxWorkers = 128
 	}
 
-	if cfg.PoolQueue > 0 {
-		pool_queue = cfg.PoolQueue
-	} else {
-		if *queue > 0 {
-			pool_queue = *queue
-		}
-		// if not set in config file, setting it up for cfg object
-		cfg.PoolQueue = pool_queue
+	if cfg.PoolQueue < 1 {
+		cfg.PoolQueue = 1
 	}
 
 	// Initialize the nostr repository
@@ -104,13 +83,29 @@ func main() {
 
 	nostrRepo, err := firestoredb.NewNostrRepository(&ctx, fsClientsPool, dlv, ecn)
 	if err != nil {
-		log.Printf("[main] CRITICAL: firestore repository init error %s.\n Exiting now, unable to proceed.", err.Error())
+		log.Errorf("[main] CRITICAL: firestore repository init error %s.\n Exiting now, unable to proceed.", err.Error())
+		panic(err)
+	}
+
+	var wl, bl string
+	if wl = cfg.Firestore.WhiteListCollectionName; wl == "" {
+		wl = "whitelist"
+	}
+
+	if bl = cfg.Firestore.BlackListCollectionName; bl == "" {
+		bl = "blacklist"
+	}
+
+	// Init the list repository
+	lstsRepo, err := firestoredb.NewListRepository(&ctx, fsClientsPool, wl, bl)
+	if err != nil {
+		log.Errorf("[main] CRITICAL: firestore lists repository init error %s.\n Exiting now, unable to proceed.", err.Error())
 		panic(err)
 	}
 
 	// Init a new HTTP server instance
 	httpServer := server.NewInstance()
-	hdlr := router.NewHandler(nostrRepo, cfg)
+	hdlr := router.NewHandler(nostrRepo, lstsRepo, cfg)
 	errs := make(chan error, 2)
 	go func() {
 		addr := ":" + cfg.Port

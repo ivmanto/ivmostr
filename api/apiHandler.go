@@ -24,6 +24,8 @@ func (ah *ApiHandler) Router() chi.Router {
 		// r.Post("/send", rh.home)
 		r.Get("/nip11", ah.serverinfo)
 		r.Get("/ipcount", ah.ipcount)
+		r.Get("/filters", ah.filters)
+		r.Get("/cnrfilters", ah.CNrFilters)
 	})
 
 	return rtr
@@ -41,4 +43,22 @@ func (ah *ApiHandler) ipcount(w http.ResponseWriter, r *http.Request) {
 	ipcount := tools.GetIPCount()
 	ip, max := tools.IPCount.TopIP()
 	_, _ = w.Write([]byte(fmt.Sprintf("{\"Active_IP_Connections\": %v,\"Max_connections_from_[%s]\": %v}", ipcount, ip, max)))
+}
+
+func (ah *ApiHandler) filters(w http.ResponseWriter, r *http.Request) {
+	flt := tools.TAlaf.GetFiltersList()
+	var fltprt string
+	for _, v := range flt {
+		fltprt = fltprt + v + ", \n"
+	}
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"Active_Filters\": %v}", fltprt)))
+}
+
+func (ah *ApiHandler) CNrFilters(w http.ResponseWriter, r *http.Request) {
+	cnrflt := tools.TAlaf.GetDistinctClientsAndNrOfFilters()
+	var cnrfltprt string
+	for key, v := range cnrflt {
+		cnrfltprt = cnrfltprt + key + ": " + fmt.Sprintf("%d ", v) + ", \n"
+	}
+	_, _ = w.Write([]byte(fmt.Sprintf("{\"Nr_of_filters_per_client\": %v}", cnrfltprt)))
 }

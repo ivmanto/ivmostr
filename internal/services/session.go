@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -46,10 +47,11 @@ type Session struct {
 	wspool  *ConnectionPool
 	cfg     *config.ServiceConfig
 	repo    nostr.NostrRepo
+	lists   nostr.ListRepo
 }
 
 // NewSession creates a new WebSocket session at the time when the http server Handler WSHandler is created.
-func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConfig, clp *ClientsPool, wspool *ConnectionPool) *Session {
+func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceConfig, clp *ClientsPool, wspool *ConnectionPool) *Session {
 
 	session := Session{
 		Clients: clp,
@@ -58,13 +60,14 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 		pool:    pool,
 		wspool:  wspool,
 		repo:    repo,
+		lists:   lists,
 		cfg:     cfg,
 		ldg:     NewLedger(),
 	}
 
 	relay_access = cfg.Relay_access
 
-	session.slgr.SetLevel(log.ErrorLevel)
+	session.slgr.SetLevel(log.DebugLevel)
 
 	session.slgr.SetFormatter(&log.JSONFormatter{
 		DisableTimestamp: true,
@@ -87,8 +90,9 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, cfg *config.ServiceConf
 	// * Filters per SubscriptionID
 	go session.Monitor()
 
+	// [x]: Filter match
 	// The filterMatch routine will be addressed by the NewEventBroadcaster
-	// to supply the subscribed customers with the new arriving Events that
+	// to supply the subscribed clients with the new arriving Events that
 	// match the respective clients' filters.
 	go filterMatch()
 
@@ -119,7 +123,6 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
 
 	client := s.Clients.Get()
-	//defer s.Clients.Put(client)
 
 	client.Conn = conn
 	client.IP = ip
@@ -150,9 +153,9 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		client.id = s.seq
 		s.seq++
 		client.name = s.randName()
-		key := fmt.Sprintf("%s:%s", client.name, client.IP)
+		// key := fmt.Sprintf("%s:%s", client.name, client.IP)
 
-		ok, clnt := s.ldg.Add(key, client)
+		ok, clnt := s.ldg.Add(client.IP, client)
 		if !ok {
 			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
 			return nil
@@ -321,7 +324,7 @@ func (s *Session) NewEventBroadcaster() {
 
 	for e := range NewEvent {
 
-		log.Printf(" ...-= starting new event braodcasting =-...")
+		s.slgr.Debugf(" ...-= starting new event braodcasting =-...")
 
 		// 22242 is auth event - not to be stored or published
 		if e.Kind == 22242 {
@@ -367,7 +370,6 @@ func (s *Session) NewEventBroadcaster() {
 
 			// next subscribed client
 			continue
-
 		}
 		// next event from the channel
 		continue
@@ -381,13 +383,36 @@ func (s *Session) SetConfig(cfg *config.ServiceConfig) {
 // Monitor is to run in yet another go-routine and show
 // the session state in terms of clients and their activities.
 func (s *Session) Monitor() {
+
 	for {
 		select {
 		case <-monitorTicker.C:
-			s.slgr.Println("... ================ ...")
-			go s.sessionState()
-			go getMaxConnIP()
-			s.slgr.Println("... running session state ...")
+			s.slgr.Infof("... ================ ...")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+			go func(ctx context.Context) {
+				select {
+				case <-ctx.Done():
+					s.slgr.Debugf("[Monitor] Gracefully shutting down session state.")
+					return
+				default:
+					s.sessionState()
+					cancel()
+				}
+			}(ctx)
+			go func(ctx context.Context) {
+				select {
+				case <-ctx.Done():
+					s.slgr.Debugf("[Monitor] Gracefully shutting down maxConnIP.")
+					return
+				default:
+					getMaxConnIP()
+					cancel()
+				}
+			}(ctx)
+
+			s.slgr.Infof("... running session state ...")
 		case <-monitorClose:
 			break
 		}
@@ -397,7 +422,10 @@ func (s *Session) Monitor() {
 // sessionState will get the list of registred clients with their attributes
 func (s *Session) sessionState() {
 
-	clnt_count := 0
+	var (
+		clnt_count = 0
+		laf        = make(map[string]interface{})
+	)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -419,6 +447,8 @@ func (s *Session) sessionState() {
 			continue
 		}
 
+		laf[key] = client.GetFilters()
+
 		s.slgr.WithFields(log.Fields{
 			"clientID":   client.id,
 			"clientName": client.name,
@@ -429,6 +459,8 @@ func (s *Session) sessionState() {
 		clnt_count++
 		continue
 	}
+
+	tools.PullLAF(laf)
 
 	s.slgr.Infof("[session state] total consistant clients:%v", clnt_count)
 	s.slgr.Info("... session state complete ...")

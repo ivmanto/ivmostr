@@ -25,25 +25,34 @@ SOFTWARE.
 package router
 
 import (
+	"context"
 	"net/http"
+	"sync"
 
 	"github.com/dasiyes/ivmostr-tdd/api"
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
+	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 )
 
 var (
-	l = log.New()
+	l          = log.New()
+	wlst, blst []string
 )
 
 // Constructing web application depenedencies in the format of handler
 type srvHandler struct {
-	repo nostr.NostrRepo
-	cfg  *config.ServiceConfig
+	repo   nostr.NostrRepo
+	lists  nostr.ListRepo
+	reqctx *ivmws.RequestContext
+	ctx    context.Context
+	cfg    *config.ServiceConfig
+	mtx    sync.Mutex
+	rllgr  *log.Logger
 	// ... add other dependencies here
 }
 
@@ -51,16 +60,22 @@ func (h *srvHandler) router() chi.Router {
 
 	rtr := chi.NewRouter()
 
+	h.rllgr = log.New()
+	h.rllgr.Level = log.ErrorLevel
+
 	// Building middleware chain
 	rtr.Use(accessControl)
+	// healthcheck and serverinfo, both should stay before rateLimiter
 	rtr.Use(healthcheck)
 	rtr.Use(serverinfo)
-	rtr.Use(rateLimiter)
-	rtr.Use(controlIPConn)
+
+	// rate Limiter is intended to apply to WebSocket requests
+	// addressed at root path `/`.
+	rtr.Use(rateLimiter(h))
 
 	// Handle requests to the root URL "/" - nostr websocket connections
 	rtr.Route("/", func(wr chi.Router) {
-		ws := ivmws.NewWSHandler(h.repo, h.cfg)
+		ws := ivmws.NewWSHandler(h.repo, h.lists, h.cfg, &wlst, &blst)
 		wr.Mount("/", ws.Router())
 	})
 
@@ -77,14 +92,35 @@ func (h *srvHandler) router() chi.Router {
 }
 
 // Handler to manage endpoints
-func NewHandler(repo nostr.NostrRepo, cfg *config.ServiceConfig) http.Handler {
+func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceConfig) http.Handler {
+
+	var (
+		// New persistent storage for request context values
+		rc = ivmws.RequestContext{
+			WSConns:           make(map[string]*ivmws.RateLimit),
+			RateLimitMax:      cfg.RateLimitMax,
+			RateLimitDuration: cfg.RateLimitDuration,
+		}
+
+		// Create a new RequestContext
+		ctx = context.WithValue(context.Background(), ivmws.KeyRC("requestContext"), &rc)
+	)
 
 	e := srvHandler{
-		repo: repo,
-		cfg:  cfg,
+		repo:   repo,
+		lists:  lists,
+		reqctx: &rc,
+		ctx:    ctx,
+		cfg:    cfg,
+		mtx:    sync.Mutex{},
 	}
 
 	l.Printf("...initializing router (http server Handler) ...")
+
+	wlst = tools.GetWhiteListedIPs(lists)
+	blst = tools.GetBlackListedIPs(lists)
+	l.Debugf("...white list: %d ...", len(wlst))
+	l.Debugf("...black list: %d ...", len(blst))
 
 	return e.router()
 }

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -149,7 +150,7 @@ func initCloudLogger(project_id, log_name string) *logging.Logger {
 func filterMatch() {
 
 	var fmlgr = log.New()
-	fmlgr.SetLevel(log.ErrorLevel)
+	fmlgr.SetLevel(log.DebugLevel)
 	fmlgr.Debug("... Spining up filterMatch ...")
 
 	for pair := range chEM {
@@ -160,8 +161,19 @@ func filterMatch() {
 
 		for _, filter := range filters {
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
-			go filterMatchSingle(pair.event, pair.client, filter)
 
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+			go func(ctx context.Context, event *gn.Event, client *Client, filter map[string]interface{}) {
+				select {
+				case <-ctx.Done():
+					fmlgr.Debugf("[filterMatch] Gracefully shutting down")
+					return
+				default:
+					filterMatchSingle(event, client, filter)
+					cancel()
+				}
+			}(ctx, pair.event, pair.client, filter)
 		}
 	}
 }
@@ -412,8 +424,9 @@ func validateAIEP(array []interface{}) bool {
 		if !ok {
 			_item = fmt.Sprintf("%v", item)
 		}
-		_, errhx := strconv.ParseUint(_item, 16, 64)
-		if len(_item) != 64 && errhx != nil {
+
+		_, errhx := hex.DecodeString(_item)
+		if len(_item) != 64 || errhx != nil {
 			return false
 		}
 	}

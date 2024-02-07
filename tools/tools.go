@@ -13,90 +13,13 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
+	"time"
 
+	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
 )
 
-var (
-	IPCount *ipCount
-)
-
-func init() {
-	IPCount = NewIPCount()
-}
-
-type ipCount struct {
-	ipcount    map[string]int
-	ipTtlCount map[string]int
-	mutex      *sync.Mutex
-}
-
-func (i *ipCount) Add(ip string) {
-	i.mutex.Lock()
-	i.ipcount[ip]++
-	i.ipTtlCount[ip]++
-	i.mutex.Unlock()
-}
-
-// ipcount keeps only the ACTIVE connected clients
-func (i *ipCount) Remove(ip string) {
-	i.mutex.Lock()
-	i.ipcount[ip]--
-	if i.ipcount[ip] < 1 {
-		delete(i.ipcount, ip)
-	}
-	i.mutex.Unlock()
-}
-
-// Returns the number of total active connected clients
-func (i *ipCount) Len() int {
-	return len(i.ipcount)
-}
-
-// Returns the total active connections from an IP.
-func (i *ipCount) IPConns(ip string) int {
-	i.mutex.Lock()
-	defer i.mutex.Unlock()
-	return i.ipcount[ip]
-}
-
-// Returns the number of total connections made from the IP (since the service restart)
-func (i *ipCount) IPConnsTotal(ip string) int {
-	i.mutex.Lock()
-	defer i.mutex.Unlock()
-	return i.ipTtlCount[ip]
-}
-
-// Returns the number of Total distinct ip connections ()
-func (i *ipCount) TotalConns() int {
-	i.mutex.Lock()
-	defer i.mutex.Unlock()
-	return len(i.ipTtlCount)
-}
-
-// Top demanding (in terms of number of connections) client's IP
-func (i *ipCount) TopIP() (ip string, max int) {
-	i.mutex.Lock()
-	defer i.mutex.Unlock()
-
-	for k, v := range i.ipTtlCount {
-		if v > max {
-			max = v
-			ip = k
-		}
-	}
-	return ip, max
-}
-
-func NewIPCount() *ipCount {
-	return &ipCount{
-		ipcount:    make(map[string]int),
-		ipTtlCount: make(map[string]int),
-		mutex:      &sync.Mutex{},
-	}
-}
 func scientificNotationToUInt(scientificNotation string) (uint, error) {
 	flt, _, err := big.ParseFloat(scientificNotation, 10, 0, big.ToNearestEven)
 	if err != nil {
@@ -280,4 +203,36 @@ func ConvertStructToByte(e any) ([]byte, error) {
 
 func GetIPCount() int {
 	return IPCount.Len()
+}
+
+func AddToBlacklist(ip string, lst nostr.ListRepo) {
+	bld := nostr.BlackList{
+		IP:        ip,
+		CreatedAt: time.Now().Unix(),
+		ExpiresAt: time.Now().Add(168 * time.Hour).Unix(),
+	}
+	err := lst.StoreBlackList(&bld)
+	if err != nil {
+		log.Errorf("[srvHandler] error blacklisting ip: %s, Error:%v", ip, err)
+	}
+}
+
+func GetBlackListedIPs(lst nostr.ListRepo) []string {
+
+	ipl, err := lst.GetBLIPS()
+	if err != nil {
+		log.Error("[GetBlackListedIPs] error getting blacklisted ips: ", err)
+	}
+	log.Debugf("[GetBlackListedIPs] black list %v", ipl)
+	return ipl
+}
+
+func GetWhiteListedIPs(lst nostr.ListRepo) []string {
+
+	ipl, err := lst.GetWLIPS()
+	if err != nil {
+		log.Error("[GetWhiteListedIPs] error getting whitelisted ips: ", err)
+	}
+	log.Debugf("[GetWhiteListedIPs] black list %v", ipl)
+	return ipl
 }

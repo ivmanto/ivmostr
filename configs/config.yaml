@@ -26,6 +26,10 @@ trusted_origins:
   - "flycat.club"
   - "nostr"
 cloud_logging_enabled: true
+# Max number of WS connection from an IP allowed per `rate_limit_duration`, before the IP is blocked
+rate_limit_max: 5
+# Duration of the rate limit in seconds before the counter is reset.
+rate_limit_duration: 900
 firestore:
   project_id: ${FIRESTORE_PROJECT_ID}
   # set the default value for missing limit value - the max number of events 
