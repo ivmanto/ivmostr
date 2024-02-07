@@ -47,11 +47,12 @@ func healthcheck(h http.Handler) http.Handler {
 }
 
 // Handles the rate Limit control
-func rateLimiter(lists nostr.ListRepo, wlst, blst []string) func(h http.Handler) http.Handler {
+func rateLimiter(lists nostr.ListRepo, wlst, blst []string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 			rllgr := log.New()
+			rllgr.Level = log.DebugLevel
 			rllgr.Debugf("[rateLimiter] running ...")
 
 			// Check if the request is a health-check request
