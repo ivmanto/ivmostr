@@ -239,6 +239,16 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 			}
 		}
 
+	// [x]: kinds && since && until
+	case fcKindsSinceUntil:
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				if e.CreatedAt >= filterState.since && e.CreatedAt <= filterState.until {
+					goto RESULT
+				}
+			}
+		}
+
 	// [x]: since
 	case fcSince:
 		if e.CreatedAt >= filterState.since {
@@ -248,6 +258,12 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 	// [x]: until
 	case fcUntil:
 		if e.CreatedAt <= filterState.until {
+			goto RESULT
+		}
+
+	// [x]: since & until
+	case fcSinceUntil:
+		if e.CreatedAt >= filterState.since && e.CreatedAt <= filterState.until {
 			goto RESULT
 		}
 
@@ -298,6 +314,29 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 			return
 		}
 
+	// [x]: authors && kinds && since
+	case fcAuthorsKindsSince:
+		var kr, ar bool
+
+		for _, author := range filter["authors"].([]interface{}) {
+			if author.(string) == e.PubKey {
+				ar = true
+				break
+			}
+		}
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				kr = true
+				break
+			}
+		}
+
+		if (e.CreatedAt > filterState.since) && kr && ar {
+			goto RESULT
+		} else {
+			return
+		}
+
 	// [x]: kinds && tags
 	case fcKindsTags:
 		var kr, tr bool
@@ -329,6 +368,42 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 			}
 		}
 		if kr && tr {
+			goto RESULT
+		} else {
+			return
+		}
+
+	// [ ]: kinds && tags && SINCE
+	case fcKindsTagsSince:
+		var kr, tr bool
+
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				kr = true
+				break
+			}
+		}
+
+		for tkey, tval := range filter {
+			switch tkey {
+			case "#e":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.ID {
+						tr = true
+						break
+					}
+				}
+			case "#p":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.PubKey {
+						tr = true
+					}
+				}
+			default:
+				continue
+			}
+		}
+		if e.CreatedAt > filterState.since && kr && tr {
 			goto RESULT
 		} else {
 			return
