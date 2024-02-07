@@ -51,8 +51,10 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string) func(next http.Handl
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
+			rllgr := log.New()
+
 			// Check if the request is a health-check request
-			if r.URL.Path == "/hc" || r.URL.Path == "/metrics" || strings.HasPrefix(r.URL.Path, "/v1/api") {
+			if r.URL.Path == "/metrics" || strings.HasPrefix(r.URL.Path, "/v1/api") {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -110,12 +112,12 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string) func(next http.Handl
 			if time.Since(rateLimit.Timestamp) < time.Minute*180 {
 				if rateLimit.Requests >= 1 {
 					// Block the request
+					rllgr.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.\n", ip)
+					go tools.AddToBlacklist(ip, lists)
+
 					w.WriteHeader(http.StatusTooManyRequests)
 					fmt.Fprintf(w, "Too many requests! The ip will be blacklisted!")
-					log.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.\n", ip)
 
-					// [ ]: add the ip to the blacklist (once blocking of IPs from the blacklist is implemented)
-					go tools.AddToBlacklist(ip, lists)
 					return
 				} else {
 					// Update the request count
