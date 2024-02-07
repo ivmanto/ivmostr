@@ -54,11 +54,14 @@ func (h *srvHandler) router() chi.Router {
 
 	rtr := chi.NewRouter()
 
+	rllgr := log.New()
+	rllgr.Level = log.DebugLevel
+
 	// Building middleware chain
 	rtr.Use(accessControl)
 	rtr.Use(healthcheck)
 	rtr.Use(serverinfo)
-	rtr.Use(rateLimiter(h.lists, wlst, blst))
+	rtr.Use(rateLimiter(h.lists, wlst, blst, rllgr))
 	rtr.Use(controlIPConn)
 
 	// Handle requests to the root URL "/" - nostr websocket connections
