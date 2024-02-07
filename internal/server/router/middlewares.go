@@ -106,7 +106,15 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 				fmt.Fprintf(w, "Internal Server Error")
 				return
 			}
+
 			rateLimit := reqContext.WSConns[ip]
+			if rateLimit == nil {
+				reqContext.WSConns[ip] = &ivmws.RateLimit{
+					Requests:  0,
+					Timestamp: currentTimestamp,
+				}
+				rateLimit = reqContext.WSConns[ip]
+			}
 
 			// Check if the IP address has made too many requests recently
 			if time.Since(rateLimit.Timestamp) < time.Second*time.Duration(reqContext.RateLimitDuration) {
