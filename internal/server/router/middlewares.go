@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	ips = []string{"188.193.116.7", "109.43.33.44"}
+	ips = []string{"188.193.116.7", "109.43.33.44", "109.43.33.2"}
 )
 
 // Handles the CORS part
@@ -123,7 +123,7 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 			if time.Since(rateLimit.Timestamp) < time.Second*time.Duration(reqContext.RateLimitDuration) {
 				if rateLimit.Requests >= reqContext.RateLimitMax {
 					// Block the request
-					h.rllgr.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.\n", ip)
+					h.rllgr.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.", ip)
 					go tools.AddToBlacklist(ip, h.lists)
 
 					w.WriteHeader(http.StatusTooManyRequests)

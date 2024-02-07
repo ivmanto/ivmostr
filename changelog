@@ -1,3 +1,10 @@
+v0.0.20
+        - middleware optimization
+        -rate Limiter refactoring
+        
+v0.0.12
+        - refactoring and reengineering the new events broadcasting and Filter Match logic
+
 v0.0.11
         - stble running over more than 24 hours
         - multiple websocket connections possible from the same client. Presume the previous connection(s) has died and will be cleaned up.

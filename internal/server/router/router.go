@@ -61,7 +61,7 @@ func (h *srvHandler) router() chi.Router {
 	rtr := chi.NewRouter()
 
 	h.rllgr = log.New()
-	h.rllgr.Level = log.DebugLevel
+	h.rllgr.Level = log.ErrorLevel
 
 	// Building middleware chain
 	rtr.Use(accessControl)
