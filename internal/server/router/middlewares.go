@@ -52,6 +52,7 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string) func(next http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 			rllgr := log.New()
+			rllgr.Debugf("[rateLimiter] running ...")
 
 			// Check if the request is a health-check request
 			if r.URL.Path == "/metrics" || strings.HasPrefix(r.URL.Path, "/v1/api") {
@@ -116,7 +117,7 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string) func(next http.Handl
 					go tools.AddToBlacklist(ip, lists)
 
 					w.WriteHeader(http.StatusTooManyRequests)
-					fmt.Fprintf(w, "Too many requests! The ip will be blacklisted!")
+					fmt.Fprintf(w, "TooManyRequests")
 
 					return
 				} else {
