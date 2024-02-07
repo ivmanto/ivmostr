@@ -23,7 +23,7 @@ func (w listRepo) StoreWhiteList(wl *nostr.WhiteList) error {
 	if err != nil {
 		return fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-	defer w.clients.ReleaseClient(fsclient)
+	//defer w.clients.ReleaseClient(fsclient)
 
 	if _, err := fsclient.Collection(w.white_coll).Doc(wl.PubKey).Create(*w.ctx, wl); err != nil {
 		return fmt.Errorf("unable to save whitelist repository. error: %v", err)
@@ -108,7 +108,7 @@ func (b listRepo) StoreBlackList(bl *nostr.BlackList) error {
 	if err != nil {
 		return fmt.Errorf("unable to get firestore client. error: %v", err)
 	}
-	defer b.clients.ReleaseClient(fsclient)
+	//defer b.clients.ReleaseClient(fsclient)
 
 	if _, err := fsclient.Collection(b.black_coll).Doc(bl.IP).Set(*b.ctx, bl); err != nil {
 		return fmt.Errorf("unable to save blacklist repository. error: %v", err)
