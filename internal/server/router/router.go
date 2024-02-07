@@ -97,6 +97,7 @@ func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceC
 	var (
 		// New persistent storage for request context values
 		rc = ivmws.RequestContext{
+			WSConns:           make(map[string]*ivmws.RateLimit),
 			RateLimitMax:      cfg.RateLimitMax,
 			RateLimitDuration: cfg.RateLimitDuration,
 		}
