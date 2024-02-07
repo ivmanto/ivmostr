@@ -25,7 +25,9 @@ SOFTWARE.
 package router
 
 import (
+	"context"
 	"net/http"
+	"sync"
 
 	"github.com/dasiyes/ivmostr-tdd/api"
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
@@ -44,9 +46,13 @@ var (
 
 // Constructing web application depenedencies in the format of handler
 type srvHandler struct {
-	repo  nostr.NostrRepo
-	lists nostr.ListRepo
-	cfg   *config.ServiceConfig
+	repo   nostr.NostrRepo
+	lists  nostr.ListRepo
+	reqctx *ivmws.RequestContext
+	ctx    context.Context
+	cfg    *config.ServiceConfig
+	mtx    sync.Mutex
+	rllgr  *log.Logger
 	// ... add other dependencies here
 }
 
@@ -54,15 +60,18 @@ func (h *srvHandler) router() chi.Router {
 
 	rtr := chi.NewRouter()
 
-	rllgr := log.New()
-	rllgr.Level = log.DebugLevel
+	h.rllgr = log.New()
+	h.rllgr.Level = log.DebugLevel
 
 	// Building middleware chain
 	rtr.Use(accessControl)
+	// healthcheck and serverinfo, both should stay before rateLimiter
 	rtr.Use(healthcheck)
 	rtr.Use(serverinfo)
-	rtr.Use(rateLimiter(h.lists, wlst, blst, rllgr))
-	rtr.Use(controlIPConn)
+
+	// rate Limiter is intended to apply to WebSocket requests
+	// addressed at root path `/`.
+	rtr.Use(rateLimiter(h))
 
 	// Handle requests to the root URL "/" - nostr websocket connections
 	rtr.Route("/", func(wr chi.Router) {
@@ -85,11 +94,26 @@ func (h *srvHandler) router() chi.Router {
 // Handler to manage endpoints
 func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceConfig) http.Handler {
 
+	var (
+		// New persistent storage for request context values
+		rc = ivmws.RequestContext{
+			RateLimitMax:      cfg.RateLimitMax,
+			RateLimitDuration: cfg.RateLimitDuration,
+		}
+
+		// Create a new RequestContext
+		ctx = context.WithValue(context.Background(), ivmws.KeyRC("requestContext"), rc)
+	)
+
 	e := srvHandler{
-		repo:  repo,
-		lists: lists,
-		cfg:   cfg,
+		repo:   repo,
+		lists:  lists,
+		reqctx: &rc,
+		ctx:    ctx,
+		cfg:    cfg,
+		mtx:    sync.Mutex{},
 	}
+
 	l.Printf("...initializing router (http server Handler) ...")
 
 	wlst = tools.GetWhiteListedIPs(lists)

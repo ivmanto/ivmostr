@@ -14,6 +14,8 @@ type ServiceConfig struct {
 	CloudLoggingEnabled bool     `yaml:"cloud_logging_enabled"`
 	TrustedOrigins      []string `yaml:"trusted_origins"`
 	Firestore           *firestore
+	RateLimitMax        int `yaml:"rate_limit_max"`
+	RateLimitDuration   int `yaml:"rate_limit_duration"`
 }
 
 type firestore struct {

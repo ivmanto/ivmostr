@@ -1,16 +1,13 @@
 package router
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 	"github.com/dasiyes/ivmostr-tdd/tools"
-	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -47,20 +44,13 @@ func healthcheck(h http.Handler) http.Handler {
 }
 
 // Handles the rate Limit control
-func rateLimiter(lists nostr.ListRepo, wlst, blst []string, rllgr *log.Logger) func(next http.Handler) http.Handler {
+func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-			rllgr.Debugf("[rateLimiter] running ...")
-
-			// Check if the request is a health-check request
-			if r.URL.Path == "/metrics" || strings.HasPrefix(r.URL.Path, "/v1/api") {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			ac := r.Header.Get("Accept")
-			if strings.Contains(ac, "application/nostr+json") {
+			// Check if the request is for any other Path but root
+			// and skip further RateLimit check for them
+			if r.URL.Path != "/" {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -76,7 +66,7 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string, rllgr *log.Logger) f
 				return
 			}
 
-			// [ ]: To review later but as of now (20231223) no-one is setting this Header properlly
+			// TODO: To review later but as of now (20231223) no-one is setting this Header properlly
 			// if !strings.Contains(wsp, "nostr") {
 			// 	w.WriteHeader(http.StatusFailedDependency)
 			// 	fmt.Fprintf(w, "Bad protocol")
@@ -86,11 +76,17 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string, rllgr *log.Logger) f
 			// Get the current timestamp and IP address
 			currentTimestamp := time.Now()
 			ip := tools.GetIP(r)
-			rc := &ivmws.RequestContext{IP: ip, RateLimit: ivmws.RateLimit{Timestamp: currentTimestamp}}
 
 			// whitelist IPs
 			wlst = append(wlst, ips...)
 			if tools.Contains(wlst, ip) {
+				// [!]POLICY: No more than X (5?) total active connections
+				// for WHITELISTED clients.
+				if tools.IPCount.IPConns(ip) >= 5 {
+					h.rllgr.Debugf("[rateLimiter] Too many connections from whitelisted IP address %s.", ip)
+					http.Error(w, "Too many requests", http.StatusTooManyRequests)
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -102,18 +98,22 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string, rllgr *log.Logger) f
 				return
 			}
 
-			// Create a new RequestContext
-			ctx := context.WithValue(r.Context(), ivmws.KeyRC("requestContext"), rc)
-
 			// Retrieve the RateLimit for the IP address from the context
-			rateLimit := ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext).RateLimit
+			reqContext, ok := h.ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext)
+			if !ok {
+				h.rllgr.Errorf("[rateLimiter] Failed to retrieve RateLimit from context.\n")
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "Internal Server Error")
+				return
+			}
+			rateLimit := reqContext.WSConns[ip]
 
 			// Check if the IP address has made too many requests recently
-			if time.Since(rateLimit.Timestamp) < time.Second*900 {
-				if rateLimit.Requests >= 1 {
+			if time.Since(rateLimit.Timestamp) < time.Second*time.Duration(reqContext.RateLimitDuration) {
+				if rateLimit.Requests >= reqContext.RateLimitMax {
 					// Block the request
-					rllgr.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.\n", ip)
-					go tools.AddToBlacklist(ip, lists)
+					h.rllgr.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.\n", ip)
+					go tools.AddToBlacklist(ip, h.lists)
 
 					w.WriteHeader(http.StatusTooManyRequests)
 					fmt.Fprintf(w, "TooManyRequests")
@@ -123,46 +123,18 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string, rllgr *log.Logger) f
 					// Update the request count
 					rateLimit.Requests++
 					rateLimit.Timestamp = currentTimestamp
-					rllgr.Debugf("[rateLimiter] IP address %s made %d requests until %v.\n", ip, rateLimit.Requests, rateLimit.Timestamp)
+					h.rllgr.Debugf("[rateLimiter] IP address %s made %d requests until %v.\n", ip, rateLimit.Requests, rateLimit.Timestamp)
 				}
 			} else {
 				// Set the initial request count and timestamp for the IP address
 				rateLimit.Requests = 1
 				rateLimit.Timestamp = currentTimestamp
-				rllgr.Debugf("[rateLimiter] IP address %s reset requests to 1 at %v.\n", ip, rateLimit.Timestamp)
+				h.rllgr.Debugf("[rateLimiter] IP address %s reset requests to 1 at %v.\n", ip, rateLimit.Timestamp)
 			}
 
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// Handles the IP address control part
-func controlIPConn(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		if r.URL.Path == "/hc" || r.URL.Path == "/metrics" {
-			h.ServeHTTP(w, r)
-			return
-		}
-
-		ip := tools.GetIP(r)
-
-		// whitelist IPs
-		if tools.Contains(ips, ip) {
-			h.ServeHTTP(w, r)
-			return
-		}
-
-		if tools.IPCount.IPConns(ip) > 3 {
-			// fmt.Printf(
-			// 	"[MW-ipc] Too many requests [%d] from %s, headers [upgrade %v, accept %v, sec-ws-p %v], req URL [%v]\n", tools.IPCount[ip], ip, r.Header.Get("Upgrade"), r.Header.Get("Accept"), r.Header.Get("Sec-WebSocket-Protocol"), r.URL)
-			http.Error(w, "Too many requests", http.StatusTooManyRequests)
-			return
-		}
-
-		h.ServeHTTP(w, r)
-	})
 }
 
 // Handle ServerInfo requests
