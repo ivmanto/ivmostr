@@ -86,7 +86,7 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string, rllgr *log.Logger) f
 			// Get the current timestamp and IP address
 			currentTimestamp := time.Now()
 			ip := tools.GetIP(r)
-			rc := &ivmws.RequestContext{IP: ip}
+			rc := &ivmws.RequestContext{IP: ip, RateLimit: ivmws.RateLimit{Timestamp: currentTimestamp}}
 
 			// whitelist IPs
 			wlst = append(wlst, ips...)
@@ -109,7 +109,7 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string, rllgr *log.Logger) f
 			rateLimit := ctx.Value(ivmws.KeyRC("requestContext")).(*ivmws.RequestContext).RateLimit
 
 			// Check if the IP address has made too many requests recently
-			if time.Since(rateLimit.Timestamp) < time.Minute*180 {
+			if time.Since(rateLimit.Timestamp) < time.Second*900 {
 				if rateLimit.Requests >= 1 {
 					// Block the request
 					rllgr.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.\n", ip)
