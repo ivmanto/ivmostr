@@ -108,12 +108,13 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 			}
 
 			rateLimit := reqContext.WSConns[ip]
+
 			if rateLimit == nil {
-				reqContext.WSConns[ip] = &ivmws.RateLimit{
+				rateLimit = &ivmws.RateLimit{
 					Requests:  0,
-					Timestamp: currentTimestamp,
+					Timestamp: time.Now(),
 				}
-				rateLimit = reqContext.WSConns[ip]
+				reqContext.WSConns[ip] = rateLimit
 			}
 
 			// Check if the IP address has made too many requests recently
