@@ -118,6 +118,8 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 			}
 
 			// Check if the IP address has made too many requests recently
+			h.rllgr.Debugf("[rateLimiter] IP address %s since:[%v] and RateLimitDuration:[%v]", ip, time.Since(rateLimit.Timestamp), time.Second*time.Duration(reqContext.RateLimitDuration))
+
 			if time.Since(rateLimit.Timestamp) < time.Second*time.Duration(reqContext.RateLimitDuration) {
 				if rateLimit.Requests >= reqContext.RateLimitMax {
 					// Block the request
