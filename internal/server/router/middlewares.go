@@ -123,11 +123,13 @@ func rateLimiter(lists nostr.ListRepo, wlst, blst []string, rllgr *log.Logger) f
 					// Update the request count
 					rateLimit.Requests++
 					rateLimit.Timestamp = currentTimestamp
+					rllgr.Debugf("[rateLimiter] IP address %s made %d requests until %v.\n", ip, rateLimit.Requests, rateLimit.Timestamp)
 				}
 			} else {
 				// Set the initial request count and timestamp for the IP address
 				rateLimit.Requests = 1
 				rateLimit.Timestamp = currentTimestamp
+				rllgr.Debugf("[rateLimiter] IP address %s reset requests to 1 at %v.\n", ip, rateLimit.Timestamp)
 			}
 
 			next.ServeHTTP(w, r)
