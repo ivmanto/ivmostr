@@ -102,7 +102,7 @@ func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceC
 		}
 
 		// Create a new RequestContext
-		ctx = context.WithValue(context.Background(), ivmws.KeyRC("requestContext"), rc)
+		ctx = context.WithValue(context.Background(), ivmws.KeyRC("requestContext"), &rc)
 	)
 
 	e := srvHandler{
