@@ -43,6 +43,7 @@ func healthcheck(h http.Handler) http.Handler {
 	})
 }
 
+// [ ]: Refactor the rateLimiter to use sync.Map - see the file _my_files/sync.Map-rateLimiter.md
 // Handles the rate Limit control
 func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -132,14 +133,20 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 					return
 				} else {
 					// Update the request count
+					h.mtx.Lock()
 					rateLimit.Requests++
 					rateLimit.Timestamp = currentTimestamp
+					h.mtx.Unlock()
+
 					h.rllgr.Debugf("[rateLimiter] IP address %s made %d requests until %v.\n", ip, rateLimit.Requests, rateLimit.Timestamp)
 				}
 			} else {
 				// Set the initial request count and timestamp for the IP address
+				h.mtx.Lock()
 				rateLimit.Requests = 1
 				rateLimit.Timestamp = currentTimestamp
+				h.mtx.Unlock()
+
 				h.rllgr.Debugf("[rateLimiter] IP address %s reset requests to 1 at %v.\n", ip, rateLimit.Timestamp)
 			}
 

@@ -164,16 +164,16 @@ func filterMatch() {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
-			go func(ctx context.Context, event *gn.Event, client *Client, filter map[string]interface{}) {
+			go func(ctx context.Context, event *gn.Event, client *Client, filter map[string]interface{}, lgr *log.Logger) {
 				select {
 				case <-ctx.Done():
 					fmlgr.Debugf("[filterMatch] Gracefully shutting down")
 					return
 				default:
-					filterMatchSingle(event, client, filter)
+					filterMatchSingle(event, client, filter, fmlgr)
 					cancel()
 				}
-			}(ctx, pair.event, pair.client, filter)
+			}(ctx, pair.event, pair.client, filter, fmlgr)
 		}
 	}
 }
@@ -195,7 +195,7 @@ func filterMatch() {
 // The limit property of a filter is only valid for the initial query and MUST be ignored afterwards. When limit: n is present it is assumed that the events returned in the initial query will be the last n events ordered by the created_at. It is safe to return less events than limit specifies, but it is expected that relays do not return (much) more events than requested so clients don't get unnecessarily overwhelmed by data.
 
 // filterMatchSingle verfies if an Event `e` attributes match a specific subscription filter values.
-func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{}) {
+func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{}, lgr *log.Logger) {
 
 	//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
 	//{
@@ -410,7 +410,7 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 		}
 
 	default:
-		log.Debugf("*** Filter combination [%v] not implemented", filter)
+		lgr.Debugf("*** Filter combination [%v] not implemented", filter)
 		return
 	}
 
