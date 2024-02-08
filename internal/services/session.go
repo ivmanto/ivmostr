@@ -114,7 +114,7 @@ func (s *Session) IsRegistered(ip string) bool {
 }
 
 // Register upgraded websocket connection as client in the sessions
-func (s *Session) Register(conn *Connection, ip string) *Client {
+func (s *Session) Register(conn *Connection, ip string, wlstd bool) *Client {
 
 	// register the clients IP in the ip-counter
 	tools.IPCount.Add(ip)
@@ -153,13 +153,23 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		client.id = s.seq
 		s.seq++
 		client.name = s.randName()
-		// key := fmt.Sprintf("%s:%s", client.name, client.IP)
 
-		ok, clnt := s.ldg.Add(client.IP, client)
-		if !ok {
-			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
-			return nil
+		var (
+			clnt *Client
+			ok   bool
+		)
+
+		if wlstd {
+			key := fmt.Sprintf("%s:%s", client.name, client.IP)
+			_, clnt = s.ldg.Add(key, client)
+		} else {
+			ok, clnt = s.ldg.Add(client.IP, client)
+			if !ok {
+				s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
+				return nil
+			}
 		}
+
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
 	}
 

@@ -148,7 +148,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	conn := wspool.Get()
 	conn.WS = uc
 
-	client := session.Register(conn, ip)
+	client := session.Register(conn, ip, wlstd)
 	if client == nil {
 		return
 	}
