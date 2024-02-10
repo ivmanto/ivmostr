@@ -355,8 +355,9 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		return err
 	}
+
 	// Update metrics tracking channel for stored events
-	metrics.ChStoreEvent <- 1
+	metrics.MetricsChan <- map[string]int{"evntStored": 1}
 
 	// The customer name is required in NewEventBroadcaster method in order to skip the broadcast process for the customer that brought the event on the relay.
 	e.SetExtra("id", float64(c.id))
@@ -427,8 +428,8 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
-		metrics.ChUpdateSubscription <- 1
-		metrics.ChNrOfSubsFilters <- len(msgfilters)
+		metrics.MetricsChan <- map[string]int{"clntUpdatedSubscriptions": 1}
+		metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": len(msgfilters)}
 
 		err := c.SubscriptionSuplier()
 		if err != nil {
@@ -443,8 +444,8 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 	log.Printf("NEW: subscription id: %s from [%s] with filter %v", c.Subscription_id, c.IP, msgfilters)
-	metrics.ChNewSubscription <- 1
-	metrics.ChNrOfSubsFilters <- len(c.Filetrs)
+	metrics.MetricsChan <- map[string]int{"clntSubscriptions": 1}
+	metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": len(c.Filetrs)}
 
 	err := c.SubscriptionSuplier()
 	if err != nil {
@@ -987,6 +988,8 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		// sending []Events array as bytes to the writeT channel
 		c.wrchrr = time.Now().UnixMilli()
 		c.msgwt <- wev
+
+		metrics.MetricsChan <- map[string]int{"evntSubsSupplied": len(wev)}
 
 		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(events), "servedIn": time.Now().UnixMilli() - c.responseRate}).Debug("Sent to writeT")
 

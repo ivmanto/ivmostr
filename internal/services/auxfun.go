@@ -417,7 +417,7 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 RESULT:
 	client.msgwt <- []interface{}{*e}
 	// // Updating the metrics channel
-	metrics.ChBroadcastEvent <- 1
+	metrics.MetricsChan <- map[string]int{"evntBroadcasted": 1}
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,

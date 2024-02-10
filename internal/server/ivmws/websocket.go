@@ -31,7 +31,7 @@ type WSHandler struct {
 	trustedOrigins []string
 	hlgr           *log.Logger
 	wlst           *[]string
-	blst           *[]string
+	//blst           *[]string
 }
 
 func NewWSHandler(
@@ -148,7 +148,7 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	conn := wspool.Get()
 	conn.WS = uc
 
-	client := session.Register(conn, ip, wlstd)
+	client := session.Register(conn, ip)
 	if client == nil {
 		return
 	}

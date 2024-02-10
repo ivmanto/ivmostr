@@ -114,7 +114,7 @@ func (s *Session) IsRegistered(ip string) bool {
 }
 
 // Register upgraded websocket connection as client in the sessions
-func (s *Session) Register(conn *Connection, ip string, wlstd bool) *Client {
+func (s *Session) Register(conn *Connection, ip string) *Client {
 
 	// register the clients IP in the ip-counter
 	tools.IPCount.Add(ip)
@@ -159,15 +159,12 @@ func (s *Session) Register(conn *Connection, ip string, wlstd bool) *Client {
 			ok   bool
 		)
 
-		if wlstd {
-			key := fmt.Sprintf("%s:%s", client.name, client.IP)
-			_, clnt = s.ldg.Add(key, client)
-		} else {
-			ok, clnt = s.ldg.Add(client.IP, client)
-			if !ok {
-				s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
-				return nil
-			}
+		key := fmt.Sprintf("%s:%s", client.name, client.IP)
+
+		ok, clnt = s.ldg.Add(key, client)
+		if !ok {
+			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
+			return nil
 		}
 
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
@@ -351,6 +348,8 @@ func (s *Session) NewEventBroadcaster() {
 				if time.Now().Unix()-client.CreatedAt > 300 {
 					s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
 					tools.IPCount.Remove(client.IP)
+					metrics.MetricsChan <- map[string]int{"clntSubscriptions": -1}
+					metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -len(client.Filetrs)}
 				}
 				continue
 			}
@@ -486,9 +485,6 @@ func (s *Session) Close() bool {
 }
 
 func getMaxConnIP() {
-
 	tip, max := tools.IPCount.TopIP()
-	var tdip = make(map[string]int, 1)
-	tdip[tip] = max
-	metrics.ChTopDemandingIP <- tdip
+	metrics.MetricsChan <- map[string]interface{}{"connsTopDemandingIP": map[string]int{tip: max}}
 }
