@@ -1,25 +1,15 @@
 package metrics
 
-import (
-	"sync"
-)
-
 var (
 	MetricsChan = make(chan interface{}, 1024)
-	wg          sync.WaitGroup
 )
 
 func init() {
-	wg.Add(1)
-
 	go recordAppMetrics(MetricsChan)
 	ivmMetricsRunner()
-
-	wg.Wait()
 }
 
 func recordAppMetrics(metricsChan chan<- interface{}) {
-	defer wg.Done()
 
 	for metric := range MetricsChan {
 
