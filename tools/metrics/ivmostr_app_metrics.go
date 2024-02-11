@@ -24,7 +24,11 @@ func recordAppMetrics(metricsChan chan<- interface{}) {
 				case "evntSubsSupplied":
 					evntSubsSupplied.Add(float64(val))
 				case "clntSubscriptions":
-					clntSubscriptions.Add(float64(val))
+					if val > 0 {
+						clntSubscriptions.Inc()
+					} else if val < 0 {
+						clntSubscriptions.Dec()
+					}
 				case "clntUpdatedSubscriptions":
 					clntUpdatedSubscriptions.Add(float64(val))
 				case "clntNrOfSubsFilters":
