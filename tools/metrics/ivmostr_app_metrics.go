@@ -19,14 +19,16 @@ func recordAppMetrics(metricsChan chan<- interface{}) {
 				switch key {
 				case "evntStored":
 					evntStored.Inc()
+				case "evntProcessedBrdcst":
+					evntProcessedBrdcst.Inc()
 				case "evntBroadcasted":
 					evntBroadcasted.Inc()
 				case "evntSubsSupplied":
 					evntSubsSupplied.Add(float64(val))
 				case "clntSubscriptions":
-					if val > 0 {
+					if val >= 0 {
 						clntSubscriptions.Inc()
-					} else if val < 0 {
+					} else {
 						clntSubscriptions.Dec()
 					}
 				case "clntUpdatedSubscriptions":

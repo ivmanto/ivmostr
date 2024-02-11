@@ -332,6 +332,7 @@ func (s *Session) NewEventBroadcaster() {
 	for e := range NewEvent {
 
 		s.slgr.Debugf(" ...-= starting new event braodcasting =-...")
+		metrics.MetricsChan <- map[string]int{"evntProcessedBrdcst": 1}
 
 		// 22242 is auth event - not to be stored or published
 		if e.Kind == 22242 {

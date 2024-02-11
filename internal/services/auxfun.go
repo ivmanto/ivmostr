@@ -210,7 +210,8 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 	//
 	// All conditions of a filter that are specified must match for an event for it to pass the filter, i.e., **multiple conditions are interpreted as `&&` conditions**.
 
-	// [ ]: Refactor this to work with mixed filters - means when there is i.e. list of kinds [...] + until or since clause - then the filetr should run in sequens / nested format
+	// [ ]TODO: implement `Not implemented` combinations from the logs
+
 	filterState := parseFilter(filter)
 
 	switch filterState.fltState {
@@ -337,6 +338,22 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 			return
 		}
 
+	// [x]: kinds && since
+	case fcKindsSince:
+		var kr bool
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				kr = true
+				break
+			}
+		}
+
+		if (e.CreatedAt > filterState.since) && kr {
+			goto RESULT
+		} else {
+			return
+		}
+
 	// [x]: kinds && tags
 	case fcKindsTags:
 		var kr, tr bool
@@ -404,6 +421,36 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 			}
 		}
 		if e.CreatedAt > filterState.since && kr && tr {
+			goto RESULT
+		} else {
+			return
+		}
+
+	// [ ]: tags && since && until
+	case fcTagsSinceUntil:
+		var tr bool
+
+		for tkey, tval := range filter {
+			switch tkey {
+			case "#e":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.ID {
+						tr = true
+						break
+					}
+				}
+			case "#p":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.PubKey {
+						tr = true
+					}
+				}
+			default:
+				continue
+			}
+		}
+
+		if e.CreatedAt > filterState.since && e.CreatedAt < filterState.until && tr {
 			goto RESULT
 		} else {
 			return

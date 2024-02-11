@@ -21,6 +21,13 @@ var (
 		Help:      "The total number of nostr events supplied to the clients (server lt current session)",
 	})
 
+	evntProcessedBrdcst = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "ivmostr",
+		Subsystem: "session",
+		Name:      "ivmostr_events_processed_broadcast_total",
+		Help:      "The total number of nostr events processed by NewEventBroadcaster method",
+	})
+
 	evntBroadcasted = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "ivmostr",
 		Subsystem: "session",

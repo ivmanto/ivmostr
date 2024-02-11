@@ -403,7 +403,8 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 		for idx, v := range *msg {
 			if idx > 1 && idx < 10 {
 				filter = v.(map[string]interface{})
-				// [x]TODO: implement filter VERIFIER, to avoid spam filters
+
+				// [x]TODO: implement filter VERIFIER, to avoid spam requests filters
 				if validateSubsFilters(filter) {
 					msgfilters = append(msgfilters, filter)
 				} else {
@@ -428,10 +429,13 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 		c.Filetrs = append(c.Filetrs, msgfilters...)
 		flt_net_diff := len(msgfilters) - len_old_flt
 
-		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
+		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 		metrics.MetricsChan <- map[string]int{"clntUpdatedSubscriptions": 1}
 		metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": flt_net_diff}
+		payloadEvnt := fmt.Sprintf(`{"method":"[handlerReqMsgs]","client":"%s", "subscriptionID":"%s","after [s]": %d}`, c.IP, c.Subscription_id, time.Now().Unix()-c.CreatedAt)
+		leop.Payload = payloadEvnt
+		cclnlgr.Log(leop)
 
 		err := c.SubscriptionSuplier()
 		if err != nil {
@@ -465,8 +469,11 @@ func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 		subscription_id := (*msg)[1].(string)
 		if c.Subscription_id == subscription_id {
 			c.Subscription_id = ""
-			c.Filetrs = []map[string]interface{}{}
+			// c.Filetrs = []map[string]interface{}{}
 			c.writeCustomNotice("Update: The subscription has been closed")
+			payloadEvnt := fmt.Sprintf(`{"method":"[handlerCloseSubsMsgs]","client":"%s", "close_subscriptionID":"%s","after [s]": %d}`, c.IP, subscription_id, time.Now().Unix()-c.CreatedAt)
+			leop.Payload = payloadEvnt
+			cclnlgr.Log(leop)
 			return nil
 		} else {
 			c.writeCustomNotice("Error: Invalid subscription_id provided")
