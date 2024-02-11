@@ -344,12 +344,15 @@ func (s *Session) NewEventBroadcaster() {
 				continue
 			}
 
-			if client.Subscription_id == "" || len(client.Filetrs) == 0 {
+			flt_len := len(client.Filetrs)
+			if client.Subscription_id == "" || flt_len == 0 {
 				if time.Now().Unix()-client.CreatedAt > 300 {
 					s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
 					tools.IPCount.Remove(client.IP)
 					metrics.MetricsChan <- map[string]int{"clntSubscriptions": -1}
-					metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -len(client.Filetrs)}
+					if flt_len > 0 {
+						metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -flt_len}
+					}
 				}
 				continue
 			}

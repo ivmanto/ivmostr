@@ -20,7 +20,7 @@ func recordAppMetrics(metricsChan chan<- interface{}) {
 				case "evntStored":
 					evntStored.Inc()
 				case "evntBroadcasted":
-					evntBroadcasted.Add(float64(val))
+					evntBroadcasted.Inc()
 				case "evntSubsSupplied":
 					evntSubsSupplied.Add(float64(val))
 				case "clntSubscriptions":

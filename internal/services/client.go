@@ -401,7 +401,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	var msgfilters = []map[string]interface{}{}
 	if len(*msg) >= 3 {
 		for idx, v := range *msg {
-			if idx > 1 && idx < 5 {
+			if idx > 1 && idx < 10 {
 				filter = v.(map[string]interface{})
 				// [x]TODO: implement filter VERIFIER, to avoid spam filters
 				if validateSubsFilters(filter) {
@@ -423,13 +423,15 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 		c.Subscription_id = subscription_id
 
 		// [x] OVERWRITE subscription fileters
+		len_old_flt := len(c.Filetrs)
 		c.Filetrs = []map[string]interface{}{}
 		c.Filetrs = append(c.Filetrs, msgfilters...)
+		flt_net_diff := len(msgfilters) - len_old_flt
 
 		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
 		metrics.MetricsChan <- map[string]int{"clntUpdatedSubscriptions": 1}
-		metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": len(msgfilters)}
+		metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": flt_net_diff}
 
 		err := c.SubscriptionSuplier()
 		if err != nil {
