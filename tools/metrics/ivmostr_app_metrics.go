@@ -26,15 +26,13 @@ func recordAppMetrics(metricsChan chan<- interface{}) {
 				case "evntSubsSupplied":
 					evntSubsSupplied.Add(float64(val))
 				case "clntSubscriptions":
-					if val >= 0 {
-						clntSubscriptions.Inc()
-					} else {
-						clntSubscriptions.Dec()
-					}
+					clntSubscriptions.Add(float64(val))
 				case "clntUpdatedSubscriptions":
 					clntUpdatedSubscriptions.Add(float64(val))
 				case "clntNrOfSubsFilters":
 					clntNrOfSubsFilters.Add(float64(val))
+				default:
+					continue
 				}
 			}
 
@@ -52,7 +50,8 @@ func recordAppMetrics(metricsChan chan<- interface{}) {
 			}
 
 		default:
-
+			continue
 		}
+		continue
 	}
 }
