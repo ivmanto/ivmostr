@@ -129,6 +129,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	client.repo = s.repo
 	client.cclnlgr = cclnlgr
 	client.Authed = false
+	client.CreatedAt = time.Now().Unix()
 	client.errorRate = make(map[string]int)
 	client.Relay_Host = s.cfg.Relay_Host
 	client.default_limit_value = s.cfg.GetDLV()
