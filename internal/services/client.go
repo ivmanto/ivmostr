@@ -27,6 +27,10 @@ var (
 	leop = logging.Entry{Severity: logging.Info, Payload: ""}
 )
 
+// Spam accounts to block:
+// f1ea91eeab7988ed00e3253d5d50c66837433995348d7d97f968a0ceb81e0929
+// IP:172.71.146.218
+
 type Client struct {
 	Conn                *Connection
 	mu                  sync.Mutex
@@ -317,6 +321,8 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		c.writeEventNotice(e.ID, false, lmsg)
 		return err
 	}
+
+	// [ ]TODO: implement check for spam accounts
 
 	rsl, errv := e.CheckSignature()
 	if errv != nil {

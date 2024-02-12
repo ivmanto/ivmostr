@@ -27,6 +27,7 @@ package router
 import (
 	"context"
 	"net/http"
+	"net/http/pprof"
 	"sync"
 
 	"github.com/dasiyes/ivmostr-tdd/api"
@@ -82,6 +83,18 @@ func (h *srvHandler) router() chi.Router {
 	// Handle Prometheus metrics
 	rtr.Handle("/metrics", promhttp.Handler())
 
+	// Handle pprof endpoints
+	rtr.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	rtr.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	rtr.Handle("/debug/pprof/block", pprof.Handler("block"))
+	rtr.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+	rtr.Handle("/debug/pprof/cmdline", pprof.Handler("cmdline"))
+	rtr.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+	rtr.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+	rtr.Handle("/debug/pprof/trace", pprof.Handler("trace"))
+
+	// ... your application handlers
+
 	// Route the API calls to/v1/api/ ...
 	rtr.Route("/v1", func(r chi.Router) {
 		rh := api.ApiHandler{}
@@ -119,8 +132,8 @@ func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceC
 
 	wlst = tools.GetWhiteListedIPs(lists)
 	blst = tools.GetBlackListedIPs(lists)
-	l.Debugf("...white list: %d ...", len(wlst))
-	l.Debugf("...black list: %d ...", len(blst))
+	l.Printf("...white list: %d ...", len(wlst))
+	l.Printf("...black list: %d ...", len(blst))
 
 	return e.router()
 }

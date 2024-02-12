@@ -1,6 +1,7 @@
 package nostr
 
 type WhiteList struct {
+	IP        string `json:"ip"`
 	PubKey    string `json:"id"`
 	CreatedAt int64  `json:"created_at"`
 	ExpiresAt int64  `json:"expires_at"`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	_ "runtime/pprof"
 
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/data/firestoredb"

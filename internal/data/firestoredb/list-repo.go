@@ -67,9 +67,9 @@ func (w listRepo) GetWLIPS() ([]string, error) {
 	}
 	defer w.clients.ReleaseClient(fsclient)
 
-	query := fsclient.Collection(w.black_coll).Where("IP", "!=", "").Documents(*w.ctx)
+	query := fsclient.Collection(w.white_coll).Where("IP", "!=", "").Documents(*w.ctx)
 
-	var blr nostr.BlackList
+	var wlr nostr.WhiteList
 	for {
 		doc, err := query.Next()
 		if err != nil {
@@ -80,12 +80,12 @@ func (w listRepo) GetWLIPS() ([]string, error) {
 			continue
 		}
 
-		if err := doc.DataTo(&blr); err != nil {
-			w.lgr.Errorf("[GetWLIPS] ERROR raised while fitting blacklist format: %v", err)
+		if err := doc.DataTo(&wlr); err != nil {
+			w.lgr.Errorf("[GetWLIPS] ERROR raised while fitting whitelist format: %v", err)
 			continue
 		}
 
-		wlips = append(wlips, blr.IP)
+		wlips = append(wlips, wlr.IP)
 	}
 	return wlips, nil
 }
