@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/logging"
@@ -158,23 +159,29 @@ func filterMatch() {
 
 		filters := pair.client.GetFilters()
 
+		var wg sync.WaitGroup
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
 		for _, filter := range filters {
+			wg.Add(1)
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
 			go func(ctx context.Context, event *gn.Event, client *Client, filter map[string]interface{}, lgr *log.Logger) {
+
+				defer wg.Done()
+
 				select {
 				case <-ctx.Done():
 					fmlgr.Debugf("[filterMatch] Gracefully shutting down")
-					cancel()
 					return
 				default:
 					filterMatchSingle(event, client, filter, fmlgr)
-
 				}
 			}(ctx, pair.event, pair.client, filter, fmlgr)
 		}
+		wg.Wait()
+		cancel()
+		fmlgr.Debugf("[filterMatch] Done!")
 	}
 }
 
