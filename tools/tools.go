@@ -218,6 +218,11 @@ func GetIPCount() int {
 }
 
 func AddToBlacklist(ip string, lst nostr.ListRepo) {
+
+	if Contains(WList, ip) {
+		return
+	}
+
 	bld := nostr.BlackList{
 		IP:        ip,
 		CreatedAt: time.Now().Unix(),
@@ -255,15 +260,13 @@ func GetWhiteListedIPs(lst nostr.ListRepo) {
 
 // SendMetrics will be used to send prometheus metrics to the metrics recorder channel.
 // mval map will hold the name of the metric as a key and the int value to be sent;
-func SendMetrics(ctx context.Context, ch chan<- interface{}, mval map[string]int) {
+func SendMetrics(ctx context.Context, ch chan<- interface{}, mval any) {
 	defer close(ch)
 	select {
 	case <-ctx.Done():
 		return
 	case ch <- mval:
-		for k, v := range mval {
-			metrics.MetricsChan <- map[string]int{k: v}
-		}
+		metrics.MetricsChan <- mval
 		return
 	}
 }

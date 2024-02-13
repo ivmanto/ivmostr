@@ -91,8 +91,6 @@ func (h *srvHandler) router() chi.Router {
 	rtr.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
 	rtr.Handle("/debug/pprof/trace", pprof.Handler("trace"))
 
-	// ... your application handlers
-
 	// Route the API calls to/v1/api/ ...
 	rtr.Route("/v1", func(r chi.Router) {
 		rh := api.ApiHandler{}

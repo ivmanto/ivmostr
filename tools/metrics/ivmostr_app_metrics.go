@@ -31,6 +31,8 @@ func recordAppMetrics(metricsChan chan<- interface{}) {
 					clntUpdatedSubscriptions.Add(float64(val))
 				case "clntNrOfSubsFilters":
 					clntNrOfSubsFilters.Add(float64(val))
+				case "connsActiveWSConns":
+					connsActiveWSConns.Add(float64(val))
 				default:
 					continue
 				}
@@ -44,6 +46,13 @@ func recordAppMetrics(metricsChan chan<- interface{}) {
 					if ok {
 						for k, v := range ipMax {
 							connsTopDemandingIP.WithLabelValues(k).Set(float64(v))
+						}
+					}
+				case "connsTotalHTTPRequests":
+					nrConns, ok := val.(map[string]int)
+					if ok {
+						for k, v := range nrConns {
+							connsTotalHTTPRequests.WithLabelValues(k).Add(float64(v))
 						}
 					}
 				}

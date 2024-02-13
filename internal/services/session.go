@@ -15,7 +15,6 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/dasiyes/ivmostr-tdd/tools"
-	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
@@ -266,7 +265,7 @@ func (s *Session) Remove(client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	go tools.SendMetrics(ctx, ch, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1})
+	go tools.SendMetrics(ctx, ch, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1})
 }
 
 // Give code-word as name to the client connection
@@ -499,6 +498,14 @@ func (s *Session) Close() bool {
 }
 
 func getMaxConnIP() {
+
 	tip, max := tools.IPCount.TopIP()
-	metrics.MetricsChan <- map[string]interface{}{"connsTopDemandingIP": map[string]int{tip: max}}
+
+	// Updating the metrics channel
+	ch := make(chan interface{})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	go tools.SendMetrics(ctx, ch, map[string]interface{}{"connsTopDemandingIP": map[string]int{tip: max}})
+
 }

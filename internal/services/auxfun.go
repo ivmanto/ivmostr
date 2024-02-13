@@ -167,10 +167,11 @@ func filterMatch() {
 				select {
 				case <-ctx.Done():
 					fmlgr.Debugf("[filterMatch] Gracefully shutting down")
+					cancel()
 					return
 				default:
 					filterMatchSingle(event, client, filter, fmlgr)
-					cancel()
+
 				}
 			}(ctx, pair.event, pair.client, filter, fmlgr)
 		}
@@ -469,7 +470,6 @@ RESULT:
 	defer cancel()
 
 	go tools.SendMetrics(ctx, ch, map[string]int{"evntBroadcasted": 1})
-
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,
