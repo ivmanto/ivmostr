@@ -78,7 +78,6 @@ var (
 	},
 		[]string{
 			"http",
-			"wss",
 		})
 
 	connsActiveWSConns = promauto.NewGauge(prometheus.GaugeOpts{

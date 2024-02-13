@@ -54,9 +54,7 @@ func recordAppMetrics(metricsChan chan<- interface{}, ctx context.Context) {
 					case "connsTotalHTTPRequests":
 						nrConns, ok := val.(map[string]int)
 						if ok {
-							for k, v := range nrConns {
-								connsTotalHTTPRequests.WithLabelValues(k).Add(float64(v))
-							}
+							connsTotalHTTPRequests.WithLabelValues("http").Add(float64(nrConns["http"]))
 						}
 					}
 				}
