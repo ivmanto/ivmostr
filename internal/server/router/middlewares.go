@@ -37,7 +37,7 @@ func healthcheck(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// Updating the metrics channel
-		metrics.MetricsChan <- map[string]interface{}{"connsTotalHTTPRequests": map[string]int{"http": 1}}
+		metrics.MetricsChan <- map[string]interface{}{"connsTotalHTTPRequests": map[string]int{"http": 1, "wss": 0}}
 
 		if r.URL.Path == "/hc" {
 			w.WriteHeader(http.StatusOK)
