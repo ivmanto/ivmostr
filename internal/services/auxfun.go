@@ -554,3 +554,18 @@ func validateAIEP(array []interface{}) bool {
 	}
 	return true
 }
+
+// sendMetrics will be used to send prometheus metrics to the metrics recorder channel.
+// mval map will hold the name of the metric as a key and the int value to be sent;
+func sendMetrics(ctx context.Context, ch chan<- interface{}, mval map[string]int) {
+	defer close(ch)
+	select {
+	case <-ctx.Done():
+		return
+	case ch <- mval:
+		for k, v := range mval {
+			metrics.MetricsChan <- map[string]int{k: v}
+		}
+		return
+	}
+}

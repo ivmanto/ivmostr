@@ -229,6 +229,8 @@ func (s *Session) Remove(client *Client) {
 		return
 	}
 
+	fltrs := len(client.Filetrs)
+
 	// [ ]: Review what exactly more resources (than websocket connection) need to be released
 
 	e := client.Conn.WS.Close()
@@ -259,6 +261,12 @@ func (s *Session) Remove(client *Client) {
 	client.errFM = nil
 	client.errCH = nil
 	client = nil
+
+	ch := make(chan interface{})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	go sendMetrics(ctx, ch, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1})
 }
 
 // Give code-word as name to the client connection
@@ -332,8 +340,12 @@ func (s *Session) NewEventBroadcaster() {
 
 	for e := range NewEvent {
 
+		ch := make(chan interface{})
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
 		s.slgr.Debugf(" ...-= starting new event braodcasting =-...")
-		metrics.MetricsChan <- map[string]int{"evntProcessedBrdcst": 1}
+		go sendMetrics(ctx, ch, map[string]int{"evntProcessedBrdcst": 1})
 
 		// 22242 is auth event - not to be stored or published
 		if e.Kind == 22242 {
