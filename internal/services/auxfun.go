@@ -12,6 +12,7 @@ import (
 
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
 )
@@ -470,13 +471,7 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 
 RESULT:
 	client.msgwt <- []interface{}{*e}
-
-	// Updating the metrics channel
-	ch := make(chan interface{})
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	go tools.SendMetrics(ctx, ch, map[string]int{"evntBroadcasted": 1})
+	metrics.MetricsChan <- map[string]int{"evntBroadcasted": 1}
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,

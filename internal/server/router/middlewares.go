@@ -1,7 +1,6 @@
 package router
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 )
 
 var (
@@ -37,11 +37,7 @@ func healthcheck(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// Updating the metrics channel
-		ch := make(chan interface{})
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-
-		go tools.SendMetrics(ctx, ch, map[string]interface{}{"connsTotalHTTPRequests": map[string]int{"http": 1}})
+		metrics.MetricsChan <- map[string]interface{}{"connsTotalHTTPRequests": map[string]int{"http": 1}}
 
 		if r.URL.Path == "/hc" {
 			w.WriteHeader(http.StatusOK)

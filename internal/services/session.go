@@ -15,6 +15,7 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/pkg/gopool"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
@@ -170,12 +171,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
 	}
 
-	// Updating the metrics channel
-	ch := make(chan interface{})
-	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
-	defer cancel()
-
-	go tools.SendMetrics(ctx, ch, map[string]int{"connsActiveWSConns": 1})
+	metrics.MetricsChan <- map[string]int{"connsActiveWSConns": 1}
 
 	// Fine-tune the client's websocket connection
 	s.TuneClientConn(client)
@@ -268,11 +264,7 @@ func (s *Session) Remove(client *Client) {
 	client.errCH = nil
 	client = nil
 
-	ch := make(chan interface{})
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	go tools.SendMetrics(ctx, ch, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1})
+	metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
 }
 
 // Give code-word as name to the client connection
@@ -346,14 +338,9 @@ func (s *Session) NewEventBroadcaster() {
 
 	for e := range NewEvent {
 
-		ch := make(chan interface{})
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-
 		s.slgr.Debugf(" ...-= starting new event braodcasting =-...")
-		go func(ctx context.Context, ch chan<- interface{}) {
-			tools.SendMetrics(ctx, ch, map[string]int{"evntProcessedBrdcst": 1})
-			cancel()
-		}(ctx, ch)
+
+		metrics.MetricsChan <- map[string]int{"evntProcessedBrdcst": 1}
 
 		// 22242 is auth event - not to be stored or published
 		if e.Kind == 22242 {
@@ -507,12 +494,5 @@ func (s *Session) Close() bool {
 func getMaxConnIP() {
 
 	tip, max := tools.IPCount.TopIP()
-
-	// Updating the metrics channel
-	ch := make(chan interface{})
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	go tools.SendMetrics(ctx, ch, map[string]interface{}{"connsTopDemandingIP": map[string]int{tip: max}})
-
+	metrics.MetricsChan <- map[string]interface{}{"connsTopDemandingIP": map[string]int{tip: max}}
 }

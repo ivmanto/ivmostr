@@ -2,7 +2,6 @@ package tools
 
 import (
 	"bytes"
-	"context"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	"time"
 
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
-	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
 )
@@ -260,13 +258,13 @@ func GetWhiteListedIPs(lst nostr.ListRepo) {
 
 // SendMetrics will be used to send prometheus metrics to the metrics recorder channel.
 // mval map will hold the name of the metric as a key and the int value to be sent;
-func SendMetrics(ctx context.Context, ch chan<- interface{}, mval any) {
-	defer close(ch)
-	select {
-	case <-ctx.Done():
-		return
-	case ch <- mval:
-		metrics.MetricsChan <- mval
-		return
-	}
-}
+// func SendMetrics(ctx context.Context, ch chan<- interface{}, mval any) {
+// 	defer close(ch)
+// 	select {
+// 	case <-ctx.Done():
+// 		return
+// 	case ch <- mval:
+// 		metrics.MetricsChan <- mval
+// 		return
+// 	}
+// }
