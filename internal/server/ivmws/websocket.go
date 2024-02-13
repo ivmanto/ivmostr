@@ -158,8 +158,9 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Updating the metrics channel (ctx define up in this method)
+	ch2 := make(chan interface{})
 	defer cancel()
-	go tools.SendMetrics(ctx, ch, map[string]int{"connsActiveWSConns": 1})
+	go tools.SendMetrics(ctx, ch2, map[string]int{"connsActiveWSConns": 1})
 
 	poolerr := pool.ScheduleTimeout(time.Duration(1)*time.Millisecond, func() {
 		session.HandleClient(client)
