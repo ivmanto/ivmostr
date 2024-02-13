@@ -79,11 +79,11 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 			ip := tools.GetIP(r)
 
 			// whitelist IPs
-			wlst = append(wlst, ips...)
-			if tools.Contains(wlst, ip) {
+			tools.WList = append(tools.WList, ips...)
+			if tools.Contains(tools.WList, ip) {
 				// [!]POLICY: No more than X (5?) total active connections
 				// for WHITELISTED clients.
-				if tools.IPCount.IPConns(ip) >= 5 {
+				if tools.IPCount.IPConns(ip) >= 10 {
 					h.rllgr.Debugf("[rateLimiter] Too many connections from whitelisted IP address %s.", ip)
 					http.Error(w, "Too many requests", http.StatusTooManyRequests)
 					return
@@ -93,7 +93,7 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 			}
 
 			// blacklist IPs
-			if tools.Contains(blst, ip) {
+			if tools.Contains(tools.BList, ip) {
 				w.WriteHeader(http.StatusForbidden)
 				fmt.Fprintf(w, "Forbidden")
 				return
@@ -127,6 +127,7 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 					h.rllgr.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.", ip)
 					go tools.AddToBlacklist(ip, h.lists)
 
+					h.rllgr.Debugf("[rateLimiter] IP address %s blocked.", ip)
 					w.WriteHeader(http.StatusTooManyRequests)
 					fmt.Fprintf(w, "TooManyRequests")
 

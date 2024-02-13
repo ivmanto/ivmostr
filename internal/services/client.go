@@ -68,7 +68,7 @@ func (c *Client) ReceiveMsg() error {
 	var wg sync.WaitGroup
 	// Create a context to cancel the goroutines if needed
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	//defer cancel()
 
 	c.lgr.Level = log.ErrorLevel
 
@@ -87,6 +87,7 @@ func (c *Client) ReceiveMsg() error {
 				} else {
 					c.lgr.Infof("Goroutine `writeT` forced:%v", errfm)
 				}
+				cancel()
 			}
 		}
 	}()
@@ -106,6 +107,7 @@ func (c *Client) ReceiveMsg() error {
 				} else {
 					c.lgr.Infof("Goroutine `dispatcher` forced:%v", errfm)
 				}
+				cancel()
 			}
 		}
 	}()
@@ -129,6 +131,7 @@ func (c *Client) ReceiveMsg() error {
 			} else {
 				c.lgr.Infof("Goroutine `errCH` forced:%v", errfm)
 			}
+			cancel()
 		}
 	}()
 
@@ -362,9 +365,6 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		return err
 	}
 
-	// Update metrics tracking channel for stored events
-	metrics.MetricsChan <- map[string]int{"evntStored": 1}
-
 	// The customer name is required in NewEventBroadcaster method in order to skip the broadcast process for the customer that brought the event on the relay.
 	e.SetExtra("id", float64(c.id))
 
@@ -372,6 +372,9 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	NewEvent <- e
 
 	c.writeEventNotice(e.ID, true, "")
+
+	// Update metrics tracking channel for stored events
+	metrics.MetricsChan <- map[string]int{"evntStored": 1}
 
 	c.lgr.Debugf("[handlerEventMsgs] from [%s] saving took [%d] ms", c.IP, time.Now().Unix()-c.responseRate)
 
@@ -436,6 +439,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 		flt_net_diff := len(msgfilters) - len_old_flt
 
 		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
+
 		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 		metrics.MetricsChan <- map[string]int{"clntUpdatedSubscriptions": 1}
 		metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": flt_net_diff}
@@ -475,8 +479,12 @@ func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 		subscription_id := (*msg)[1].(string)
 		if c.Subscription_id == subscription_id {
 			c.Subscription_id = ""
-			// c.Filetrs = []map[string]interface{}{}
+			removed_filters := len(c.Filetrs)
+			c.Filetrs = []map[string]interface{}{}
+
 			c.writeCustomNotice("Update: The subscription has been closed")
+
+			metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -removed_filters}
 			payloadEvnt := fmt.Sprintf(`{"method":"[handlerCloseSubsMsgs]","client":"%s", "close_subscriptionID":"%s","after [s]": %d}`, c.IP, subscription_id, time.Now().Unix()-c.CreatedAt)
 			leop.Payload = payloadEvnt
 			cclnlgr.Log(leop)

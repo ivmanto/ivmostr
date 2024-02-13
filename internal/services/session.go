@@ -67,7 +67,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, lists nostr.ListRepo, c
 
 	relay_access = cfg.Relay_access
 
-	session.slgr.SetLevel(log.DebugLevel)
+	session.slgr.SetLevel(log.ErrorLevel)
 
 	session.slgr.SetFormatter(&log.JSONFormatter{
 		DisableTimestamp: true,
@@ -346,15 +346,10 @@ func (s *Session) NewEventBroadcaster() {
 				continue
 			}
 
-			flt_len := len(client.Filetrs)
-			if client.Subscription_id == "" || flt_len == 0 {
+			if client.Subscription_id == "" || len(client.Filetrs) < 1 {
 				if time.Now().Unix()-client.CreatedAt > 300 {
 					s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
 					tools.IPCount.Remove(client.IP)
-					metrics.MetricsChan <- map[string]int{"clntSubscriptions": -1}
-					if flt_len > 0 {
-						metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -flt_len}
-					}
 				}
 				continue
 			}
@@ -452,7 +447,7 @@ func (s *Session) sessionState() {
 			continue
 		}
 
-		if client.Subscription_id == "" && len(client.Filetrs) == 0 {
+		if client.Subscription_id == "" || len(client.Filetrs) == 0 {
 			s.slgr.Debugf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
 			if time.Now().Unix()-client.CreatedAt > 300 {
 				s.ldg.Remove(client.IP)

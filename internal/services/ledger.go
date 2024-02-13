@@ -1,6 +1,10 @@
 package services
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
+)
 
 type ledger struct {
 	subscribers map[string]*Client
@@ -35,10 +39,16 @@ func (l *ledger) Set(name string, c *Client) {
 }
 
 func (l *ledger) Remove(name string) {
-	l.mtx.Lock()
-	defer l.mtx.Unlock()
 
+	c := l.subscribers[name]
+	fltrs := len(c.Filetrs)
+
+	l.mtx.Lock()
 	delete(l.subscribers, name)
+	l.mtx.Unlock()
+
+	metrics.MetricsChan <- map[string]int{"clntSubscriptions": -1}
+	metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs}
 }
 
 func (l *ledger) Len() int {

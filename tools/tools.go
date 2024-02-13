@@ -20,6 +20,10 @@ import (
 	gn "github.com/studiokaiji/go-nostr"
 )
 
+var (
+	WList, BList []string
+)
+
 func scientificNotationToUInt(scientificNotation string) (uint, error) {
 	flt, _, err := big.ParseFloat(scientificNotation, 10, 0, big.ToNearestEven)
 	if err != nil {
@@ -211,28 +215,31 @@ func AddToBlacklist(ip string, lst nostr.ListRepo) {
 		CreatedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Add(168 * time.Hour).Unix(),
 	}
+
+	// Keep local list updated
+	BList = append(BList, ip)
+
 	err := lst.StoreBlackList(&bld)
 	if err != nil {
 		log.Errorf("[srvHandler] error blacklisting ip: %s, Error:%v", ip, err)
 	}
 }
 
-func GetBlackListedIPs(lst nostr.ListRepo) []string {
+func GetBlackListedIPs(lst nostr.ListRepo) {
 
-	ipl, err := lst.GetBLIPS()
+	BList, err := lst.GetBLIPS()
 	if err != nil {
 		log.Error("[GetBlackListedIPs] error getting blacklisted ips: ", err)
 	}
-	log.Debugf("[GetBlackListedIPs] black list %v", ipl)
-	return ipl
+	log.Debugf("[GetBlackListedIPs] black list %v", BList)
+
 }
 
-func GetWhiteListedIPs(lst nostr.ListRepo) []string {
+func GetWhiteListedIPs(lst nostr.ListRepo) {
 
-	ipl, err := lst.GetWLIPS()
+	WList, err := lst.GetWLIPS()
 	if err != nil {
 		log.Error("[GetWhiteListedIPs] error getting whitelisted ips: ", err)
 	}
-	log.Debugf("[GetWhiteListedIPs] black list %v", ipl)
-	return ipl
+	log.Debugf("[GetWhiteListedIPs] black list %v", WList)
 }

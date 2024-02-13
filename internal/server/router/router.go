@@ -41,8 +41,7 @@ import (
 )
 
 var (
-	l          = log.New()
-	wlst, blst []string
+	l = log.New()
 )
 
 // Constructing web application depenedencies in the format of handler
@@ -76,7 +75,7 @@ func (h *srvHandler) router() chi.Router {
 
 	// Handle requests to the root URL "/" - nostr websocket connections
 	rtr.Route("/", func(wr chi.Router) {
-		ws := ivmws.NewWSHandler(h.repo, h.lists, h.cfg, &wlst, &blst)
+		ws := ivmws.NewWSHandler(h.repo, h.lists, h.cfg)
 		wr.Mount("/", ws.Router())
 	})
 
@@ -130,10 +129,10 @@ func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceC
 
 	l.Printf("...initializing router (http server Handler) ...")
 
-	wlst = tools.GetWhiteListedIPs(lists)
-	blst = tools.GetBlackListedIPs(lists)
-	l.Printf("...white list: %d ...", len(wlst))
-	l.Printf("...black list: %d ...", len(blst))
+	tools.GetWhiteListedIPs(lists)
+	tools.GetBlackListedIPs(lists)
+	l.Printf("...white list: %d ...", len(tools.WList))
+	l.Printf("...black list: %d ...", len(tools.BList))
 
 	return e.router()
 }

@@ -30,16 +30,12 @@ type WSHandler struct {
 	cfg            *config.ServiceConfig
 	trustedOrigins []string
 	hlgr           *log.Logger
-	wlst           *[]string
-	//blst           *[]string
 }
 
 func NewWSHandler(
 	repo nostr.NostrRepo,
 	lists nostr.ListRepo,
 	cfg *config.ServiceConfig,
-	wlst, blst *[]string,
-
 ) *WSHandler {
 
 	trustedOrigins := cfg.TrustedOrigins
@@ -109,8 +105,8 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 		wlstd = false
 	)
 
-	if h.wlst != nil {
-		wlstd = tools.Contains(*h.wlst, ip)
+	if tools.WList != nil {
+		wlstd = tools.Contains(tools.WList, ip)
 	}
 
 	if session.IsRegistered(ip) && !wlstd {
