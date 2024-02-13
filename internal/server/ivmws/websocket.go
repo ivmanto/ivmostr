@@ -1,7 +1,6 @@
 package ivmws
 
 import (
-	"context"
 	"net/http"
 	_ "net/http/pprof"
 	"strings"
@@ -106,13 +105,6 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 		wlstd = false
 	)
 
-	// Updating the metrics channel
-	ch := make(chan interface{})
-	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
-	defer cancel()
-
-	go tools.SendMetrics(ctx, ch, map[string]interface{}{"connsTotalHTTPRequests": map[string]int{"ws": 1}})
-
 	if tools.WList != nil {
 		wlstd = tools.Contains(tools.WList, ip)
 	}
@@ -156,11 +148,6 @@ func (h *WSHandler) connman(w http.ResponseWriter, r *http.Request) {
 	if client == nil {
 		return
 	}
-
-	// Updating the metrics channel (ctx define up in this method)
-	ch2 := make(chan interface{})
-	defer cancel()
-	go tools.SendMetrics(ctx, ch2, map[string]int{"connsActiveWSConns": 1})
 
 	poolerr := pool.ScheduleTimeout(time.Duration(1)*time.Millisecond, func() {
 		session.HandleClient(client)

@@ -170,6 +170,13 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
 	}
 
+	// Updating the metrics channel
+	ch := make(chan interface{})
+	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+	defer cancel()
+
+	go tools.SendMetrics(ctx, ch, map[string]int{"connsActiveWSConns": 1})
+
 	// Fine-tune the client's websocket connection
 	s.TuneClientConn(client)
 
