@@ -11,7 +11,6 @@ import (
 
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/tools"
-	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
 )
@@ -463,8 +462,14 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 
 RESULT:
 	client.msgwt <- []interface{}{*e}
-	// // Updating the metrics channel
-	metrics.MetricsChan <- map[string]int{"evntBroadcasted": 1}
+
+	// Updating the metrics channel
+	ch := make(chan interface{})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	go tools.SendMetrics(ctx, ch, map[string]int{"evntBroadcasted": 1})
+
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,
@@ -553,19 +558,4 @@ func validateAIEP(array []interface{}) bool {
 		}
 	}
 	return true
-}
-
-// sendMetrics will be used to send prometheus metrics to the metrics recorder channel.
-// mval map will hold the name of the metric as a key and the int value to be sent;
-func sendMetrics(ctx context.Context, ch chan<- interface{}, mval map[string]int) {
-	defer close(ch)
-	select {
-	case <-ctx.Done():
-		return
-	case ch <- mval:
-		for k, v := range mval {
-			metrics.MetricsChan <- map[string]int{k: v}
-		}
-		return
-	}
 }

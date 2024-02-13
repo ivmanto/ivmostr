@@ -16,7 +16,6 @@ import (
 	"cloud.google.com/go/logging"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/tools"
-	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 	gn "github.com/studiokaiji/go-nostr"
@@ -374,7 +373,11 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	c.writeEventNotice(e.ID, true, "")
 
 	// Update metrics tracking channel for stored events
-	metrics.MetricsChan <- map[string]int{"evntStored": 1}
+	ch := make(chan interface{})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	go tools.SendMetrics(ctx, ch, map[string]int{"evntStored": 1})
 
 	c.lgr.Debugf("[handlerEventMsgs] from [%s] saving took [%d] ms", c.IP, time.Now().Unix()-c.responseRate)
 
@@ -427,6 +430,11 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 	// [x] Relays should manage <subscription_id>s independently for each WebSocket connection; even if <subscription_id>s are the same string, they should be treated as different subscriptions for different connections
 
+	// Updating the metrics channel
+	ch := make(chan interface{})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	if c.Subscription_id != "" {
 
 		// Overwrite the existing subscription id
@@ -436,13 +444,11 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 		len_old_flt := len(c.Filetrs)
 		c.Filetrs = []map[string]interface{}{}
 		c.Filetrs = append(c.Filetrs, msgfilters...)
-		flt_net_diff := len(msgfilters) - len_old_flt
 
 		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
 
 		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
-		metrics.MetricsChan <- map[string]int{"clntUpdatedSubscriptions": 1}
-		metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": flt_net_diff}
+		go tools.SendMetrics(ctx, ch, map[string]int{"clntUpdatedSubscriptions": 1, "clntNrOfSubsFilters": len(msgfilters) - len_old_flt})
 		payloadEvnt := fmt.Sprintf(`{"method":"[handlerReqMsgs]","client":"%s", "subscriptionID":"%s","after [s]": %d}`, c.IP, c.Subscription_id, time.Now().Unix()-c.CreatedAt)
 		leop.Payload = payloadEvnt
 		cclnlgr.Log(leop)
@@ -460,8 +466,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 	log.Printf("NEW: subscription id: %s from [%s] with filter %v", c.Subscription_id, c.IP, msgfilters)
-	metrics.MetricsChan <- map[string]int{"clntSubscriptions": 1}
-	metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": len(c.Filetrs)}
+	go tools.SendMetrics(ctx, ch, map[string]int{"clntSubscriptions": 1, "clntNrOfSubsFilters": len(c.Filetrs)})
 
 	err := c.SubscriptionSuplier()
 	if err != nil {
@@ -484,7 +489,13 @@ func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 
 			c.writeCustomNotice("Update: The subscription has been closed")
 
-			metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -removed_filters}
+			// Updating the metrics channel
+			ch := make(chan interface{})
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+
+			go tools.SendMetrics(ctx, ch, map[string]int{"clntNrOfSubsFilters": -removed_filters})
+
 			payloadEvnt := fmt.Sprintf(`{"method":"[handlerCloseSubsMsgs]","client":"%s", "close_subscriptionID":"%s","after [s]": %d}`, c.IP, subscription_id, time.Now().Unix()-c.CreatedAt)
 			leop.Payload = payloadEvnt
 			cclnlgr.Log(leop)
@@ -1012,7 +1023,12 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		c.wrchrr = time.Now().UnixMilli()
 		c.msgwt <- wev
 
-		metrics.MetricsChan <- map[string]int{"evntSubsSupplied": len(wev)}
+		// Updating the metrics channel
+		ch := make(chan interface{})
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		go tools.SendMetrics(ctx, ch, map[string]int{"evntSubsSupplied": len(wev)})
 
 		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(events), "servedIn": time.Now().UnixMilli() - c.responseRate}).Debug("Sent to writeT")
 

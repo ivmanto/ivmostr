@@ -34,7 +34,6 @@ import (
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
-	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
@@ -128,11 +127,6 @@ func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceC
 	}
 
 	l.Printf("...initializing router (http server Handler) ...")
-
-	tools.GetWhiteListedIPs(lists)
-	tools.GetBlackListedIPs(lists)
-	l.Printf("...white list: %d ...", len(tools.WList))
-	l.Printf("...black list: %d ...", len(tools.BList))
 
 	return e.router()
 }

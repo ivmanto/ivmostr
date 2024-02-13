@@ -266,7 +266,7 @@ func (s *Session) Remove(client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	go sendMetrics(ctx, ch, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1})
+	go tools.SendMetrics(ctx, ch, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1})
 }
 
 // Give code-word as name to the client connection
@@ -342,10 +342,12 @@ func (s *Session) NewEventBroadcaster() {
 
 		ch := make(chan interface{})
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
 
 		s.slgr.Debugf(" ...-= starting new event braodcasting =-...")
-		go sendMetrics(ctx, ch, map[string]int{"evntProcessedBrdcst": 1})
+		go func(ctx context.Context, ch chan<- interface{}) {
+			tools.SendMetrics(ctx, ch, map[string]int{"evntProcessedBrdcst": 1})
+			cancel()
+		}(ctx, ch)
 
 		// 22242 is auth event - not to be stored or published
 		if e.Kind == 22242 {
