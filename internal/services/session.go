@@ -265,6 +265,10 @@ func (s *Session) Remove(client *Client) {
 	client = nil
 
 	metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
+	s.slgr.Debugf(
+		"*** [Remove] client [%v] removed from session.Sent metric: %v",
+		client.IP, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1},
+	)
 }
 
 // Give code-word as name to the client connection
