@@ -63,34 +63,35 @@ func (c *Client) Name() string {
 
 func (c *Client) ReceiveMsg() error {
 	var errch, errfm error
+
 	// Create a sync.WaitGroup to track the number of goroutines waiting to finish
 	var wg sync.WaitGroup
+
 	// Create a context to cancel the goroutines if needed
 	ctx, cancel := context.WithCancel(context.Background())
-	//defer cancel()
 
 	c.lgr.Level = log.DebugLevel
 
 	wg.Add(1)
 	go func(ctx context.Context) {
 		defer wg.Done()
+		var sb uint64
+
 		for {
+			// vb to receive the sentout bytes
+			sb, errch = c.writeT()
+			if errch != nil {
+				c.lgr.Errorf("ERROR: `writeT` raised: %v", errch)
+				if strings.Contains(errch.Error(), "close") {
+					cancel()
+					return
+				}
+			}
+
 			select {
-			case errfm = <-c.errFM:
-				cancel()
-				break
-			default:
-				errch = c.writeT()
-				if errch != nil {
-					c.lgr.Errorf("ERROR: `writeT` raised: %v", errch)
-					cancel()
-					break
-				}
-				if ctx.Err() != nil {
-					c.lgr.Errorf("Goroutine `writeT` context canceled: %v", ctx.Err())
-					cancel()
-					break
-				}
+			case <-ctx.Done():
+				return
+			case metrics.MetricsChan <- map[string]uint64{"netOutboundBytes": sb}:
 			}
 		}
 	}(ctx)
@@ -100,47 +101,55 @@ func (c *Client) ReceiveMsg() error {
 		defer wg.Done()
 
 		for {
+			errch = c.dispatcher()
+			if errch != nil {
+				c.lgr.Errorf("ERROR: `dispatcher` raised: %v", errch)
+				if strings.Contains(errch.Error(), "CRITICAL") {
+					cancel()
+					return
+				}
+			}
+
 			select {
-			case errfm = <-c.errFM:
-				cancel()
-				break
+			case <-ctx.Done():
+				return
 			default:
-				errch = c.dispatcher()
-				if errch != nil {
-					c.lgr.Errorf("ERROR: `dispatcher` raised: %v", errch)
-					cancel()
-					break
-				}
-				if ctx.Err() != nil {
-					c.lgr.Errorf("Goroutine `dispatcher` context canceled: %v", ctx.Err())
-					cancel()
-					break
-				}
+				metrics.MetricsChan <- map[string]int{"clntProcessedMessages": 1}
 			}
 		}
 	}(ctx)
 
+	wg.Add(1)
 	for {
+		defer wg.Done()
+
 		mt, p, err := c.Conn.WS.ReadMessage()
 		if err != nil || mt == -1 {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
-			c.errFM <- err
-			break
+			if strings.Contains(err.Error(), "close") {
+				cancel()
+			}
 		}
 
 		c.lgr.Debugf("read_status:%s, client:%s, message_type:%d, size:%d, ts:%d", "success", c.IP, mt, len(p), time.Now().UnixNano())
-		c.inmsg <- []interface{}{mt, p}
+
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			return ctx.Err()
+
+		case errfm = <-c.errFM:
+			cancel()
+			wg.Wait()
+			return errfm
+		case c.inmsg <- []interface{}{mt, p}:
+		}
 	}
-
-	wg.Wait()
-	c.lgr.Infof("[ReceiveMsg] for client [%v] completed!", c.IP)
-
-	return errfm
 }
 
-func (c *Client) writeT() error {
+func (c *Client) writeT() (uint64, error) {
 	var (
-		sb  []byte
+		sb  uint64
 		err error
 	)
 
@@ -152,16 +161,16 @@ func (c *Client) writeT() error {
 		c.mu.Unlock()
 
 		if err != nil {
-			c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size: %d B, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb), err)
+			c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size: %d B, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, sb, err)
 			break
 		}
 
-		sb, _ = tools.ConvertStructToByte(message)
-		c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size:%d B", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb))
+		sb, _ = tools.GetStructToByteLen(message)
+		c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size:%d B", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, sb)
 		c.wrchrr = time.Now().UnixMilli()
 	}
 
-	return err
+	return sb, err
 }
 
 func (c *Client) dispatcher() error {
@@ -189,8 +198,8 @@ func (c *Client) dispatcher() error {
 					websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, text),
 					time.Time.Add(time.Now(), time.Second*2))
 
-				c.errFM <- fmt.Errorf("[disp] invalid utf8 encoding from [%s]!", c.IP)
-				return fmt.Errorf("[disp] %s", text)
+				//c.errFM <- fmt.Errorf("[disp] invalid utf8 encoding from [%s]!", c.IP)
+				return fmt.Errorf("[disp] CRITICAL %s", text)
 			}
 
 			nostr_msg := msg[1].([]byte)
@@ -224,7 +233,7 @@ func (c *Client) dispatcher() error {
 		case websocket.CloseMessage:
 			msgstr := string(msg[1].([]byte))
 			c.lgr.Debugf("[disp] received a `close` message: %s from client [%s]", msgstr, c.IP)
-			return fmt.Errorf("[disp] Client closing the connection with: %s", msgstr)
+			return fmt.Errorf("[disp] CRITICAL Client closing the connection with: %s", msgstr)
 
 		case websocket.PingMessage:
 			c.lgr.Debugf("[disp] Client [%s] sent PING message (mt = 9):%v", c.IP, string(msg[1].([]byte)))

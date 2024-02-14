@@ -211,6 +211,22 @@ func ConvertStructToByte(e any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+func GetStructToByteLen(e any) (uint64, error) {
+
+	gob.Register(map[string]interface{}{})
+	gob.Register(gn.Event{})
+	gob.Register([]interface{}{})
+
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	errE := enc.Encode(e)
+	if errE != nil {
+		tlgr.Errorf("[ConvertStructToByte] Error encoding struct []events: %v", errE)
+		return uint64(0), errE
+	}
+	return uint64(len(buf.Bytes())), nil
+}
+
 func GetIPCount() int {
 	return IPCount.Len()
 }

@@ -44,6 +44,13 @@ var (
 		Help:      "The number of active filters in subscriptions",
 	})
 
+	clntProcessedMessages = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "ivmostr",
+		Subsystem: "client",
+		Name:      "ivmostr_clients_processed_messages_total",
+		Help:      "The number of messages processed by the dispatcher",
+	})
+
 	// Subsystem: session
 	evntProcessedBrdcst = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "ivmostr",
@@ -84,6 +91,14 @@ var (
 		Namespace: "ivmostr",
 		Subsystem: "connections",
 		Name:      "ivmostr_ws_connections_active",
+		Help:      "The number of active websocket connections",
+	})
+
+	// Subsystem: network
+	netOutboundBytes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "ivmostr",
+		Subsystem: "network",
+		Name:      "ivmostr_network_outbound_bytes",
 		Help:      "The number of active websocket connections",
 	})
 )

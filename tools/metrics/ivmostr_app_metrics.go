@@ -43,13 +43,21 @@ func recordAppMetrics(metricsChan chan<- interface{}, ctx context.Context) {
 						clntUpdatedSubscriptions.Add(float64(val))
 					case "clntNrOfSubsFilters":
 						clntNrOfSubsFilters.Add(float64(val))
+					case "clntProcessedMessages":
+						clntProcessedMessages.Inc()
 					case "connsActiveWSConns":
 						connsActiveWSConns.Add(float64(val))
 					default:
 						continue
 					}
 				}
-
+			case map[string]uint64:
+				for key, val := range metric {
+					switch key {
+					case "netOutboundBytes":
+						netOutboundBytes.Add(float64(val))
+					}
+				}
 			case map[string]interface{}:
 				for key, val := range metric {
 					switch key {

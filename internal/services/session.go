@@ -118,6 +118,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 
 	// register the clients IP in the ip-counter
 	if tools.IPCount.Len() < 10 {
+		relay_access = "public"
 		tools.IPCount.Add(ip)
 	} else {
 		relay_access = "authenticated"
