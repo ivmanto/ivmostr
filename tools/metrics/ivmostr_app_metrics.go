@@ -1,6 +1,10 @@
 package metrics
 
-import "context"
+import (
+	"context"
+
+	log "github.com/sirupsen/logrus"
+)
 
 var (
 	MetricsChan = make(chan interface{}, 1024)
@@ -13,6 +17,10 @@ func init() {
 }
 
 func recordAppMetrics(metricsChan chan<- interface{}, ctx context.Context) {
+	lgr := log.New()
+	lgr.SetLevel(log.DebugLevel)
+	lgr.SetFormatter(&log.JSONFormatter{})
+
 	for {
 		select {
 		case metrics := <-MetricsChan:
@@ -29,6 +37,7 @@ func recordAppMetrics(metricsChan chan<- interface{}, ctx context.Context) {
 					case "evntSubsSupplied":
 						evntSubsSupplied.Add(float64(val))
 					case "clntSubscriptions":
+						lgr.Debugf("*** clntSubscriptions: %d", val)
 						clntSubscriptions.Add(float64(val))
 					case "clntUpdatedSubscriptions":
 						clntUpdatedSubscriptions.Add(float64(val))
