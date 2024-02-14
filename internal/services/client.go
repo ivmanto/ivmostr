@@ -120,6 +120,9 @@ func (c *Client) ReceiveMsg() error {
 			for errch = range c.errCH {
 				if errch != nil {
 					c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errch)
+					if strings.Contains(errch.Error(), "use of closed network connection") {
+						c.errFM <- errch
+					}
 				}
 			}
 		default:
@@ -476,16 +479,14 @@ func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 		subscription_id := (*msg)[1].(string)
 		if c.Subscription_id == subscription_id {
 			c.Subscription_id = ""
-			removed_filters := len(c.Filetrs)
 			c.Filetrs = []map[string]interface{}{}
 
 			c.writeCustomNotice("Update: The subscription has been closed")
 
-			metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -removed_filters}
-
 			payloadEvnt := fmt.Sprintf(`{"method":"[handlerCloseSubsMsgs]","client":"%s", "close_subscriptionID":"%s","after [s]": %d}`, c.IP, subscription_id, time.Now().Unix()-c.CreatedAt)
 			leop.Payload = payloadEvnt
 			cclnlgr.Log(leop)
+
 			return nil
 		} else {
 			c.writeCustomNotice("Error: Invalid subscription_id provided")

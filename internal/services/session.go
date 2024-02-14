@@ -247,9 +247,8 @@ func (s *Session) Remove(client *Client) {
 
 	// Remove the client from the session's internal register
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
+	s.mu.Unlock()
 
 	// Remove the client from IP counter
 	tools.IPCount.Remove(client.IP)
