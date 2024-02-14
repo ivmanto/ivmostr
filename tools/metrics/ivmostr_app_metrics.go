@@ -2,12 +2,14 @@ package metrics
 
 import (
 	"context"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 )
 
 var (
 	MetricsChan = make(chan interface{}, 1024)
+	updateMutex sync.RWMutex
 )
 
 func init() {
@@ -20,6 +22,8 @@ func recordAppMetrics(metricsChan chan<- interface{}, ctx context.Context) {
 	lgr := log.New()
 	lgr.SetLevel(log.DebugLevel)
 	lgr.SetFormatter(&log.JSONFormatter{})
+	updateMutex.Lock()
+	defer updateMutex.Unlock()
 
 	for {
 		select {
@@ -37,7 +41,6 @@ func recordAppMetrics(metricsChan chan<- interface{}, ctx context.Context) {
 					case "evntSubsSupplied":
 						evntSubsSupplied.Add(float64(val))
 					case "clntSubscriptions":
-						lgr.Debugf("*** clntSubscriptions: %d", val)
 						clntSubscriptions.Add(float64(val))
 					case "clntUpdatedSubscriptions":
 						clntUpdatedSubscriptions.Add(float64(val))

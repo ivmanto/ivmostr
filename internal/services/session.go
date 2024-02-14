@@ -163,9 +163,17 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		var (
 			clnt *Client
 			ok   bool
+			key  string
 		)
 
-		key := fmt.Sprintf("%s:%s", client.name, client.IP)
+		switch relay_access {
+		case "public":
+			key = ip
+		case "authenticated":
+			key = fmt.Sprintf("auth:%s", client.IP)
+		case "paid":
+			key = fmt.Sprintf("%s:%s", client.name, client.IP)
+		}
 
 		ok, clnt = s.ldg.Add(key, client)
 		if !ok {
