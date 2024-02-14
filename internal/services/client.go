@@ -75,11 +75,9 @@ func (c *Client) ReceiveMsg() error {
 	wg.Add(1)
 	go func(ctx context.Context) {
 		defer wg.Done()
-		var sb uint64
 
 		for {
-			// vb to receive the sentout bytes
-			sb, errch = c.writeT()
+			errch = c.writeT()
 			if errch != nil {
 				c.lgr.Errorf("ERROR: `writeT` raised: %v", errch)
 				if strings.Contains(errch.Error(), "close") {
@@ -91,7 +89,7 @@ func (c *Client) ReceiveMsg() error {
 			select {
 			case <-ctx.Done():
 				return
-			case metrics.MetricsChan <- map[string]uint64{"netOutboundBytes": sb}:
+			default:
 			}
 		}
 	}(ctx)
@@ -147,7 +145,7 @@ func (c *Client) ReceiveMsg() error {
 	}
 }
 
-func (c *Client) writeT() (uint64, error) {
+func (c *Client) writeT() error {
 	var (
 		sb  uint64
 		err error
@@ -166,11 +164,13 @@ func (c *Client) writeT() (uint64, error) {
 		}
 
 		sb, _ = tools.GetStructToByteLen(message)
+
 		c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size:%d B", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, sb)
+		metrics.MetricsChan <- map[string]uint64{"netOutboundBytes": sb}
 		c.wrchrr = time.Now().UnixMilli()
 	}
 
-	return sb, err
+	return err
 }
 
 func (c *Client) dispatcher() error {
