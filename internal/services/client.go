@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/url"
 	"strconv"
@@ -70,79 +69,61 @@ func (c *Client) ReceiveMsg() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	//defer cancel()
 
-	c.lgr.Level = log.ErrorLevel
+	c.lgr.Level = log.DebugLevel
 
 	wg.Add(1)
-	go func() {
+	go func(ctx context.Context) {
 		defer wg.Done()
 		for {
 			select {
-			case c.errCH <- c.writeT():
-			default:
-				errfm = <-c.errFM
-				c.Conn.WS.Close()
-				// Check if the context has been canceled
-				if ctx.Err() != nil {
-					c.lgr.Errorf("Goroutine `writeT` canceled: %v", ctx.Err())
-				} else {
-					c.lgr.Infof("Goroutine `writeT` forced:%v", errfm)
-				}
+			case errfm = <-c.errFM:
 				cancel()
-			}
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case c.errCH <- c.dispatcher():
+				break
 			default:
-				errfm = <-c.errFM
-				c.Conn.WS.Close()
-				// Check if the context has been canceled
-				if ctx.Err() != nil {
-					c.lgr.Errorf("Goroutine `dispatcher` canceled: %v", ctx.Err())
-				} else {
-					c.lgr.Infof("Goroutine `dispatcher` forced:%v", errfm)
-				}
-				cancel()
-			}
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		select {
-		case <-c.errCH:
-			for errch = range c.errCH {
+				errch = c.writeT()
 				if errch != nil {
-					c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errch)
-					if strings.Contains(errch.Error(), "use of closed network connection") {
-						c.errFM <- errch
-					}
+					c.lgr.Errorf("ERROR: `writeT` raised: %v", errch)
+					cancel()
+					break
+				}
+				if ctx.Err() != nil {
+					c.lgr.Errorf("Goroutine `writeT` context canceled: %v", ctx.Err())
+					cancel()
+					break
 				}
 			}
-		default:
-			errfm := <-c.errFM
-			c.Conn.WS.Close()
-			// Check if the context has been canceled
-			if ctx.Err() != nil {
-				c.lgr.Errorf("Goroutine `errCH` canceled: %v", ctx.Err())
-			} else {
-				c.lgr.Infof("Goroutine `errCH` forced:%v", errfm)
-			}
-			cancel()
 		}
-	}()
+	}(ctx)
+
+	wg.Add(1)
+	go func(ctx context.Context) {
+		defer wg.Done()
+
+		for {
+			select {
+			case errfm = <-c.errFM:
+				cancel()
+				break
+			default:
+				errch = c.dispatcher()
+				if errch != nil {
+					c.lgr.Errorf("ERROR: `dispatcher` raised: %v", errch)
+					cancel()
+					break
+				}
+				if ctx.Err() != nil {
+					c.lgr.Errorf("Goroutine `dispatcher` context canceled: %v", ctx.Err())
+					cancel()
+					break
+				}
+			}
+		}
+	}(ctx)
 
 	for {
 		mt, p, err := c.Conn.WS.ReadMessage()
-		if (err != nil && err != io.EOF) || (mt == -1) {
+		if err != nil || mt == -1 {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
-			c.Conn.WS.Close()
 			c.errFM <- err
 			break
 		}
@@ -153,6 +134,7 @@ func (c *Client) ReceiveMsg() error {
 
 	wg.Wait()
 	c.lgr.Infof("[ReceiveMsg] for client [%v] completed!", c.IP)
+
 	return errfm
 }
 
@@ -550,6 +532,7 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 			c.Authed = true
 			c.npub = e.PubKey
 			c.writeEventNotice(e.ID, true, "")
+			tools.IPCount.Add(c.IP)
 			return nil
 		} else {
 			c.writeEventNotice(e.ID, false, "Authentication failed")

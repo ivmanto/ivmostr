@@ -117,7 +117,11 @@ func (s *Session) IsRegistered(ip string) bool {
 func (s *Session) Register(conn *Connection, ip string) *Client {
 
 	// register the clients IP in the ip-counter
-	tools.IPCount.Add(ip)
+	if tools.IPCount.Len() < 10 {
+		tools.IPCount.Add(ip)
+	} else {
+		relay_access = "authenticated"
+	}
 
 	// initiate cloud Logger
 	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
