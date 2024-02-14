@@ -126,7 +126,7 @@ func (c *Client) ReceiveMsg() error {
 		mt, p, err := c.Conn.WS.ReadMessage()
 		if err != nil || mt == -1 {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
-			if strings.Contains(err.Error(), "close") {
+			if strings.Contains(err.Error(), "close") || mt == -1 {
 				cancel()
 			}
 		}
