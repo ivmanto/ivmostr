@@ -27,7 +27,7 @@ var (
 	chEM          = make(chan eventClientPair, 300)
 	monitorTicker = time.NewTicker(time.Minute * 5)
 	monitorClose  = make(chan struct{})
-	clientCH      = make(chan *Client)
+	clientCH      = make(chan *Client, 20)
 	relay_access  string
 	clientCldLgr  *logging.Client
 	cclnlgr       *logging.Logger
