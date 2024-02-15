@@ -190,6 +190,7 @@ func (c *Client) dispatcher() error {
 
 		if relay_access == "authenticated" || relay_access == "paid" {
 			if !c.Authed {
+				c.writeCustomNotice("Not authenticated connection")
 				return fmt.Errorf("[disp] CRITICAL Not authenticated clients are not served!")
 			}
 		}

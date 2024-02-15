@@ -67,7 +67,7 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, lists nostr.ListRepo, c
 
 	relay_access = cfg.Relay_access
 
-	session.slgr.SetLevel(log.ErrorLevel)
+	session.slgr.SetLevel(log.DebugLevel)
 
 	session.slgr.SetFormatter(&log.JSONFormatter{
 		DisableTimestamp: true,
@@ -227,6 +227,8 @@ func (s *Session) HandleClient(client *Client) {
 
 // Remove removes client from session.
 func (s *Session) Remove(client *Client) {
+
+	s.slgr.Debug("[Remove] started ... ")
 
 	if client == nil {
 		return
