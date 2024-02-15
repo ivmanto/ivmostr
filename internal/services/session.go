@@ -226,8 +226,6 @@ func (s *Session) HandleClient(client *Client) {
 // Remove removes client from session.
 func (s *Session) Remove() {
 
-	s.slgr.Debug("[Remove] started ... ")
-
 	for client := range clientCH {
 
 		if client == nil {
@@ -239,6 +237,8 @@ func (s *Session) Remove() {
 			break
 
 		default:
+			key := fmt.Sprintf("%s:%s", client.name, client.IP)
+			s.slgr.Debugf("[Remove] removing client %v ... ", key )
 
 			fltrs := len(client.Filetrs)
 
@@ -255,7 +255,7 @@ func (s *Session) Remove() {
 
 			// Remove the client from the session's internal register
 			s.mu.Lock()
-			s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
+			s.ldg.Remove(key)
 			s.mu.Unlock()
 
 			// Remove the client from IP counter

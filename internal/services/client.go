@@ -132,11 +132,15 @@ func (c *Client) ReceiveMsg() error {
 		select {
 		case <-ctx.Done():
 			wg.Wait()
+			c.lgr.Debugf("[ctx.Done] client %v ... lived for %d [s]",  c.IP, time.Now().Unix()-c.CreatedAt)
+			clientCH <- c
 			return ctx.Err()
 
 		case errfm = <-c.errFM:
 			cancel()
 			wg.Wait()
+			c.lgr.Debugf("[chFM] client %v ... lived for %d [s]",  c.IP, time.Now().Unix()-c.CreatedAt)
+			clientCH <- c
 			return errfm
 		case c.inmsg <- []interface{}{mt, p}:
 		}
