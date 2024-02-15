@@ -27,6 +27,7 @@ var (
 	chEM          = make(chan eventClientPair, 300)
 	monitorTicker = time.NewTicker(time.Minute * 5)
 	monitorClose  = make(chan struct{})
+	clientCH      = make(chan *Client)
 	relay_access  string
 	clientCldLgr  *logging.Client
 	cclnlgr       *logging.Logger
@@ -95,6 +96,9 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, lists nostr.ListRepo, c
 	// to supply the subscribed clients with the new arriving Events that
 	// match the respective clients' filters.
 	go filterMatch()
+
+	// Runs a clientH to receive all clients that need to release resources when become inactive.
+	go session.Remove()
 
 	return &session
 }
@@ -213,65 +217,68 @@ func (s *Session) HandleClient(client *Client) {
 	// Schedule Client connection handling into a goroutine from the pool
 	s.pool.Schedule(func() {
 
-		// Anonymous func to close the connection when Read/Write  raises an error.
-		// defer func() {
-		// 	// release the client resources
-		// 	s.Remove(client)
-		// }()
-
 		if err := client.ReceiveMsg(); err != nil {
 			s.slgr.Errorf("[handleClient-go-routine] ReceiveMsg got an error: %v", err)
 		}
-		s.Remove(client)
 	})
 }
 
 // Remove removes client from session.
-func (s *Session) Remove(client *Client) {
+func (s *Session) Remove() {
 
 	s.slgr.Debug("[Remove] started ... ")
 
-	if client == nil {
-		return
+	for client := range clientCH {
+
+		if client == nil {
+			continue
+		}
+
+		select {
+		case <-Exit:
+			break
+
+		default:
+
+			fltrs := len(client.Filetrs)
+
+			// [ ]: Review what exactly more resources (than websocket connection) need to be released
+			e := client.Conn.WS.Close()
+			if e != nil {
+				s.slgr.Errorf("[Remove] error closing websocket connection: %v", e)
+			}
+
+			s.wspool.Put(client.Conn)
+
+			// Put the Client back in the client's pool
+			s.Clients.Put(client)
+
+			// Remove the client from the session's internal register
+			s.mu.Lock()
+			s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
+			s.mu.Unlock()
+
+			// Remove the client from IP counter
+			tools.IPCount.Remove(client.IP)
+
+			// Release client resources
+			client.repo = nil
+			client.cclnlgr = nil
+			client.errorRate = nil
+			client.msgwt = nil
+			client.inmsg = nil
+			client.errFM = nil
+			client.errCH = nil
+			client = nil
+
+			metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
+			s.slgr.Debugf(
+				"*** [Remove] client [%v] removed from session.Sent metric: %v",
+				client.IP, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1},
+			)
+		}
+
 	}
-
-	fltrs := len(client.Filetrs)
-
-	// [ ]: Review what exactly more resources (than websocket connection) need to be released
-
-	e := client.Conn.WS.Close()
-	if e != nil {
-		s.slgr.Errorf("[Remove] error closing websocket connection: %v", e)
-	}
-
-	s.wspool.Put(client.Conn)
-
-	// Put the Client back in the client's pool
-	s.Clients.Put(client)
-
-	// Remove the client from the session's internal register
-	s.mu.Lock()
-	s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
-	s.mu.Unlock()
-
-	// Remove the client from IP counter
-	tools.IPCount.Remove(client.IP)
-
-	// Release client resources
-	client.repo = nil
-	client.cclnlgr = nil
-	client.errorRate = nil
-	client.msgwt = nil
-	client.inmsg = nil
-	client.errFM = nil
-	client.errCH = nil
-	client = nil
-
-	metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
-	s.slgr.Debugf(
-		"*** [Remove] client [%v] removed from session.Sent metric: %v",
-		client.IP, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1},
-	)
 }
 
 // Give code-word as name to the client connection
@@ -316,7 +323,7 @@ func (s *Session) TuneClientConn(client *Client) {
 			log.Printf("[SetCloseHandler] Error closing underlying network connection: %v", errnc)
 		}
 
-		client.errCH <- err
+		client.errFM <- err
 		return err
 	})
 
