@@ -117,9 +117,9 @@ func (c *Client) ReceiveMsg() error {
 		}
 	}(ctx)
 
-	wg.Add(1)
+	//wg.Add(1)
 	for {
-		defer wg.Done()
+		//defer wg.Done()
 
 		mt, p, err := c.Conn.WS.ReadMessage()
 		if err != nil || mt == -1 {
@@ -186,13 +186,6 @@ func (c *Client) dispatcher() error {
 		if len(msg[1].([]byte)) == 0 {
 			c.lgr.Debugf("[disp] [%s] The received message has null payload!", c.IP)
 			continue
-		}
-
-		if relay_access == "authenticated" || relay_access == "paid" {
-			if !c.Authed {
-				c.writeCustomNotice("Not authenticated connection")
-				return fmt.Errorf("[disp] CRITICAL Not authenticated clients are not served!")
-			}
 		}
 
 		// msg is an enchance []interface{} by the ReadMsg method with the message type int as first element.
@@ -275,6 +268,14 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 		c.lgr.Errorf("[dispatchNostrMsgs] nostr message label [%v] is not a string!", jmsg[0])
 	}
 	c.lgr.Debugf("[dispatchNostrMsgs] from [%s] message key is: `%s`", c.IP, key)
+
+	if relay_access == "authenticated" || relay_access == "paid" {
+		if key != "AUTH" && !c.Authed {
+			c.writeCustomNotice("Not authenticated connection")
+			c.errFM <- fmt.Errorf("[dispatchNostrMsgs] key: [%v] Not authenticated clients are not served!", key)
+			return
+		}
+	}
 
 	switch key {
 	case "EVENT":
