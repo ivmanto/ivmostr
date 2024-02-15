@@ -188,6 +188,12 @@ func (c *Client) dispatcher() error {
 			continue
 		}
 
+		if relay_access == "authenticated" || relay_access == "paid" {
+			if !c.Authed {
+				return fmt.Errorf("[disp] CRITICAL Not authenticated clients are not served!")
+			}
+		}
+
 		// msg is an enchance []interface{} by the ReadMsg method with the message type int as first element.
 		switch msg[0].(int) {
 		case websocket.TextMessage:

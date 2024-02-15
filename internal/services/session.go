@@ -25,7 +25,7 @@ var (
 	NewEvent      = make(chan *gn.Event, 100)
 	Exit          = make(chan struct{})
 	chEM          = make(chan eventClientPair, 300)
-	monitorTicker = time.NewTicker(time.Minute * 10)
+	monitorTicker = time.NewTicker(time.Minute * 5)
 	monitorClose  = make(chan struct{})
 	relay_access  string
 	clientCldLgr  *logging.Client
@@ -117,12 +117,7 @@ func (s *Session) IsRegistered(ip string) bool {
 func (s *Session) Register(conn *Connection, ip string) *Client {
 
 	// register the clients IP in the ip-counter
-	if tools.IPCount.Len() < 10 {
-		relay_access = "public"
-		tools.IPCount.Add(ip)
-	} else {
-		relay_access = "authenticated"
-	}
+	tools.IPCount.Add(ip)
 
 	// initiate cloud Logger
 	cclnlgr = clientCldLgr.Logger("ivmostr-clnops")
@@ -166,14 +161,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 			key  string
 		)
 
-		switch relay_access {
-		case "public":
-			key = ip
-		case "authenticated":
-			key = fmt.Sprintf("auth:%s", client.IP)
-		case "paid":
-			key = fmt.Sprintf("%s:%s", client.name, client.IP)
-		}
+		key = fmt.Sprintf("%s:%s", client.name, client.IP)
 
 		ok, clnt = s.ldg.Add(key, client)
 		if !ok {
@@ -477,6 +465,15 @@ func (s *Session) sessionState() {
 				tools.IPCount.Remove(client.IP)
 			}
 			continue
+		}
+
+		if relay_access == "authenticated" || relay_access == "paid" {
+			if !client.Authed && time.Now().Unix()-client.CreatedAt > 300 {
+				s.slgr.Debugf("[session state] Not authenticated client [%s]/[%s]", client.IP, client.name)
+				s.ldg.Remove(client.IP)
+				tools.IPCount.Remove(client.IP)
+				continue
+			}
 		}
 
 		laf[key] = client.GetFilters()
