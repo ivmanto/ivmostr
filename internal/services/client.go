@@ -117,9 +117,7 @@ func (c *Client) ReceiveMsg() error {
 		}
 	}(ctx)
 
-	//wg.Add(1)
 	for {
-		//defer wg.Done()
 
 		mt, p, err := c.Conn.WS.ReadMessage()
 		if err != nil || mt == -1 {

@@ -214,14 +214,15 @@ func (s *Session) HandleClient(client *Client) {
 	s.pool.Schedule(func() {
 
 		// Anonymous func to close the connection when Read/Write  raises an error.
-		defer func() {
-			// release the client resources
-			s.Remove(client)
-		}()
+		// defer func() {
+		// 	// release the client resources
+		// 	s.Remove(client)
+		// }()
 
 		if err := client.ReceiveMsg(); err != nil {
 			s.slgr.Errorf("[handleClient-go-routine] ReceiveMsg got an error: %v", err)
 		}
+		s.Remove(client)
 	})
 }
 
