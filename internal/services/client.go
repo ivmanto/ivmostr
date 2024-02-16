@@ -99,14 +99,12 @@ func (c *Client) ReceiveMsg() error {
 		defer wg.Done()
 
 		for {
-			if ctx.Err() == nil {
-				errch = c.dispatcher()
-				if errch != nil {
-					c.lgr.Errorf("ERROR: `dispatcher` raised: %v", errch)
-					if strings.Contains(errch.Error(), "CRITICAL") {
-						cancel()
-						return
-					}
+			errch = c.dispatcher()
+			if errch != nil {
+				c.lgr.Errorf("ERROR: `dispatcher` raised: %v", errch)
+				if strings.Contains(errch.Error(), "CRITICAL") {
+					cancel()
+					return
 				}
 			}
 
@@ -127,6 +125,7 @@ func (c *Client) ReceiveMsg() error {
 			if strings.Contains(err.Error(), "websocket:") || mt == -1 {
 				errfm = err
 				cancel()
+				wg.Wait()
 				break
 			}
 		}
