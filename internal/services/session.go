@@ -239,9 +239,10 @@ func (s *Session) Remove() {
 
 		default:
 			key := fmt.Sprintf("%s:%s", client.name, client.IP)
-			s.slgr.Debugf("[Remove] removing client %v ... ", key )
+			s.slgr.Debugf("[Remove] removing client %v ... ", key)
 
 			fltrs := len(client.Filetrs)
+			subscrp := client.Subscription_id
 
 			// [ ]: Review what exactly more resources (than websocket connection) need to be released
 			e := client.Conn.WS.Close()
@@ -276,7 +277,11 @@ func (s *Session) Remove() {
 			client.errCH = nil
 			client = nil
 
-			metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
+			if fltrs > 0 && subscrp != "" {
+				metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
+			} else if subscrp == "" {
+				metrics.MetricsChan <- map[string]int{"connsActiveWSConns": -1}
+			}
 
 		}
 

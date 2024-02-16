@@ -140,11 +140,11 @@ func (c *Client) ReceiveMsg() error {
 			cancel()
 			wg.Wait()
 			break
-			
+
 		case c.inmsg <- []interface{}{mt, p}:
 		}
 	}
-	c.lgr.Debugf("[ctx.Done] client %v ... lived for %d [s]",  c.IP, time.Now().Unix()-c.CreatedAt)
+	c.lgr.Debugf("client %v ... lived for %d [s], error: [%v] ", c.IP, time.Now().Unix()-c.CreatedAt, errfm)
 	clientCH <- c
 	return errfm
 }
@@ -481,11 +481,13 @@ func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 	if len(*msg) == 2 {
 		subscription_id := (*msg)[1].(string)
 		if c.Subscription_id == subscription_id {
+			fltrs := len(c.Filetrs)
 			c.Subscription_id = ""
 			c.Filetrs = []map[string]interface{}{}
 
 			c.writeCustomNotice("Update: The subscription has been closed")
 
+			metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1}
 			payloadEvnt := fmt.Sprintf(`{"method":"[handlerCloseSubsMsgs]","client":"%s", "close_subscriptionID":"%s","after [s]": %d}`, c.IP, subscription_id, time.Now().Unix()-c.CreatedAt)
 			leop.Payload = payloadEvnt
 			cclnlgr.Log(leop)
