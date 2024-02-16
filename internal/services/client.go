@@ -99,12 +99,14 @@ func (c *Client) ReceiveMsg() error {
 		defer wg.Done()
 
 		for {
-			errch = c.dispatcher()
-			if errch != nil {
-				c.lgr.Errorf("ERROR: `dispatcher` raised: %v", errch)
-				if strings.Contains(errch.Error(), "CRITICAL") {
-					cancel()
-					return
+			if ctx.Err() == nil {
+				errch = c.dispatcher()
+				if errch != nil {
+					c.lgr.Errorf("ERROR: `dispatcher` raised: %v", errch)
+					if strings.Contains(errch.Error(), "CRITICAL") {
+						cancel()
+						return
+					}
 				}
 			}
 
