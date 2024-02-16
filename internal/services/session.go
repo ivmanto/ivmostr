@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"strconv"
@@ -245,7 +246,11 @@ func (s *Session) Remove() {
 			// [ ]: Review what exactly more resources (than websocket connection) need to be released
 			e := client.Conn.WS.Close()
 			if e != nil {
-				s.slgr.Errorf("[Remove] error closing websocket connection: %v", e)
+				if e == io.EOF {
+					s.slgr.Errorf("[Remove] client [%v] closed the websocket connection.", client.IP)
+				} else {
+					s.slgr.Errorf("[Remove] error closing websocket connection: %v", e)
+				}
 			}
 
 			s.wspool.Put(client.Conn)
@@ -272,10 +277,7 @@ func (s *Session) Remove() {
 			client = nil
 
 			metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
-			s.slgr.Debugf(
-				"*** [Remove] client [%v] removed from session.Sent metric: %v",
-				client.IP, map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1},
-			)
+
 		}
 
 	}
@@ -322,8 +324,6 @@ func (s *Session) TuneClientConn(client *Client) {
 		if errnc := client.Conn.WS.NetConn().Close(); errnc != nil {
 			log.Printf("[SetCloseHandler] Error closing underlying network connection: %v", errnc)
 		}
-
-		client.errFM <- err
 		return err
 	})
 

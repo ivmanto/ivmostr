@@ -124,6 +124,7 @@ func (c *Client) ReceiveMsg() error {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
 			if strings.Contains(err.Error(), "websocket:") || mt == -1 {
 				cancel()
+				break
 			}
 		}
 
@@ -132,19 +133,20 @@ func (c *Client) ReceiveMsg() error {
 		select {
 		case <-ctx.Done():
 			wg.Wait()
-			c.lgr.Debugf("[ctx.Done] client %v ... lived for %d [s]",  c.IP, time.Now().Unix()-c.CreatedAt)
-			clientCH <- c
-			return ctx.Err()
+			c.errFM <- ctx.Err()
+			break
 
 		case errfm = <-c.errFM:
 			cancel()
 			wg.Wait()
-			c.lgr.Debugf("[chFM] client %v ... lived for %d [s]",  c.IP, time.Now().Unix()-c.CreatedAt)
-			clientCH <- c
-			return errfm
+			break
+			
 		case c.inmsg <- []interface{}{mt, p}:
 		}
 	}
+	c.lgr.Debugf("[ctx.Done] client %v ... lived for %d [s]",  c.IP, time.Now().Unix()-c.CreatedAt)
+	clientCH <- c
+	return errfm
 }
 
 func (c *Client) writeT() error {
