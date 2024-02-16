@@ -50,6 +50,8 @@ func recordAppMetrics(metricsChan chan<- interface{}, ctx context.Context) {
 						clntProcessedMessages.Inc()
 					case "connsActiveWSConns":
 						connsActiveWSConns.Add(float64(val))
+					case "clntAWSCUniqueIP":
+						clntAWSCUniqueIP.Set(float64(val))
 					default:
 						continue
 					}

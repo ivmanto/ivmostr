@@ -1,6 +1,10 @@
 package tools
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
+)
 
 var (
 	IPCount *ipCount
@@ -21,6 +25,7 @@ func (i *ipCount) Add(ip string) {
 	i.ipcount[ip]++
 	i.ipTtlCount[ip]++
 	i.mutex.Unlock()
+	metrics.MetricsChan <- map[string]int{"clntAWSCUniqueIP": i.Len()}
 }
 
 // ipcount keeps only the ACTIVE connected clients
@@ -31,6 +36,7 @@ func (i *ipCount) Remove(ip string) {
 		delete(i.ipcount, ip)
 	}
 	i.mutex.Unlock()
+	metrics.MetricsChan <- map[string]int{"clntAWSCUniqueIP": i.Len()}
 }
 
 // Returns the number of total active connected clients

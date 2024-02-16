@@ -123,6 +123,7 @@ func (c *Client) ReceiveMsg() error {
 		if err != nil || mt == -1 {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
 			if strings.Contains(err.Error(), "websocket:") || mt == -1 {
+				errfm = err
 				cancel()
 				break
 			}
@@ -136,10 +137,10 @@ func (c *Client) ReceiveMsg() error {
 			c.errFM <- ctx.Err()
 			break
 
-		case errfm = <-c.errFM:
-			cancel()
-			wg.Wait()
-			break
+		// case errfm = <-c.errFM:
+		// 	cancel()
+		// 	wg.Wait()
+		// 	break
 
 		case c.inmsg <- []interface{}{mt, p}:
 		}

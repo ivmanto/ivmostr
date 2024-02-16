@@ -94,11 +94,18 @@ var (
 		Help:      "The number of active websocket connections",
 	})
 
+	clntAWSCUniqueIP = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "ivmostr",
+		Subsystem: "connections",
+		Name:      "ivmostr_ws_connections_unique_ip",
+		Help:      "The number of unique IPs connected to the websocket",
+	})
+
 	// Subsystem: network
 	netOutboundBytes = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "ivmostr",
 		Subsystem: "network",
 		Name:      "ivmostr_network_outbound_bytes",
-		Help:      "The number of active websocket connections",
+		Help:      "The number of bytes sent outbound to clients",
 	})
 )
