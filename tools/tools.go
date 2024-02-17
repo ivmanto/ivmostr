@@ -20,6 +20,16 @@ import (
 	gn "github.com/studiokaiji/go-nostr"
 )
 
+var (
+	tlgr         log.Logger
+	WList, BList []string
+)
+
+func init() {
+	tlgr = *log.New()
+	tlgr.Level = log.InfoLevel
+}
+
 func scientificNotationToUInt(scientificNotation string) (uint, error) {
 	flt, _, err := big.ParseFloat(scientificNotation, 10, 0, big.ToNearestEven)
 	if err != nil {
@@ -57,7 +67,7 @@ func PrintVersion() {
 
 	f, err := os.OpenFile("version", os.O_RDONLY, 0666)
 	if err != nil {
-		log.Println("Error opening version file")
+		tlgr.Errorf("Error opening version file %v", err)
 		return
 	}
 	defer f.Close()
@@ -67,25 +77,25 @@ func PrintVersion() {
 		log.Println("Error reading version file")
 		return
 	}
-	log.Println(string(b))
+	tlgr.Println(string(b))
 }
 
 func ServerInfo(w http.ResponseWriter, r *http.Request) {
 
 	ip := GetIP(r)
 	org := r.Header.Get("Origin")
-	log.Printf("providing server info to %v, %v...\n", ip, org)
+	tlgr.Printf("providing server info to %v, %v...\n", ip, org)
 
 	assetsPath, err := filepath.Abs("assets")
 	if err != nil {
-		log.Printf("ERROR: Failed to get absolute path to assets folder: %v", err)
+		tlgr.Errorf("ERROR: Failed to get absolute path to assets folder: %v", err)
 	}
 
 	// Read the contents of the server_info.json file
 	filePath := filepath.Join(assetsPath, "server_info.json")
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Printf("ERROR:Failed to read server_info.json file from path %v, error: %v", filePath, err)
+		tlgr.Errorf("ERROR:Failed to read server_info.json file from path %v, error: %v", filePath, err)
 	}
 
 	if len(data) > 0 {
@@ -195,10 +205,26 @@ func ConvertStructToByte(e any) ([]byte, error) {
 	enc := gob.NewEncoder(buf)
 	errE := enc.Encode(e)
 	if errE != nil {
-		log.Println("[ConvertStructToByte] Error encoding struct []events:", errE)
+		tlgr.Errorf("[ConvertStructToByte] Error encoding struct []events: %v", errE)
 		return nil, errE
 	}
 	return buf.Bytes(), nil
+}
+
+func GetStructToByteLen(e any) (uint64, error) {
+
+	gob.Register(map[string]interface{}{})
+	gob.Register(gn.Event{})
+	gob.Register([]interface{}{})
+
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	errE := enc.Encode(e)
+	if errE != nil {
+		tlgr.Errorf("[ConvertStructToByte] Error encoding struct []events: %v", errE)
+		return uint64(0), errE
+	}
+	return uint64(len(buf.Bytes())), nil
 }
 
 func GetIPCount() int {
@@ -206,33 +232,55 @@ func GetIPCount() int {
 }
 
 func AddToBlacklist(ip string, lst nostr.ListRepo) {
+
+	if Contains(WList, ip) {
+		return
+	}
+
 	bld := nostr.BlackList{
 		IP:        ip,
 		CreatedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Add(168 * time.Hour).Unix(),
 	}
+
+	// Keep local list updated
+	BList = append(BList, ip)
+
 	err := lst.StoreBlackList(&bld)
 	if err != nil {
 		log.Errorf("[srvHandler] error blacklisting ip: %s, Error:%v", ip, err)
 	}
 }
 
-func GetBlackListedIPs(lst nostr.ListRepo) []string {
+func GetBlackListedIPs(lst nostr.ListRepo) {
+	var err error
 
-	ipl, err := lst.GetBLIPS()
+	BList, err = lst.GetBLIPS()
 	if err != nil {
-		log.Error("[GetBlackListedIPs] error getting blacklisted ips: ", err)
+		tlgr.Errorf("[GetBlackListedIPs] error getting blacklisted ips: %v", err)
 	}
-	log.Debugf("[GetBlackListedIPs] black list %v", ipl)
-	return ipl
+	tlgr.Debugf("[GetBlackListedIPs] black list %v", BList)
 }
 
-func GetWhiteListedIPs(lst nostr.ListRepo) []string {
+func GetWhiteListedIPs(lst nostr.ListRepo) {
+	var err error
 
-	ipl, err := lst.GetWLIPS()
+	WList, err = lst.GetWLIPS()
 	if err != nil {
-		log.Error("[GetWhiteListedIPs] error getting whitelisted ips: ", err)
+		tlgr.Errorf("[GetWhiteListedIPs] error getting whitelisted ips: %v", err)
 	}
-	log.Debugf("[GetWhiteListedIPs] black list %v", ipl)
-	return ipl
+	tlgr.Debugf("[GetWhiteListedIPs] black list %v", WList)
 }
+
+// SendMetrics will be used to send prometheus metrics to the metrics recorder channel.
+// mval map will hold the name of the metric as a key and the int value to be sent;
+// func SendMetrics(ctx context.Context, ch chan<- interface{}, mval any) {
+// 	defer close(ch)
+// 	select {
+// 	case <-ctx.Done():
+// 		return
+// 	case ch <- mval:
+// 		metrics.MetricsChan <- mval
+// 		return
+// 	}
+// }

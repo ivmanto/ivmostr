@@ -8,6 +8,7 @@ import (
 
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
 	"github.com/dasiyes/ivmostr-tdd/tools"
+	"github.com/dasiyes/ivmostr-tdd/tools/metrics"
 )
 
 var (
@@ -34,6 +35,10 @@ func accessControl(h http.Handler) http.Handler {
 // Handles healthchecks
 func healthcheck(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		// Updating the metrics channel
+		metrics.MetricsChan <- map[string]interface{}{"connsTotalHTTPRequests": map[string]int{"http": 1, "wss": 0}}
+
 		if r.URL.Path == "/hc" {
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprintf(w, "OK")
@@ -43,6 +48,7 @@ func healthcheck(h http.Handler) http.Handler {
 	})
 }
 
+// [ ]: Refactor the rateLimiter to use sync.Map - see the file _my_files/sync.Map-rateLimiter.md
 // Handles the rate Limit control
 func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -78,11 +84,11 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 			ip := tools.GetIP(r)
 
 			// whitelist IPs
-			wlst = append(wlst, ips...)
-			if tools.Contains(wlst, ip) {
+			tools.WList = append(tools.WList, ips...)
+			if tools.Contains(tools.WList, ip) {
 				// [!]POLICY: No more than X (5?) total active connections
 				// for WHITELISTED clients.
-				if tools.IPCount.IPConns(ip) >= 5 {
+				if tools.IPCount.IPConns(ip) >= 10 {
 					h.rllgr.Debugf("[rateLimiter] Too many connections from whitelisted IP address %s.", ip)
 					http.Error(w, "Too many requests", http.StatusTooManyRequests)
 					return
@@ -92,7 +98,7 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 			}
 
 			// blacklist IPs
-			if tools.Contains(blst, ip) {
+			if tools.Contains(tools.BList, ip) {
 				w.WriteHeader(http.StatusForbidden)
 				fmt.Fprintf(w, "Forbidden")
 				return
@@ -126,20 +132,27 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 					h.rllgr.Debugf("[rateLimiter] Too many requests from IP address %s within 30 minutes.", ip)
 					go tools.AddToBlacklist(ip, h.lists)
 
+					h.rllgr.Debugf("[rateLimiter] IP address %s blocked.", ip)
 					w.WriteHeader(http.StatusTooManyRequests)
 					fmt.Fprintf(w, "TooManyRequests")
 
 					return
 				} else {
 					// Update the request count
+					h.mtx.Lock()
 					rateLimit.Requests++
 					rateLimit.Timestamp = currentTimestamp
+					h.mtx.Unlock()
+
 					h.rllgr.Debugf("[rateLimiter] IP address %s made %d requests until %v.\n", ip, rateLimit.Requests, rateLimit.Timestamp)
 				}
 			} else {
 				// Set the initial request count and timestamp for the IP address
+				h.mtx.Lock()
 				rateLimit.Requests = 1
 				rateLimit.Timestamp = currentTimestamp
+				h.mtx.Unlock()
+
 				h.rllgr.Debugf("[rateLimiter] IP address %s reset requests to 1 at %v.\n", ip, rateLimit.Timestamp)
 			}
 

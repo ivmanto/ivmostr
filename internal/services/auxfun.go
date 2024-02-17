@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/logging"
@@ -159,22 +160,29 @@ func filterMatch() {
 
 		filters := pair.client.GetFilters()
 
+		var wg sync.WaitGroup
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
 		for _, filter := range filters {
+			wg.Add(1)
 			fmlgr.Debugf("[filterMatch] processing filter [%v]", filter)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			go func(ctx context.Context, event *gn.Event, client *Client, filter map[string]interface{}, lgr *log.Logger) {
 
-			go func(ctx context.Context, event *gn.Event, client *Client, filter map[string]interface{}) {
+				defer wg.Done()
+
 				select {
 				case <-ctx.Done():
 					fmlgr.Debugf("[filterMatch] Gracefully shutting down")
 					return
 				default:
-					filterMatchSingle(event, client, filter)
-					cancel()
+					filterMatchSingle(event, client, filter, fmlgr)
 				}
-			}(ctx, pair.event, pair.client, filter)
+			}(ctx, pair.event, pair.client, filter, fmlgr)
 		}
+		wg.Wait()
+		cancel()
+		fmlgr.Debugf("[filterMatch] Done!")
 	}
 }
 
@@ -195,7 +203,7 @@ func filterMatch() {
 // The limit property of a filter is only valid for the initial query and MUST be ignored afterwards. When limit: n is present it is assumed that the events returned in the initial query will be the last n events ordered by the created_at. It is safe to return less events than limit specifies, but it is expected that relays do not return (much) more events than requested so clients don't get unnecessarily overwhelmed by data.
 
 // filterMatchSingle verfies if an Event `e` attributes match a specific subscription filter values.
-func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{}) {
+func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{}, lgr *log.Logger) {
 
 	//<filters> is a JSON object that determines what events will be sent in that subscription, it can have the following attributes:
 	//{
@@ -210,7 +218,8 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 	//
 	// All conditions of a filter that are specified must match for an event for it to pass the filter, i.e., **multiple conditions are interpreted as `&&` conditions**.
 
-	// [ ]: Refactor this to work with mixed filters - means when there is i.e. list of kinds [...] + until or since clause - then the filetr should run in sequens / nested format
+	// [ ]TODO: implement `Not implemented` combinations from the logs
+
 	filterState := parseFilter(filter)
 
 	switch filterState.fltState {
@@ -239,6 +248,16 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 			}
 		}
 
+	// [x]: kinds && since && until
+	case fcKindsSinceUntil:
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				if e.CreatedAt >= filterState.since && e.CreatedAt <= filterState.until {
+					goto RESULT
+				}
+			}
+		}
+
 	// [x]: since
 	case fcSince:
 		if e.CreatedAt >= filterState.since {
@@ -248,6 +267,12 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 	// [x]: until
 	case fcUntil:
 		if e.CreatedAt <= filterState.until {
+			goto RESULT
+		}
+
+	// [x]: since & until
+	case fcSinceUntil:
+		if e.CreatedAt >= filterState.since && e.CreatedAt <= filterState.until {
 			goto RESULT
 		}
 
@@ -298,6 +323,45 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 			return
 		}
 
+	// [x]: authors && kinds && since
+	case fcAuthorsKindsSince:
+		var kr, ar bool
+
+		for _, author := range filter["authors"].([]interface{}) {
+			if author.(string) == e.PubKey {
+				ar = true
+				break
+			}
+		}
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				kr = true
+				break
+			}
+		}
+
+		if (e.CreatedAt > filterState.since) && kr && ar {
+			goto RESULT
+		} else {
+			return
+		}
+
+	// [x]: kinds && since
+	case fcKindsSince:
+		var kr bool
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				kr = true
+				break
+			}
+		}
+
+		if (e.CreatedAt > filterState.since) && kr {
+			goto RESULT
+		} else {
+			return
+		}
+
 	// [x]: kinds && tags
 	case fcKindsTags:
 		var kr, tr bool
@@ -334,15 +398,80 @@ func filterMatchSingle(e *gn.Event, client *Client, filter map[string]interface{
 			return
 		}
 
+	// [ ]: kinds && tags && SINCE
+	case fcKindsTagsSince:
+		var kr, tr bool
+
+		for _, kind := range filter["kinds"].([]interface{}) {
+			if kind.(float64) == float64(e.Kind) {
+				kr = true
+				break
+			}
+		}
+
+		for tkey, tval := range filter {
+			switch tkey {
+			case "#e":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.ID {
+						tr = true
+						break
+					}
+				}
+			case "#p":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.PubKey {
+						tr = true
+					}
+				}
+			default:
+				continue
+			}
+		}
+		if e.CreatedAt > filterState.since && kr && tr {
+			goto RESULT
+		} else {
+			return
+		}
+
+	// [ ]: tags && since && until
+	case fcTagsSinceUntil:
+		var tr bool
+
+		for tkey, tval := range filter {
+			switch tkey {
+			case "#e":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.ID {
+						tr = true
+						break
+					}
+				}
+			case "#p":
+				for _, tag := range tval.([]interface{}) {
+					if tag.(string) == e.PubKey {
+						tr = true
+					}
+				}
+			default:
+				continue
+			}
+		}
+
+		if e.CreatedAt > filterState.since && e.CreatedAt < filterState.until && tr {
+			goto RESULT
+		} else {
+			return
+		}
+
 	default:
-		log.Debugf("*** Filter combination [%v] not implemented", filter)
+		lgr.Debugf("*** Filter combination [%v] not implemented", filter)
 		return
 	}
 
 RESULT:
 	client.msgwt <- []interface{}{*e}
-	// // Updating the metrics channel
-	metrics.ChBroadcastEvent <- 1
+	metrics.MetricsChan <- map[string]int{"evntBroadcasted": 1}
 }
 
 // checkAndConvertFilterLists will work with filter's lists for `authors`, `ids`,

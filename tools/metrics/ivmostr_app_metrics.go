@@ -1,117 +1,91 @@
 package metrics
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	"context"
+	"sync"
+
+	log "github.com/sirupsen/logrus"
 )
 
 var (
-	ChStoreEvent         = make(chan int, 100)
-	ChBroadcastEvent     = make(chan int, 50)
-	ChNewSubscription    = make(chan int, 20)
-	ChUpdateSubscription = make(chan int, 20)
-	ChNrOfSubsFilters    = make(chan int, 20)
-	ChTopDemandingIP     = make(chan map[string]int, 2)
-)
-
-// Defined application metrics to track
-var (
-	evntStored = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "ivmostr",
-		Subsystem: "nostr",
-		Name:      "ivmostr_total_stored_events",
-		Help:      "The total number of nostr events stored in the DB",
-	})
-
-	evntBroadcasted = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "ivmostr",
-		Subsystem: "nostr",
-		Name:      "ivmostr_total_broadcasted_events",
-		Help:      "The total number of nostr events broadcasted to the network",
-	})
-
-	evntNewSubscriptions = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "ivmostr",
-		Subsystem: "nostr",
-		Name:      "ivmostr_total_new_subscriptions",
-		Help:      "The total number of new clients subscriptions",
-	})
-
-	evntUpdatedSubscriptions = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "ivmostr",
-		Subsystem: "nostr",
-		Name:      "ivmostr_total_updated_subscriptions",
-		Help:      "The total number of updated subscriptions",
-	})
-
-	evntNrOfSubsFilters = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "ivmostr",
-		Subsystem: "nostr",
-		Name:      "ivmostr_total_subs_filters",
-		Help:      "The total number of filters in subscriptions",
-	})
-
-	connsTopDemandingIP = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "ivmostr",
-		Subsystem: "nostr",
-		Name:      "ivmostr_top_demanding_ip",
-		Help:      "The top demanding IP on number of connections",
-	},
-		[]string{
-			"ip",
-		})
+	MetricsChan = make(chan interface{}, 1024)
+	updateMutex sync.RWMutex
 )
 
 func init() {
-	recordAppMetrics()
+	ctx := context.Background()
+	go recordAppMetrics(MetricsChan, ctx)
 	ivmMetricsRunner()
 }
 
-func recordAppMetrics() {
+func recordAppMetrics(metricsChan chan<- interface{}, ctx context.Context) {
+	lgr := log.New()
+	lgr.SetLevel(log.DebugLevel)
+	lgr.SetFormatter(&log.JSONFormatter{})
+	updateMutex.Lock()
+	defer updateMutex.Unlock()
 
-	// Worker for tracking number of stored events
-	go func() {
-		for range ChStoreEvent {
-			evntStored.Inc()
-		}
-	}()
+	for {
+		select {
+		case metrics := <-MetricsChan:
+			switch metric := metrics.(type) {
+			case map[string]int:
+				for key, val := range metric {
+					switch key {
+					case "evntStored":
+						evntStored.Inc()
+					case "evntProcessedBrdcst":
+						evntProcessedBrdcst.Inc()
+					case "evntBroadcasted":
+						evntBroadcasted.Inc()
+					case "evntSubsSupplied":
+						evntSubsSupplied.Add(float64(val))
+					case "clntSubscriptions":
+						clntSubscriptions.Add(float64(val))
+					case "clntUpdatedSubscriptions":
+						clntUpdatedSubscriptions.Add(float64(val))
+					case "clntNrOfSubsFilters":
+						clntNrOfSubsFilters.Add(float64(val))
+					case "clntProcessedMessages":
+						clntProcessedMessages.Inc()
+					case "connsActiveWSConns":
+						connsActiveWSConns.Add(float64(val))
+					case "clntAWSCUniqueIP":
+						clntAWSCUniqueIP.Set(float64(val))
+					default:
+						continue
+					}
+				}
+			case map[string]uint64:
+				for key, val := range metric {
+					switch key {
+					case "netOutboundBytes":
+						netOutboundBytes.Add(float64(val))
+					}
+				}
+			case map[string]interface{}:
+				for key, val := range metric {
+					switch key {
+					case "connsTopDemandingIP":
+						ipMax, ok := val.(map[string]int)
+						if ok {
+							for k, v := range ipMax {
+								connsTopDemandingIP.WithLabelValues(k).Set(float64(v))
+							}
+						}
+					case "connsTotalHTTPRequests":
+						nrConns, ok := val.(map[string]int)
+						if ok {
+							connsTotalHTTPRequests.WithLabelValues("http").Add(float64(nrConns["http"]))
+						}
+					}
+				}
 
-	// Worker to track number of broadcasted events
-	go func() {
-		for range ChBroadcastEvent {
-			evntBroadcasted.Inc()
-		}
-	}()
-
-	// Worker to track number of new subscriptions
-	go func() {
-		for range ChNewSubscription {
-			evntNewSubscriptions.Inc()
-		}
-	}()
-
-	// Worker to track number of updated subscriptions
-	go func() {
-		for range ChUpdateSubscription {
-			evntUpdatedSubscriptions.Inc()
-		}
-	}()
-
-	// Worker to track number of subscriptions filters
-	go func() {
-		for v := range ChNrOfSubsFilters {
-			evntNrOfSubsFilters.Add(float64(v))
-		}
-	}()
-
-	// Worker to track on most demanding IP address keep connecting to the relay
-	go func() {
-		for tdip := range ChTopDemandingIP {
-			connsTopDemandingIP.Reset()
-			for ip, v := range tdip {
-				connsTopDemandingIP.WithLabelValues(ip).Set(float64(v))
-				break
+			default:
+				continue
 			}
+		case <-ctx.Done():
+			return
 		}
-	}()
+	}
 }

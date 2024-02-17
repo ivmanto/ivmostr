@@ -45,6 +45,7 @@ const (
 	fcAuthorsTags       = fcAuthors | fcTags            // 100100
 	fcAuthorsTagsSince  = fcAuthors | fcTags | fcSince  // 100110
 	fcAuthorsTagsUntil  = fcAuthors | fcTags | fcUntil  // 100101
+	fcTagsSinceUntil    = fcTags | fcSince | fcUntil    // 000111
 )
 
 // filterState

@@ -1,6 +1,8 @@
 package services
 
-import "sync"
+import (
+	"sync"
+)
 
 type ledger struct {
 	subscribers map[string]*Client

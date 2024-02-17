@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	_ "runtime/pprof"
 
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/data/firestoredb"
@@ -102,6 +103,10 @@ func main() {
 		log.Errorf("[main] CRITICAL: firestore lists repository init error %s.\n Exiting now, unable to proceed.", err.Error())
 		panic(err)
 	}
+	tools.GetWhiteListedIPs(lstsRepo)
+	tools.GetBlackListedIPs(lstsRepo)
+	log.Printf("...white list: %d ...", len(tools.WList))
+	log.Printf("...black list: %d ...", len(tools.BList))
 
 	// Init a new HTTP server instance
 	httpServer := server.NewInstance()

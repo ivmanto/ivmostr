@@ -3,7 +3,7 @@ project_id: "ivm-ostr-srv"
 port: ${PORT}
 relay_host: "localhost"
 # accepts: public | authenticated | paid 
-relay_access: "public"
+relay_access: "authenticated"
 # defined in milliseconds
 ws_io_operation_timeout: 100
 # pool's max workers 

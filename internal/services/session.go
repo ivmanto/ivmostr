@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"strconv"
@@ -25,8 +26,9 @@ var (
 	NewEvent      = make(chan *gn.Event, 100)
 	Exit          = make(chan struct{})
 	chEM          = make(chan eventClientPair, 300)
-	monitorTicker = time.NewTicker(time.Minute * 10)
+	monitorTicker = time.NewTicker(time.Minute * 5)
 	monitorClose  = make(chan struct{})
+	clientCH      = make(chan *Client, 20)
 	relay_access  string
 	clientCldLgr  *logging.Client
 	cclnlgr       *logging.Logger
@@ -96,6 +98,9 @@ func NewSession(pool *gopool.Pool, repo nostr.NostrRepo, lists nostr.ListRepo, c
 	// match the respective clients' filters.
 	go filterMatch()
 
+	// Runs a clientH to receive all clients that need to release resources when become inactive.
+	go session.Remove()
+
 	return &session
 }
 
@@ -129,6 +134,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 	client.repo = s.repo
 	client.cclnlgr = cclnlgr
 	client.Authed = false
+	client.CreatedAt = time.Now().Unix()
 	client.errorRate = make(map[string]int)
 	client.Relay_Host = s.cfg.Relay_Host
 	client.default_limit_value = s.cfg.GetDLV()
@@ -153,15 +159,25 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		client.id = s.seq
 		s.seq++
 		client.name = s.randName()
-		// key := fmt.Sprintf("%s:%s", client.name, client.IP)
 
-		ok, clnt := s.ldg.Add(client.IP, client)
+		var (
+			clnt *Client
+			ok   bool
+			key  string
+		)
+
+		key = fmt.Sprintf("%s:%s", client.name, client.IP)
+
+		ok, clnt = s.ldg.Add(key, client)
 		if !ok {
 			s.slgr.Warnf("[Register] a connection from client [%v] already is registered as [%v].", client.IP, clnt)
 			return nil
 		}
+
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
 	}
+
+	metrics.MetricsChan <- map[string]int{"connsActiveWSConns": 1}
 
 	// Fine-tune the client's websocket connection
 	s.TuneClientConn(client)
@@ -202,12 +218,6 @@ func (s *Session) HandleClient(client *Client) {
 	// Schedule Client connection handling into a goroutine from the pool
 	s.pool.Schedule(func() {
 
-		// Anonymous func to close the connection when Read/Write  raises an error.
-		defer func() {
-			// release the client resources
-			s.Remove(client)
-		}()
-
 		if err := client.ReceiveMsg(); err != nil {
 			s.slgr.Errorf("[handleClient-go-routine] ReceiveMsg got an error: %v", err)
 		}
@@ -215,42 +225,67 @@ func (s *Session) HandleClient(client *Client) {
 }
 
 // Remove removes client from session.
-func (s *Session) Remove(client *Client) {
+func (s *Session) Remove() {
 
-	if client == nil {
-		return
+	for client := range clientCH {
+
+		if client == nil {
+			continue
+		}
+
+		select {
+		case <-Exit:
+			break
+
+		default:
+			key := fmt.Sprintf("%s:%s", client.name, client.IP)
+			s.slgr.Debugf("[Remove] removing client %v ... ", key)
+
+			fltrs := len(client.Filetrs)
+			subscrp := client.Subscription_id
+
+			// [ ]: Review what exactly more resources (than websocket connection) need to be released
+			e := client.Conn.WS.Close()
+			if e != nil {
+				if e == io.EOF {
+					s.slgr.Errorf("[Remove] client [%v] closed the websocket connection.", client.IP)
+				} else {
+					s.slgr.Errorf("[Remove] error closing websocket connection: %v", e)
+				}
+			}
+
+			s.wspool.Put(client.Conn)
+
+			// Put the Client back in the client's pool
+			s.Clients.Put(client)
+
+			// Remove the client from the session's internal register
+			s.mu.Lock()
+			s.ldg.Remove(key)
+			s.mu.Unlock()
+
+			// Remove the client from IP counter
+			tools.IPCount.Remove(client.IP)
+
+			// Release client resources
+			client.repo = nil
+			client.cclnlgr = nil
+			client.errorRate = nil
+			client.msgwt = nil
+			client.inmsg = nil
+			client.errFM = nil
+			client.errCH = nil
+			client = nil
+
+			if fltrs > 0 && subscrp != "" {
+				metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
+			} else if subscrp == "" {
+				metrics.MetricsChan <- map[string]int{"connsActiveWSConns": -1}
+			}
+
+		}
+
 	}
-
-	// [ ]: Review what exactly more resources (than websocket connection) need to be released
-
-	e := client.Conn.WS.Close()
-	if e != nil {
-		s.slgr.Errorf("[Remove] error closing websocket connection: %v", e)
-	}
-
-	s.wspool.Put(client.Conn)
-
-	// Put the Client back in the client's pool
-	s.Clients.Put(client)
-
-	// Remove the client from the session's internal register
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
-
-	// Remove the client from IP counter
-	tools.IPCount.Remove(client.IP)
-
-	// Release client resources
-	client.repo = nil
-	client.cclnlgr = nil
-	client.errorRate = nil
-	client.msgwt = nil
-	client.inmsg = nil
-	client.errFM = nil
-	client.errCH = nil
-	client = nil
 }
 
 // Give code-word as name to the client connection
@@ -294,8 +329,6 @@ func (s *Session) TuneClientConn(client *Client) {
 		if errnc := client.Conn.WS.NetConn().Close(); errnc != nil {
 			log.Printf("[SetCloseHandler] Error closing underlying network connection: %v", errnc)
 		}
-
-		client.errCH <- err
 		return err
 	})
 
@@ -326,6 +359,8 @@ func (s *Session) NewEventBroadcaster() {
 
 		s.slgr.Debugf(" ...-= starting new event braodcasting =-...")
 
+		metrics.MetricsChan <- map[string]int{"evntProcessedBrdcst": 1}
+
 		// 22242 is auth event - not to be stored or published
 		if e.Kind == 22242 {
 			continue
@@ -337,7 +372,7 @@ func (s *Session) NewEventBroadcaster() {
 				continue
 			}
 
-			if client.Subscription_id == "" || len(client.Filetrs) == 0 {
+			if client.Subscription_id == "" || len(client.Filetrs) < 1 {
 				if time.Now().Unix()-client.CreatedAt > 300 {
 					s.ldg.Remove(fmt.Sprintf("%s:%s", client.name, client.IP))
 					tools.IPCount.Remove(client.IP)
@@ -438,13 +473,22 @@ func (s *Session) sessionState() {
 			continue
 		}
 
-		if client.Subscription_id == "" && len(client.Filetrs) == 0 {
+		if client.Subscription_id == "" || len(client.Filetrs) == 0 {
 			s.slgr.Debugf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
 			if time.Now().Unix()-client.CreatedAt > 300 {
 				s.ldg.Remove(client.IP)
 				tools.IPCount.Remove(client.IP)
 			}
 			continue
+		}
+
+		if relay_access == "authenticated" || relay_access == "paid" {
+			if !client.Authed && time.Now().Unix()-client.CreatedAt > 300 {
+				s.slgr.Debugf("[session state] Not authenticated client [%s]/[%s]", client.IP, client.name)
+				s.ldg.Remove(client.IP)
+				tools.IPCount.Remove(client.IP)
+				continue
+			}
 		}
 
 		laf[key] = client.GetFilters()
@@ -478,7 +522,5 @@ func (s *Session) Close() bool {
 func getMaxConnIP() {
 
 	tip, max := tools.IPCount.TopIP()
-	var tdip = make(map[string]int, 1)
-	tdip[tip] = max
-	metrics.ChTopDemandingIP <- tdip
+	metrics.MetricsChan <- map[string]interface{}{"connsTopDemandingIP": map[string]int{tip: max}}
 }

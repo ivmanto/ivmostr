@@ -27,21 +27,20 @@ package router
 import (
 	"context"
 	"net/http"
+	"net/http/pprof"
 	"sync"
 
 	"github.com/dasiyes/ivmostr-tdd/api"
 	"github.com/dasiyes/ivmostr-tdd/configs/config"
 	"github.com/dasiyes/ivmostr-tdd/internal/nostr"
 	"github.com/dasiyes/ivmostr-tdd/internal/server/ivmws"
-	"github.com/dasiyes/ivmostr-tdd/tools"
 	"github.com/go-chi/chi"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 )
 
 var (
-	l          = log.New()
-	wlst, blst []string
+	l = log.New()
 )
 
 // Constructing web application depenedencies in the format of handler
@@ -75,12 +74,22 @@ func (h *srvHandler) router() chi.Router {
 
 	// Handle requests to the root URL "/" - nostr websocket connections
 	rtr.Route("/", func(wr chi.Router) {
-		ws := ivmws.NewWSHandler(h.repo, h.lists, h.cfg, &wlst, &blst)
+		ws := ivmws.NewWSHandler(h.repo, h.lists, h.cfg)
 		wr.Mount("/", ws.Router())
 	})
 
 	// Handle Prometheus metrics
 	rtr.Handle("/metrics", promhttp.Handler())
+
+	// Handle pprof endpoints
+	rtr.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	rtr.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	rtr.Handle("/debug/pprof/block", pprof.Handler("block"))
+	rtr.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+	rtr.Handle("/debug/pprof/cmdline", pprof.Handler("cmdline"))
+	rtr.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+	rtr.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+	rtr.Handle("/debug/pprof/trace", pprof.Handler("trace"))
 
 	// Route the API calls to/v1/api/ ...
 	rtr.Route("/v1", func(r chi.Router) {
@@ -116,11 +125,6 @@ func NewHandler(repo nostr.NostrRepo, lists nostr.ListRepo, cfg *config.ServiceC
 	}
 
 	l.Printf("...initializing router (http server Handler) ...")
-
-	wlst = tools.GetWhiteListedIPs(lists)
-	blst = tools.GetBlackListedIPs(lists)
-	l.Debugf("...white list: %d ...", len(wlst))
-	l.Debugf("...black list: %d ...", len(blst))
 
 	return e.router()
 }

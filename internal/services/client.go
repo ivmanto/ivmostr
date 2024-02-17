@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/url"
 	"strconv"
@@ -26,6 +25,10 @@ import (
 var (
 	leop = logging.Entry{Severity: logging.Info, Payload: ""}
 )
+
+// Spam accounts to block:
+// f1ea91eeab7988ed00e3253d5d50c66837433995348d7d97f968a0ceb81e0929
+// IP:172.71.146.218
 
 type Client struct {
 	Conn                *Connection
@@ -60,95 +63,97 @@ func (c *Client) Name() string {
 
 func (c *Client) ReceiveMsg() error {
 	var errch, errfm error
+
 	// Create a sync.WaitGroup to track the number of goroutines waiting to finish
 	var wg sync.WaitGroup
+
 	// Create a context to cancel the goroutines if needed
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	c.lgr.Level = log.ErrorLevel
+	c.lgr.Level = log.DebugLevel
 
 	wg.Add(1)
-	go func() {
+	go func(ctx context.Context) {
 		defer wg.Done()
+
 		for {
-			select {
-			case c.errCH <- c.writeT():
-			default:
-				errfm = <-c.errFM
-				c.Conn.WS.Close()
-				// Check if the context has been canceled
-				if ctx.Err() != nil {
-					c.lgr.Errorf("Goroutine `writeT` canceled: %v", ctx.Err())
-				} else {
-					c.lgr.Infof("Goroutine `writeT` forced:%v", errfm)
+			errch = c.writeT()
+			if errch != nil {
+				c.lgr.Errorf("ERROR: `writeT` raised: %v", errch)
+				if strings.Contains(errch.Error(), "close") {
+					cancel()
+					return
 				}
 			}
+
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 		}
-	}()
+	}(ctx)
 
 	wg.Add(1)
-	go func() {
+	go func(ctx context.Context) {
 		defer wg.Done()
+
 		for {
-			select {
-			case c.errCH <- c.dispatcher():
-			default:
-				errfm = <-c.errFM
-				c.Conn.WS.Close()
-				// Check if the context has been canceled
-				if ctx.Err() != nil {
-					c.lgr.Errorf("Goroutine `dispatcher` canceled: %v", ctx.Err())
-				} else {
-					c.lgr.Infof("Goroutine `dispatcher` forced:%v", errfm)
+			errch = c.dispatcher()
+			if errch != nil {
+				c.lgr.Errorf("ERROR: `dispatcher` raised: %v", errch)
+				if strings.Contains(errch.Error(), "CRITICAL") {
+					cancel()
+					return
 				}
 			}
-		}
-	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		select {
-		case <-c.errCH:
-			for errch = range c.errCH {
-				if errch != nil {
-					c.lgr.Errorf("[errCH] client %v rose an error: %v", c.IP, errch)
-				}
-			}
-		default:
-			errfm := <-c.errFM
-			c.Conn.WS.Close()
-			// Check if the context has been canceled
-			if ctx.Err() != nil {
-				c.lgr.Errorf("Goroutine `errCH` canceled: %v", ctx.Err())
-			} else {
-				c.lgr.Infof("Goroutine `errCH` forced:%v", errfm)
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				metrics.MetricsChan <- map[string]int{"clntProcessedMessages": 1}
 			}
 		}
-	}()
+	}(ctx)
 
 	for {
+
 		mt, p, err := c.Conn.WS.ReadMessage()
-		if (err != nil && err != io.EOF) || (mt == -1) {
+		if err != nil || mt == -1 {
 			c.lgr.Errorf("client %v mt:%d ...(ReadMessage)... returned error: %v", c.IP, mt, err)
-			c.Conn.WS.Close()
-			c.errFM <- err
-			break
+			if strings.Contains(err.Error(), "websocket:") || mt == -1 {
+				errfm = err
+				cancel()
+				wg.Wait()
+				break
+			}
 		}
 
 		c.lgr.Debugf("read_status:%s, client:%s, message_type:%d, size:%d, ts:%d", "success", c.IP, mt, len(p), time.Now().UnixNano())
-		c.inmsg <- []interface{}{mt, p}
-	}
 
-	wg.Wait()
-	c.lgr.Infof("[ReceiveMsg] for client [%v] completed!", c.IP)
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			c.errFM <- ctx.Err()
+			break
+
+		// case errfm = <-c.errFM:
+		// 	cancel()
+		// 	wg.Wait()
+		// 	break
+
+		case c.inmsg <- []interface{}{mt, p}:
+		}
+	}
+	c.lgr.Debugf("client %v ... lived for %d [s], error: [%v] ", c.IP, time.Now().Unix()-c.CreatedAt, errfm)
+	clientCH <- c
 	return errfm
 }
 
 func (c *Client) writeT() error {
 	var (
-		sb  []byte
+		sb  uint64
 		err error
 	)
 
@@ -160,12 +165,14 @@ func (c *Client) writeT() error {
 		c.mu.Unlock()
 
 		if err != nil {
-			c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size: %d B, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb), err)
+			c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size: %d B, error:%v", "error", c.IP, time.Now().UnixMilli()-c.wrchrr, sb, err)
 			break
 		}
 
-		sb, _ = tools.ConvertStructToByte(message)
-		c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size:%d B", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, len(sb))
+		sb, _ = tools.GetStructToByteLen(message)
+
+		c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size:%d B", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, sb)
+		metrics.MetricsChan <- map[string]uint64{"netOutboundBytes": sb}
 		c.wrchrr = time.Now().UnixMilli()
 	}
 
@@ -197,8 +204,8 @@ func (c *Client) dispatcher() error {
 					websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, text),
 					time.Time.Add(time.Now(), time.Second*2))
 
-				c.errFM <- fmt.Errorf("[disp] invalid utf8 encoding from [%s]!", c.IP)
-				return fmt.Errorf("[disp] %s", text)
+				//c.errFM <- fmt.Errorf("[disp] invalid utf8 encoding from [%s]!", c.IP)
+				return fmt.Errorf("[disp] CRITICAL %s", text)
 			}
 
 			nostr_msg := msg[1].([]byte)
@@ -232,7 +239,7 @@ func (c *Client) dispatcher() error {
 		case websocket.CloseMessage:
 			msgstr := string(msg[1].([]byte))
 			c.lgr.Debugf("[disp] received a `close` message: %s from client [%s]", msgstr, c.IP)
-			return fmt.Errorf("[disp] Client closing the connection with: %s", msgstr)
+			return fmt.Errorf("[disp] CRITICAL Client closing the connection with: %s", msgstr)
 
 		case websocket.PingMessage:
 			c.lgr.Debugf("[disp] Client [%s] sent PING message (mt = 9):%v", c.IP, string(msg[1].([]byte)))
@@ -267,6 +274,14 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 		c.lgr.Errorf("[dispatchNostrMsgs] nostr message label [%v] is not a string!", jmsg[0])
 	}
 	c.lgr.Debugf("[dispatchNostrMsgs] from [%s] message key is: `%s`", c.IP, key)
+
+	if relay_access == "authenticated" || relay_access == "paid" {
+		if key != "AUTH" && !c.Authed {
+			c.writeCustomNotice("Not authenticated connection")
+			c.errFM <- fmt.Errorf("[dispatchNostrMsgs] key: [%v] Not authenticated clients are not served!", key)
+			return
+		}
+	}
 
 	switch key {
 	case "EVENT":
@@ -318,6 +333,8 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		return err
 	}
 
+	// [ ]TODO: implement check for spam accounts
+
 	rsl, errv := e.CheckSignature()
 	if errv != nil {
 		lmsg := fmt.Sprintf("result %v, invalid: %v", rsl, errv.Error())
@@ -355,8 +372,6 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 		c.writeEventNotice(e.ID, false, composeErrorMsg(err))
 		return err
 	}
-	// Update metrics tracking channel for stored events
-	metrics.ChStoreEvent <- 1
 
 	// The customer name is required in NewEventBroadcaster method in order to skip the broadcast process for the customer that brought the event on the relay.
 	e.SetExtra("id", float64(c.id))
@@ -365,6 +380,9 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	NewEvent <- e
 
 	c.writeEventNotice(e.ID, true, "")
+
+	// Update metrics tracking channel for stored events
+	metrics.MetricsChan <- map[string]int{"evntStored": 1}
 
 	c.lgr.Debugf("[handlerEventMsgs] from [%s] saving took [%d] ms", c.IP, time.Now().Unix()-c.responseRate)
 
@@ -400,9 +418,10 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 	var msgfilters = []map[string]interface{}{}
 	if len(*msg) >= 3 {
 		for idx, v := range *msg {
-			if idx > 1 && idx < 5 {
+			if idx > 1 && idx < 10 {
 				filter = v.(map[string]interface{})
-				// [x]TODO: implement filter VERIFIER, to avoid spam filters
+
+				// [x]TODO: implement filter VERIFIER, to avoid spam requests filters
 				if validateSubsFilters(filter) {
 					msgfilters = append(msgfilters, filter)
 				} else {
@@ -422,13 +441,17 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 		c.Subscription_id = subscription_id
 
 		// [x] OVERWRITE subscription fileters
+		len_old_flt := len(c.Filetrs)
 		c.Filetrs = []map[string]interface{}{}
 		c.Filetrs = append(c.Filetrs, msgfilters...)
 
-		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
 		c.writeCustomNotice("Update: The subscription id and filters have been overwriten.")
-		metrics.ChUpdateSubscription <- 1
-		metrics.ChNrOfSubsFilters <- len(msgfilters)
+
+		c.lgr.Debugf("UPDATE: subscription id: %s with filter %v", c.Subscription_id, msgfilters)
+		metrics.MetricsChan <- map[string]int{"clntUpdatedSubscriptions": 1, "clntNrOfSubsFilters": len(msgfilters) - len_old_flt}
+		payloadEvnt := fmt.Sprintf(`{"method":"[handlerReqMsgs]","client":"%s", "subscriptionID":"%s","after [s]": %d}`, c.IP, c.Subscription_id, time.Now().Unix()-c.CreatedAt)
+		leop.Payload = payloadEvnt
+		cclnlgr.Log(leop)
 
 		err := c.SubscriptionSuplier()
 		if err != nil {
@@ -443,8 +466,7 @@ func (c *Client) handlerReqMsgs(msg *[]interface{}) error {
 
 	c.writeCustomNotice(fmt.Sprintf("The subscription with filter %v has been created", msgfilters))
 	log.Printf("NEW: subscription id: %s from [%s] with filter %v", c.Subscription_id, c.IP, msgfilters)
-	metrics.ChNewSubscription <- 1
-	metrics.ChNrOfSubsFilters <- len(c.Filetrs)
+	metrics.MetricsChan <- map[string]int{"clntSubscriptions": 1, "clntNrOfSubsFilters": len(c.Filetrs)}
 
 	err := c.SubscriptionSuplier()
 	if err != nil {
@@ -461,9 +483,17 @@ func (c *Client) handlerCloseSubsMsgs(msg *[]interface{}) error {
 	if len(*msg) == 2 {
 		subscription_id := (*msg)[1].(string)
 		if c.Subscription_id == subscription_id {
+			fltrs := len(c.Filetrs)
 			c.Subscription_id = ""
 			c.Filetrs = []map[string]interface{}{}
+
 			c.writeCustomNotice("Update: The subscription has been closed")
+
+			metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1}
+			payloadEvnt := fmt.Sprintf(`{"method":"[handlerCloseSubsMsgs]","client":"%s", "close_subscriptionID":"%s","after [s]": %d}`, c.IP, subscription_id, time.Now().Unix()-c.CreatedAt)
+			leop.Payload = payloadEvnt
+			cclnlgr.Log(leop)
+
 			return nil
 		} else {
 			c.writeCustomNotice("Error: Invalid subscription_id provided")
@@ -527,6 +557,7 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 			c.Authed = true
 			c.npub = e.PubKey
 			c.writeEventNotice(e.ID, true, "")
+			tools.IPCount.Add(c.IP)
 			return nil
 		} else {
 			c.writeEventNotice(e.ID, false, "Authentication failed")
@@ -988,6 +1019,7 @@ func (c *Client) fetchData(filter map[string]interface{}, eg *errgroup.Group) er
 		c.wrchrr = time.Now().UnixMilli()
 		c.msgwt <- wev
 
+		metrics.MetricsChan <- map[string]int{"evntSubsSupplied": len(wev)}
 		c.lgr.WithFields(log.Fields{"method": "[fetchData]", "client": c.IP, "SubscriptionID": c.Subscription_id, "filter": filter, "Nr_of_events": len(events), "servedIn": time.Now().UnixMilli() - c.responseRate}).Debug("Sent to writeT")
 
 		return nil
