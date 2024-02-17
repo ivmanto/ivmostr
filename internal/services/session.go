@@ -177,7 +177,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
 	}
 
-	metrics.MetricsChan <- map[string]int{"connsActiveWSConns": 1}
+	metrics.MetricsChan <- map[string]int{"connsActiveWSConns": s.ldg.Len()}
 
 	// Fine-tune the client's websocket connection
 	s.TuneClientConn(client)
