@@ -20,5 +20,6 @@ type NostrRepo interface {
 	GetHashtag_E_Events(hashtags []string, limit int, since, until int64) ([]*gn.Event, error)
 	DeleteEvent(id string) error
 	DeleteEvents(ids []string) error
+	DeleteEventsByPubKey(pubKey string) error
 	TotalDocs2() (int, error)
 }

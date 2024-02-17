@@ -137,12 +137,6 @@ func (c *Client) ReceiveMsg() error {
 			wg.Wait()
 			c.errFM <- ctx.Err()
 			break
-
-		// case errfm = <-c.errFM:
-		// 	cancel()
-		// 	wg.Wait()
-		// 	break
-
 		case c.inmsg <- []interface{}{mt, p}:
 		}
 	}

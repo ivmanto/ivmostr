@@ -278,9 +278,9 @@ func (s *Session) Remove() {
 			client = nil
 
 			if fltrs > 0 && subscrp != "" {
-				metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
+				metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": s.ldg.Len()}
 			} else if subscrp == "" {
-				metrics.MetricsChan <- map[string]int{"connsActiveWSConns": -1}
+				metrics.MetricsChan <- map[string]int{"connsActiveWSConns": s.ldg.Len()}
 			}
 
 		}

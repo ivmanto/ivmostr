@@ -40,6 +40,7 @@ func (l *ledger) Remove(name string) {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
+	l.subscribers[name] = nil
 	delete(l.subscribers, name)
 }
 
