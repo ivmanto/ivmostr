@@ -152,6 +152,8 @@ func (c *Client) writeT() error {
 	)
 
 	for message := range c.msgwt {
+
+		c.wrchrr = time.Now().UnixMilli()
 		c.lgr.Infof("[range msgwt] received message in %d ms", time.Now().UnixMilli()-c.wrchrr)
 
 		c.mu.Lock()
@@ -167,7 +169,6 @@ func (c *Client) writeT() error {
 
 		c.lgr.Debugf("write_status:%s, client:%s, took:%d ms, size:%d B", "success", c.IP, time.Now().UnixMilli()-c.wrchrr, sb)
 		metrics.MetricsChan <- map[string]uint64{"netOutboundBytes": sb}
-		c.wrchrr = time.Now().UnixMilli()
 	}
 
 	return err
@@ -299,6 +300,8 @@ func (c *Client) dispatchNostrMsgs(msg *[]byte) {
 
 	if err != nil {
 		c.lgr.Errorf("[dispatchNostrMsgs] A handlers function returned Error: %v;  message type: %v from [%s]", err, key, c.IP)
+		c.errFM <- err
+		return
 	}
 
 	c.lgr.Infof("[dispatchNostrMsgs] nostr message from [%s] handled without errors.", c.IP)
@@ -328,6 +331,10 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	}
 
 	// [ ]TODO: implement check for spam accounts
+	if e.PubKey == "f1ea91eeab7988ed00e3253d5d50c66837433995348d7d97f968a0ceb81e0929" {
+		c.writeCustomNotice("blocked: This account is blocked for posting spam messages")
+		return fmt.Errorf("blocked: This account is blocked for posting spam messages")
+	}
 
 	rsl, errv := e.CheckSignature()
 	if errv != nil {
@@ -355,7 +362,13 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 			c.writeEventNotice(e.ID, false, "Authentication required")
 			return nil
 		}
+	case 1984:
+		// nip-56 (https://github.com/nostr-protocol/nips/blob/master/56.md) kind:1984, note that is used to report other notes for spam, illegal and explicit content.
+		// [ ]TODO: implement check for spam accounts
 
+	case 1985:
+		// nip-32, kind:1985, event that is used to label other entities. This supports a number of use cases, including distributed moderation, collection management, license assignment, and content classification. (https://github.com/nostr-protocol/nips/blob/master/32.md)
+		// [ ]TODO: implement check for spam accounts
 	default:
 		// default will handle all other kinds of events that do not have specifics handlers
 		// do nothing
@@ -574,7 +587,7 @@ func (c *Client) handlerAuthMsgs(msg *[]interface{}) error {
 //	[ ] The standardized machine-readable prefixes are:
 //		[x] `duplicate`,
 //		[ ] `pow`,
-//		[ ] `blocked`,
+//		[x] `blocked`,
 //		[ ] `rate-limited`,
 //		[x] `invalid`, and
 //		[x] `error` for when none of that fits.

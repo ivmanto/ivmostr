@@ -476,7 +476,7 @@ func (s *Session) sessionState() {
 		if client.Subscription_id == "" || len(client.Filetrs) == 0 {
 			s.slgr.Debugf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
 			if time.Now().Unix()-client.CreatedAt > 300 {
-				s.ldg.Remove(client.IP)
+				s.ldg.Remove(key)
 				tools.IPCount.Remove(client.IP)
 			}
 			continue
@@ -485,7 +485,7 @@ func (s *Session) sessionState() {
 		if relay_access == "authenticated" || relay_access == "paid" {
 			if !client.Authed && time.Now().Unix()-client.CreatedAt > 300 {
 				s.slgr.Debugf("[session state] Not authenticated client [%s]/[%s]", client.IP, client.name)
-				s.ldg.Remove(client.IP)
+				s.ldg.Remove(key)
 				tools.IPCount.Remove(client.IP)
 				continue
 			}
