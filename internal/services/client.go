@@ -391,7 +391,7 @@ func (c *Client) handlerEventMsgs(msg *[]interface{}) error {
 	// Update metrics tracking channel for stored events
 	metrics.MetricsChan <- map[string]int{"evntStored": 1}
 
-	c.lgr.Debugf("[handlerEventMsgs] from [%s] saving took [%d] ms", c.IP, time.Now().Unix()-c.responseRate)
+	c.lgr.Debugf("[handlerEventMsgs] from [%s] saving took [%d] ms", c.IP, time.Now().UnixMilli()-c.responseRate)
 
 	payloadEvnt := fmt.Sprintf(`{"method":"[handlerEventMsgs]","client":"%s", "eventID-stored":"%s","servedIn": %d}`, c.IP, e.ID, time.Now().UnixMilli()-c.responseRate)
 	leop.Payload = payloadEvnt

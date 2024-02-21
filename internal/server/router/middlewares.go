@@ -88,7 +88,7 @@ func rateLimiter(h *srvHandler) func(next http.Handler) http.Handler {
 			if tools.Contains(tools.WList, ip) {
 				// [!]POLICY: No more than X (5?) total active connections
 				// for WHITELISTED clients.
-				if tools.IPCount.IPConns(ip) >= 10 {
+				if tools.IPCount.IPConns(ip) >= 20 {
 					h.rllgr.Debugf("[rateLimiter] Too many connections from whitelisted IP address %s.", ip)
 					http.Error(w, "Too many requests", http.StatusTooManyRequests)
 					return
