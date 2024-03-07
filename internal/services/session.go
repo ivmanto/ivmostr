@@ -475,6 +475,7 @@ func (s *Session) sessionState() {
 
 		if client.Subscription_id == "" || len(client.Filetrs) == 0 {
 			s.slgr.Debugf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
+			// [!] POLICY: (???) 5 mins per client to subscribe.
 			if time.Now().Unix()-client.CreatedAt > 300 {
 				s.ldg.Remove(key)
 				tools.IPCount.Remove(client.IP)
