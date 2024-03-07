@@ -177,7 +177,7 @@ func (s *Session) Register(conn *Connection, ip string) *Client {
 		s.slgr.Infof("[Register] client from [%v] registered as [%v]", client.IP, client.name)
 	}
 
-	metrics.MetricsChan <- map[string]int{"connsActiveWSConns": 1}
+	metrics.MetricsChan <- map[string]int{"connsActiveWSConns": s.ldg.Len()}
 
 	// Fine-tune the client's websocket connection
 	s.TuneClientConn(client)
@@ -278,9 +278,9 @@ func (s *Session) Remove() {
 			client = nil
 
 			if fltrs > 0 && subscrp != "" {
-				metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": -1}
+				metrics.MetricsChan <- map[string]int{"clntNrOfSubsFilters": -fltrs, "clntSubscriptions": -1, "connsActiveWSConns": s.ldg.Len()}
 			} else if subscrp == "" {
-				metrics.MetricsChan <- map[string]int{"connsActiveWSConns": -1}
+				metrics.MetricsChan <- map[string]int{"connsActiveWSConns": s.ldg.Len()}
 			}
 
 		}
@@ -475,8 +475,9 @@ func (s *Session) sessionState() {
 
 		if client.Subscription_id == "" || len(client.Filetrs) == 0 {
 			s.slgr.Debugf("[session state] Not subscribed client [%s]/[%s]", client.IP, client.name)
+			// [!] POLICY: (???) 5 mins per client to subscribe.
 			if time.Now().Unix()-client.CreatedAt > 300 {
-				s.ldg.Remove(client.IP)
+				s.ldg.Remove(key)
 				tools.IPCount.Remove(client.IP)
 			}
 			continue
@@ -485,7 +486,7 @@ func (s *Session) sessionState() {
 		if relay_access == "authenticated" || relay_access == "paid" {
 			if !client.Authed && time.Now().Unix()-client.CreatedAt > 300 {
 				s.slgr.Debugf("[session state] Not authenticated client [%s]/[%s]", client.IP, client.name)
-				s.ldg.Remove(client.IP)
+				s.ldg.Remove(key)
 				tools.IPCount.Remove(client.IP)
 				continue
 			}

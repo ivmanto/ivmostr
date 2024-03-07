@@ -771,6 +771,44 @@ func (r *nostrRepo) DeleteEvents(ids []string) error {
 	return nil
 }
 
+// DeleteEventsByPubKey deletes all events created by a specific PubKey
+func (r *nostrRepo) DeleteEventsByPubKey(pubkey string) error {
+
+	fsclient, err := r.clients.GetClient()
+	if err != nil {
+		return fmt.Errorf("unable to get firestore client. error: %v", err)
+	}
+	// ==================== end of client ================
+
+	// Get a reference to the collection
+	collectionRef := fsclient.Collection(r.events_collection)
+
+	// Perform a query to find matching documents
+	iter := collectionRef.Where("PubKey", "==", pubkey).Documents(context.Background())
+
+	// Iterate through the results and delete each document
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			r.rlgr.Errorf("ERROR: while iterate %v", err)
+			continue
+		}
+
+		// Delete the document
+		docRef := doc.Ref
+		_, err = docRef.Delete(context.Background())
+		if err != nil {
+			r.rlgr.Errorf("ERROR: delete document %v", err)
+			continue
+		}
+		r.rlgr.Infof("Document deleted:%v", docRef.ID)
+	}
+	return nil
+}
+
 // NewNostrRepository - creates a new nostr relay repository
 // [x]: get the repo params from the config
 func NewNostrRepository(ctx *context.Context, clients *fspool.ConnectionPool, dlv int, ecn string) (nostr.NostrRepo, error) {

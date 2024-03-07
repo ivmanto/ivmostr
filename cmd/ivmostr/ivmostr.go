@@ -22,6 +22,7 @@ func main() {
 		vers     = flag.Bool("version", false, "prints version")
 		cfgfn    = flag.String("config", "configs/config.yaml", "--config=<file_name> configuration file name. Default is configs/config.yaml")
 		newEvent = flag.String("newEvent", "", "prints new event on the console as configured in the tools create-event")
+		clean    = flag.String("clean", "", "cleans the firestore collection by deleting all documents created by a PubKey. Use with care.")
 	)
 
 	flag.Parse()
@@ -86,6 +87,14 @@ func main() {
 	if err != nil {
 		log.Errorf("[main] CRITICAL: firestore repository init error %s.\n Exiting now, unable to proceed.", err.Error())
 		panic(err)
+	}
+
+	if *clean != "" {
+		errde := nostrRepo.DeleteEventsByPubKey(*clean)
+		if errde != nil {
+			log.Errorf("[main] ERROR while cleaning firestore collection events by PubKey: %v", errde)
+		}
+		os.Exit(0)
 	}
 
 	var wl, bl string

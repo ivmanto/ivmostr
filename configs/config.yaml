@@ -25,6 +25,8 @@ trusted_origins:
   - "nostrcheck.me"
   - "flycat.club"
   - "nostr"
+  - "relays.xport.top"
+  - "test.xport.top"
 cloud_logging_enabled: true
 # Max number of WS connection from an IP allowed per `rate_limit_duration`, before the IP is blocked
 rate_limit_max: 5
